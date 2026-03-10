@@ -1,0 +1,102 @@
+providers:
+  anthropic:
+    default_model: claude-haiku-4-5-20251001
+    models:
+      - id: claude-haiku-4-5-20251001
+        name: Claude Haiku 4.5
+        context: 128000
+        input_price: 0.80
+        output_price: 4.00
+        supports_tools: true
+      - id: claude-sonnet-4-6
+        name: Claude Sonnet 4.6
+        context: 200000
+        input_price: 3.00
+        output_price: 15.00
+        supports_tools: true
+      - id: claude-opus-4-6
+        name: Claude Opus 4.6
+        context: 200000
+        input_price: 15.00
+        output_price: 75.00
+        supports_tools: true
+
+  openai:
+    default_model: gpt-4o-mini
+    models:
+      - id: gpt-4o-mini
+        name: GPT-4o mini
+        context: 128000
+        input_price: 0.15
+        output_price: 0.60
+        supports_tools: true
+      - id: gpt-4o
+        name: GPT-4o
+        context: 128000
+        input_price: 2.50
+        output_price: 10.00
+        supports_tools: true
+      - id: gpt-4.1
+        name: GPT-4.1
+        context: 1048576
+        input_price: 2.00
+        output_price: 8.00
+        supports_tools: true
+      - id: gpt-4.1-mini
+        name: GPT-4.1 mini
+        context: 1048576
+        input_price: 0.40
+        output_price: 1.60
+        supports_tools: true
+
+  groq:
+    default_model: llama-3.3-70b-versatile
+    models:
+      - id: llama-3.3-70b-versatile
+        name: Llama 3.3 70B
+        context: 128000
+        input_price: 0.59
+        output_price: 0.79
+        supports_tools: true
+      - id: llama-3.1-8b-instant
+        name: Llama 3.1 8B
+        context: 128000
+        input_price: 0.05
+        output_price: 0.08
+        supports_tools: true
+
+  deepseek:
+    default_model: deepseek-chat
+    models:
+      - id: deepseek-chat
+        name: DeepSeek V3
+        context: 64000
+        input_price: 0.27
+        output_price: 1.10
+        supports_tools: true
+      - id: deepseek-reasoner
+        name: DeepSeek R1
+        context: 64000
+        input_price: 0.55
+        output_price: 2.19
+        supports_tools: false
+
+  mistral:
+    default_model: mistral-small-latest
+    models:
+      - id: mistral-small-latest
+        name: Mistral Small
+        context: 32000
+        input_price: 0.10
+        output_price: 0.30
+        supports_tools: true
+      - id: mistral-large-latest
+        name: Mistral Large
+        context: 128000
+        input_price: 2.00
+        output_price: 6.00
+        supports_tools: true
+
+  ollama:
+    default_model: ""
+    models: []

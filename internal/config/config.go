@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -115,49 +116,43 @@ func SaveConfig(path string, cfg Config) error {
 	return nil
 }
 
+// zeroConfigProviderOrder is the priority order for auto-detecting a provider
+// from environment variables when no config file exists.
+// Each entry is (providerName, envVarName).
+// Ollama is excluded — it needs no API key and can't be auto-detected this way.
+var zeroConfigProviderOrder = []struct {
+	provider string
+	envVar   string
+}{
+	{"anthropic", "ANTHROPIC_API_KEY"},
+	{"openai", "OPENAI_API_KEY"},
+	{"groq", "GROQ_API_KEY"},
+	{"deepseek", "DEEPSEEK_API_KEY"},
+	{"mistral", "MISTRAL_API_KEY"},
+}
+
 // ZeroConfigDefaults attempts to build a usable Config from environment variables
-// when no config file exists. Returns the config and whether a key was found.
-//
-// Priority:
-//  1. TERMWISE_API_KEY → anthropic
-//  2. ANTHROPIC_API_KEY → anthropic
-//  3. OPENAI_API_KEY → openai
+// when no config file exists. It iterates through known providers in priority order
+// and uses the first one that has its standard API key env var set.
+// Returns the config and whether a usable provider was found.
 func ZeroConfigDefaults() (Config, bool) {
-	if key := os.Getenv("TERMWISE_API_KEY"); key != "" {
-		return envKeyConfig("anthropic", "TERMWISE_API_KEY", defaultModel("anthropic")), true
-	}
-	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		return envKeyConfig("anthropic", "ANTHROPIC_API_KEY", defaultModel("anthropic")), true
-	}
-	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-		return envKeyConfig("openai", "OPENAI_API_KEY", defaultModel("openai")), true
+	for _, entry := range zeroConfigProviderOrder {
+		if os.Getenv(entry.envVar) == "" {
+			continue
+		}
+		defaultModel := models.DefaultModel(entry.provider)
+		return Config{
+			ActiveProvider: entry.provider,
+			Providers: map[string]ProviderConfig{
+				entry.provider: {
+					AuthMethod: "env",
+					EnvVar:     entry.envVar,
+					Model:      defaultModel,
+				},
+			},
+		}, true
 	}
 	return Config{}, false
-}
-
-func envKeyConfig(provider, envVar, model string) Config {
-	return Config{
-		ActiveProvider: provider,
-		Providers: map[string]ProviderConfig{
-			provider: {
-				AuthMethod: "env",
-				EnvVar:     envVar,
-				Model:      model,
-			},
-		},
-	}
-}
-
-// defaultModel returns the default model ID for a known provider.
-func defaultModel(provider string) string {
-	switch provider {
-	case "anthropic":
-		return "claude-haiku-4-5-20251001"
-	case "openai":
-		return "gpt-4o-mini"
-	default:
-		return ""
-	}
 }
 
 // ActiveProviderConfig returns the ProviderConfig for the active provider.
