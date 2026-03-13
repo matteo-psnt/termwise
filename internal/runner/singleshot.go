@@ -5,18 +5,28 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/matteo-psnt/termwise/internal/ai"
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/systemprompt"
 	"github.com/matteo-psnt/termwise/internal/tty"
 )
 
+var (
+	commandRe = regexp.MustCompile(`(?s)<command>(.*?)</command>`)
+	textRe    = regexp.MustCompile(`(?s)<text>(.*?)</text>`)
+)
+
 // SingleShot runs a single-shot prompt and writes the response to stdout.
-// If stdin is piped, its contents are appended to the prompt automatically.
+// On a <command> response it returns nil (exit 0).
+// On a <text> response it returns ExitCode{10}.
+// If stdin is piped its contents are appended to the prompt automatically.
 func SingleShot(ctx context.Context, prompt string) error {
-	// Append piped stdin to the prompt.
+	isTTY := tty.IsTerminal(os.Stdout)
+
 	if !tty.IsTerminal(os.Stdin) {
 		stdin, err := io.ReadAll(os.Stdin)
 		if err != nil {
@@ -27,68 +37,83 @@ func SingleShot(ctx context.Context, prompt string) error {
 		}
 	}
 
-	// Load config; fall back to zero-config if no file exists.
-	cfgPath, err := config.DefaultConfigPath()
-	if err != nil {
-		return err
-	}
-	cfg, exists, err := config.LoadConfig(cfgPath)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		var ok bool
-		cfg, ok = config.ZeroConfigDefaults()
-		if !ok {
-			return fmt.Errorf("no configuration found — run `tw config` to set up")
-		}
-	}
-
-	if err := config.ValidateForRuntime(cfg); err != nil {
-		return err
-	}
-
-	providerName, pc, err := cfg.ActiveProviderConfig()
-	if err != nil {
-		return err
-	}
-
-	auth, err := config.ResolveAuth(providerName, pc)
-	if err != nil {
-		return err
-	}
-
-	provider, err := ai.GetProvider(providerName, ai.ProviderConfig{
-		APIKey:  auth.APIKey,
-		Model:   pc.Model,
-		BaseURL: auth.BaseURL,
-	})
+	provider, modelID, err := resolveProvider()
 	if err != nil {
 		return err
 	}
 
 	resp, err := provider.Complete(ctx, ai.CompleteRequest{
-		Model:  pc.Model,
+		Model:  modelID,
+		System: systemprompt.SingleShot(isTTY),
 		Prompt: prompt,
 	})
 	if err != nil {
 		return err
 	}
 
-	return writeOutput(resp.Content)
+	return writeOutput(resp.Content, isTTY)
 }
 
-func writeOutput(content string) error {
-	if !tty.IsTerminal(os.Stdout) {
-		_, err := fmt.Println(content)
-		return err
+// writeOutput parses the model's response and writes it to stdout.
+func writeOutput(content string, isTTY bool) error {
+	if m := commandRe.FindStringSubmatch(content); m != nil {
+		fmt.Println(strings.TrimSpace(m[1]))
+		return nil // exit 0
 	}
-	rendered, err := glamour.Render(content, "auto")
+
+	text := content
+	if m := textRe.FindStringSubmatch(content); m != nil {
+		text = strings.TrimSpace(m[1])
+	} else {
+		text = strings.TrimSpace(content)
+	}
+
+	if isTTY {
+		rendered, err := glamour.Render(text, "auto")
+		if err == nil {
+			fmt.Print(rendered)
+			return ExitCode{10}
+		}
+	}
+	fmt.Println(text)
+	return ExitCode{10}
+}
+
+// resolveProvider loads config and returns a ready AgentProvider and model ID.
+func resolveProvider() (ai.AgentProvider, string, error) {
+	cfgPath, err := config.DefaultConfigPath()
 	if err != nil {
-		// Fall back to plain text if rendering fails.
-		_, err = fmt.Println(content)
-		return err
+		return nil, "", err
 	}
-	_, err = fmt.Print(rendered)
-	return err
+	cfg, exists, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		return nil, "", err
+	}
+	if !exists {
+		var ok bool
+		cfg, ok = config.ZeroConfigDefaults()
+		if !ok {
+			return nil, "", fmt.Errorf("no configuration found — run `tw config` to set up")
+		}
+	}
+	if err := config.ValidateForRuntime(cfg); err != nil {
+		return nil, "", err
+	}
+	providerName, pc, err := cfg.ActiveProviderConfig()
+	if err != nil {
+		return nil, "", err
+	}
+	auth, err := config.ResolveAuth(providerName, pc)
+	if err != nil {
+		return nil, "", err
+	}
+	provider, err := ai.GetProvider(providerName, ai.ProviderConfig{
+		APIKey:  auth.APIKey,
+		Model:   pc.Model,
+		BaseURL: auth.BaseURL,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return provider, pc.Model, nil
 }

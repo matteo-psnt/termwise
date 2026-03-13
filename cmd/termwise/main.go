@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -25,20 +26,37 @@ func main() {
 		Long:  "tw — pass a prompt for single-shot mode, or run without arguments to open the agent TUI.",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// --shell-widget is the internal Ctrl+T keybinding path.
+			if sw, _ := cmd.Flags().GetString("shell-widget"); sw != "" {
+				return runner.ShellWidget(context.Background(), sw)
+			}
 			if len(args) == 0 {
 				return openTUI()
 			}
-			prompt := strings.Join(args, " ")
-			return runner.SingleShot(context.Background(), prompt)
+			return runner.SingleShot(context.Background(), strings.Join(args, " "))
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 
+	root.Flags().String("shell-widget", "", "")
+	root.Flags().Lookup("shell-widget").Hidden = true
+
+	root.AddCommand(initCmd)
+	root.AddCommand(configCmd)
+
 	if err := root.Execute(); err != nil {
+		// ExitCode is a sentinel — use the embedded code, print nothing.
+		var ec runner.ExitCode
+		if errors.As(err, &ec) {
+			os.Exit(ec.Code)
+		}
 		fmt.Fprintf(os.Stderr, "tw: %s\n", err)
 		os.Exit(1)
 	}
+
+	// Check if last command returned an ExitCode through normal return path.
+	// (cobra swallows non-nil errors; RunE errors land in the Execute() return above.)
 }
 
 func openTUI() error {
