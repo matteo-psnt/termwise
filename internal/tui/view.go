@@ -47,7 +47,7 @@ func (m Model) renderInputSection(innerW int) string {
 		return m.styles.Spinner.Render(m.spin.View()) + " thinking..."
 
 	case stateApproval:
-		return m.styles.ApprovalHint.Render("  ↵ Approve   Esc Deny")
+		return m.styles.ApprovalHint.Render("  ↵ Approve   a Allow+save   Esc Deny")
 
 	case stateAskPicker:
 		if m.activePicker != nil {

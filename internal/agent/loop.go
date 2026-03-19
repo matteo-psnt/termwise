@@ -20,7 +20,8 @@ func ChatCmd(ctx context.Context, provider ai.AgentProvider, req ai.ChatRequest)
 // ProcessToolsCmd processes pending tool calls in order, returning on the first
 // one that requires user input (approval or ask). Auto-executed tools (read)
 // return immediately so the TUI can update the display and continue.
-func ProcessToolsCmd(toolCalls []ai.ToolCall, collected []ai.ToolResult) tea.Cmd {
+// needsApproval is called for bash commands to determine if approval is required.
+func ProcessToolsCmd(toolCalls []ai.ToolCall, collected []ai.ToolResult, needsApproval func(string) bool) tea.Cmd {
 	return func() tea.Msg {
 		for i, tc := range toolCalls {
 			remaining := make([]ai.ToolCall, len(toolCalls)-i-1)
@@ -53,7 +54,7 @@ func ProcessToolsCmd(toolCalls []ai.ToolCall, collected []ai.ToolResult) tea.Cmd
 
 			case "bash":
 				cmd, _ := tc.Input["command"].(string)
-				if tools.NeedsApproval(cmd) {
+				if needsApproval(cmd) {
 					return NeedsApprovalMsg{
 						ToolCall:  tc,
 						Command:   cmd,

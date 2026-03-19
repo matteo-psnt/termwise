@@ -1,0 +1,235 @@
+# termwise built-in allow-list
+# Commands matching these rules are auto-approved without user confirmation.
+# Shell metacharacters (| ; & > < ` $() etc.) always trigger approval
+# regardless of what is listed here.
+#
+# Format per entry:
+#   cmd: <executable basename>              (required)
+#   allow_subs: [sub1, sub2, ...]          (optional — first positional arg must be in list)
+#   block_flags: [-f1, --flag2, ...]       (optional — denied if any of these appear)
+
+rules:
+
+  # ── File system inspection ──────────────────────────────────────────────────
+  - cmd: ls
+  - cmd: ll
+  - cmd: la
+  - cmd: lsd
+  - cmd: eza
+  - cmd: tree
+  - cmd: stat
+  - cmd: file
+  - cmd: du
+  - cmd: df
+  - cmd: lsof
+  - cmd: find
+    block_flags: [-exec, -execdir, -ok, -okdir, -delete]
+
+  # ── File reading ────────────────────────────────────────────────────────────
+  - cmd: cat
+  - cmd: bat
+  - cmd: head
+  - cmd: tail
+  - cmd: less
+  - cmd: more
+  - cmd: wc
+  - cmd: strings
+  - cmd: xxd
+  - cmd: od
+
+  # ── Text search ─────────────────────────────────────────────────────────────
+  - cmd: grep
+  - cmd: rg
+  - cmd: ag
+  - cmd: ack
+  - cmd: fd
+
+  # ── Text processing (read-only, stdout only) ─────────────────────────────────
+  # Note: awk is excluded — it can execute arbitrary system calls via system().
+  - cmd: sort
+  - cmd: uniq
+  - cmd: cut
+  - cmd: tr
+  - cmd: sed
+    block_flags: [-i]   # -i modifies files in-place
+  - cmd: diff
+  - cmd: colordiff
+  - cmd: delta
+  - cmd: comm
+  - cmd: join
+  - cmd: paste
+  - cmd: column
+  - cmd: expand
+  - cmd: fold
+  - cmd: fmt
+
+  # ── Data / serialisation tools ───────────────────────────────────────────────
+  - cmd: jq
+  - cmd: yq
+  - cmd: tomlq
+  - cmd: dasel
+  - cmd: fx
+  - cmd: xsv
+
+  # ── System info ─────────────────────────────────────────────────────────────
+  - cmd: pwd
+  - cmd: which
+  - cmd: whereis
+  - cmd: type
+  - cmd: echo
+  - cmd: printf
+  - cmd: date
+  - cmd: uname
+  - cmd: hostname
+  - cmd: whoami
+  - cmd: id
+  - cmd: uptime
+  - cmd: printenv
+  - cmd: locale
+  - cmd: ulimit
+  - cmd: ps
+  - cmd: pgrep
+  - cmd: top
+  - cmd: htop
+  - cmd: btop
+
+  # ── Network inspection ──────────────────────────────────────────
+  # curl and wget are excluded — they can exfiltrate data and download content
+  # even without explicit output flags.
+  - cmd: dig
+  - cmd: nslookup
+  - cmd: host
+  - cmd: ping
+    block_flags: [-f, --flood]   # block flood mode
+  - cmd: traceroute
+  - cmd: netstat
+  - cmd: ss
+
+  # ── Git (read-only operations) ───────────────────────────────────────────────
+  - cmd: git
+    allow_subs:
+      - status
+      - log
+      - diff
+      - show
+      - blame
+      - branch
+      - remote
+      - tag
+      - describe
+      - shortlog
+      - rev-parse
+      - ls-files
+      - ls-tree
+      - cat-file
+      - reflog
+      - help
+      - version
+
+  # ── Go (read-only / inspection) ──────────────────────────────────────────────
+  # go run and go generate are excluded — they execute arbitrary code.
+  - cmd: go
+    allow_subs:
+      - build
+      - list
+      - env
+      - version
+      - doc
+      - vet
+
+  # ── Rust / Cargo (read-only / inspection) ────────────────────────────────────
+  # cargo run and cargo bench are excluded — they execute code.
+  - cmd: cargo
+    allow_subs:
+      - check
+      - clippy
+      - metadata
+      - tree
+      - version
+      - help
+
+  # ── Node ecosystem ───────────────────────────────────────────────────────────
+  # Language runtimes (node, python, ruby) are excluded entirely — their -e/-c
+  # flags execute arbitrary code and cannot be safely distinguished by subcommand.
+  # npm/yarn/pnpm/bun run|test|start are excluded — they execute arbitrary scripts.
+  - cmd: npm
+    allow_subs: [list, ls, info, show, outdated, audit, view, version]
+  - cmd: pnpm
+    allow_subs: [list, ls, info, outdated, audit, why]
+  - cmd: yarn
+    allow_subs: [list, info, outdated, why, check, licenses, version]
+  - cmd: bun
+    allow_subs: [pm, repl]
+
+  # ── Python package tools ─────────────────────────────────────────────────────
+  - cmd: pip
+    allow_subs: [list, show, freeze, check, inspect, index]
+  - cmd: pip3
+    allow_subs: [list, show, freeze, check, inspect, index]
+  - cmd: uv
+    allow_subs: [pip, tree]
+  - cmd: poetry
+    allow_subs: [show, check, version, export]
+  - cmd: ruff
+    allow_subs: [check, --version]
+  - cmd: mypy
+
+  # ── Ruby / Bundler ───────────────────────────────────────────────────────────
+  - cmd: bundle
+    allow_subs: [list, show, check, outdated, version, info]
+  - cmd: gem
+    allow_subs: [list, info, outdated, contents, dependency, search, spec]
+
+  # ── Docker / container tools ─────────────────────────────────────
+  # docker system, docker volume rm, docker network rm, etc. are mutating —
+  # only inspection subcommands are listed.
+  - cmd: docker
+    allow_subs:
+      - ps
+      - images
+      - logs
+      - inspect
+      - stats
+      - top
+      - version
+      - info
+      - diff
+      - port
+      - history
+  - cmd: docker-compose
+    allow_subs: [ps, logs, config, version, images, top]
+  - cmd: podman
+    allow_subs: [ps, images, logs, inspect, stats, version, info, diff, history]
+
+  # ── Kubernetes ───────────────────────────────────────────────────
+  # kubectl config is excluded — it can modify kubeconfig.
+  - cmd: kubectl
+    allow_subs:
+      - get
+      - describe
+      - logs
+      - top
+      - version
+      - cluster-info
+      - explain
+      - api-resources
+      - api-versions
+  - cmd: helm
+    allow_subs: [list, status, history, get, show, version, env, search]
+
+  # ── GitHub CLI ───────────────────────────────────────────────────
+  # Only inspection subcommands — pr create, issue create, etc. are excluded.
+  - cmd: gh
+    allow_subs: [repo, issue, pr, run, workflow, release, api, auth, gist]
+
+  # ── Package managers ─────────────────────────────────────────────
+  - cmd: brew
+    allow_subs: [list, info, outdated, search, deps, uses, doctor, config, --version]
+  - cmd: apt
+    allow_subs: [list, show, search, depends, rdepends, --version]
+  - cmd: dpkg
+    allow_subs: [-l, -s, -L, -S, --list, --status, --listfiles, --search]
+  - cmd: rpm
+    allow_subs: [-q, -qi, -ql, -qa, --query]
+  - cmd: pacman
+    allow_subs: [-Q, -Qi, -Ql, -Qs, -Si, -Ss, --query, --sync]

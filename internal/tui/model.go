@@ -13,6 +13,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/ai"
+	"github.com/matteo-psnt/termwise/internal/allowlist"
+	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/matteo-psnt/termwise/internal/tools"
 )
@@ -34,6 +36,10 @@ type Model struct {
 	modelID       string
 	system        string
 	contextWindow int
+
+	// Allow-list
+	cfgPath    string
+	allowRules []string // user-configured rules from config.Shell.Allow
 
 	// Conversation
 	messages []ai.Message
@@ -84,6 +90,8 @@ func newModel(
 	system string,
 	stdin string,
 	r *lipgloss.Renderer,
+	cfgPath string,
+	allowRules []string,
 ) Model {
 	ti := textinput.New()
 	ti.Placeholder = ""
@@ -106,6 +114,8 @@ func newModel(
 		system:        system,
 		stdin:         stdin,
 		contextWindow: contextWindow,
+		cfgPath:       cfgPath,
+		allowRules:    allowRules,
 		input:         ti,
 		spin:          sp,
 		ctx:           ctx,
@@ -193,7 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Start processing tool calls.
-		return m, agent.ProcessToolsCmd(resp.ToolCalls, nil)
+		return m, agent.ProcessToolsCmd(resp.ToolCalls, nil, m.needsApproval)
 
 	// ── Agent: tool executed (read or auto-bash) ───────────────────────────────
 	case agent.ToolExecutedMsg:
@@ -214,9 +224,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 
 		if len(msg.Remaining) == 0 {
-			return m, agent.ProcessToolsCmd(nil, msg.Collected)
+			return m, agent.ProcessToolsCmd(nil, msg.Collected, m.needsApproval)
 		}
-		return m, agent.ProcessToolsCmd(msg.Remaining, msg.Collected)
+		return m, agent.ProcessToolsCmd(msg.Remaining, msg.Collected, m.needsApproval)
 
 	// ── Agent: bash needs approval ─────────────────────────────────────────────
 	case agent.NeedsApprovalMsg:
@@ -375,10 +385,48 @@ func (m Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 		return m, tea.Batch(
 			m.spin.Tick,
-			agent.ProcessToolsCmd(remaining, collected),
+			agent.ProcessToolsCmd(remaining, collected, m.needsApproval),
 		)
+
+	case tea.KeyRunes:
+		if msg.String() == "a" {
+			// Allow + add to user allow-list: save rule and approve.
+			cmd, _ := m.pendingToolCall.Input["command"].(string)
+			rule := allowlist.BuildRuleFromCommand(cmd)
+			if rule != "" {
+				m.allowRules = append(m.allowRules, rule)
+				m.saveAllowRules()
+			}
+			m.state = stateThinking
+			tc := m.pendingToolCall
+			remaining := m.pendingRemaining
+			collected := m.pendingCollected
+			return m, tea.Batch(
+				m.spin.Tick,
+				agent.ExecuteBashCmd(tc, remaining, collected),
+			)
+		}
 	}
 	return m, nil
+}
+
+// needsApproval returns true if the bash command must be confirmed by the user.
+func (m Model) needsApproval(cmd string) bool {
+	return allowlist.NeedsApproval(m.allowRules, cmd)
+}
+
+// saveAllowRules persists the current allowRules to config on disk.
+// Failures are silently ignored — the in-memory list is still updated.
+func (m Model) saveAllowRules() {
+	if m.cfgPath == "" {
+		return
+	}
+	cfg, _, err := config.LoadConfig(m.cfgPath)
+	if err != nil {
+		return
+	}
+	cfg.Shell.Allow = m.allowRules
+	_ = config.SaveConfig(m.cfgPath, cfg)
 }
 
 func (m Model) handlePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -408,7 +456,7 @@ func (m Model) handlePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 		return m, tea.Batch(
 			m.spin.Tick,
-			agent.ProcessToolsCmd(remaining, collected),
+			agent.ProcessToolsCmd(remaining, collected, m.needsApproval),
 		)
 	}
 	return m, nil

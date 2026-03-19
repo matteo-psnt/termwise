@@ -94,5 +94,5 @@ func openTUI() error {
 	if err != nil {
 		return err
 	}
-	return tui.Open(providerName, provider, pc.Model)
+	return tui.Open(providerName, provider, pc.Model, cfgPath, cfg.Shell.Allow)
 }

@@ -31,7 +31,8 @@ type TUIConfig struct {
 
 // ShellConfig holds shell integration settings.
 type ShellConfig struct {
-	Keybinding string `toml:"keybinding,omitempty"`
+	Keybinding string   `toml:"keybinding,omitempty"`
+	Allow      []string `toml:"allow,omitempty"`
 }
 
 // Config is the in-memory representation of config.toml.

@@ -54,12 +54,6 @@ func Bash(input map[string]any) (string, bool) {
 	return string(data), false
 }
 
-// NeedsApproval reports whether the command requires user approval before running.
-// Auto-accept logic (allow list) is deferred — all commands require approval for now.
-func NeedsApproval(_ string) bool {
-	return true
-}
-
 func truncateBashOutput(s string) string {
 	if len(s) <= maxBashOutputBytes {
 		return s

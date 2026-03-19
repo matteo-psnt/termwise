@@ -9,3 +9,10 @@ import _ "embed"
 //
 //go:embed models.yaml
 var ModelsYAML []byte
+
+// AllowlistYAML is the embedded allowlist.yaml file.
+// It contains the built-in set of commands that are auto-approved without
+// user confirmation. Users can extend this via shell.allow in config.toml.
+//
+//go:embed allowlist.yaml
+var AllowlistYAML []byte
