@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -26,12 +27,16 @@ func main() {
 		Long:  "tw — pass a prompt for single-shot mode, or run without arguments to open the agent TUI.",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// --shell-widget is the internal Ctrl+T keybinding path.
-			if sw, _ := cmd.Flags().GetString("shell-widget"); sw != "" {
-				return runner.ShellWidget(context.Background(), sw)
+			// --shell-widget is the legacy Ctrl+T text-transform path (kept for compatibility).
+			if cmd.Flags().Changed("shell-widget") {
+				sw, _ := cmd.Flags().GetString("shell-widget")
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				defer cancel()
+				return runner.ShellWidget(ctx, sw)
 			}
+			prefill, _ := cmd.Flags().GetString("prefill")
 			if len(args) == 0 {
-				return openTUI()
+				return openTUI(prefill)
 			}
 			return runner.SingleShot(context.Background(), strings.Join(args, " "))
 		},
@@ -41,6 +46,8 @@ func main() {
 
 	root.Flags().String("shell-widget", "", "")
 	root.Flags().Lookup("shell-widget").Hidden = true
+	root.Flags().String("prefill", "", "")
+	root.Flags().Lookup("prefill").Hidden = true
 
 	root.AddCommand(initCmd)
 	root.AddCommand(configCmd)
@@ -59,7 +66,7 @@ func main() {
 	// (cobra swallows non-nil errors; RunE errors land in the Execute() return above.)
 }
 
-func openTUI() error {
+func openTUI(prefill string) error {
 	cfgPath, err := config.DefaultConfigPath()
 	if err != nil {
 		return err
@@ -94,5 +101,5 @@ func openTUI() error {
 	if err != nil {
 		return err
 	}
-	return tui.Open(providerName, provider, pc.Model, cfgPath, cfg.Shell.Allow)
+	return tui.Open(providerName, provider, pc.Model, cfgPath, cfg.Shell.Allow, prefill)
 }

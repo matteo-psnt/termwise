@@ -92,9 +92,11 @@ func newModel(
 	r *lipgloss.Renderer,
 	cfgPath string,
 	allowRules []string,
+	prefill string,
 ) Model {
 	ti := textinput.New()
 	ti.Placeholder = ""
+	ti.SetValue(prefill)
 	ti.Focus()
 
 	sp := spinner.New()

@@ -14,7 +14,7 @@ import (
 )
 
 // Open launches the agent TUI. It handles stdin pre-loading and TTY setup.
-func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPath string, allowRules []string) error {
+func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPath string, allowRules []string, prefill string) error {
 	// Read stdin if piped.
 	var stdin string
 	if !tty.IsTerminal(os.Stdin) {
@@ -43,7 +43,7 @@ func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPat
 	r := lipgloss.NewRenderer(os.Stdout)
 
 	system := systemprompt.Agent()
-	m := newModel(providerName, provider, modelID, system, stdin, r, cfgPath, allowRules)
+	m := newModel(providerName, provider, modelID, system, stdin, r, cfgPath, allowRules, prefill)
 
 	p := tea.NewProgram(m, programOpts...)
 	if _, err := p.Run(); err != nil {
