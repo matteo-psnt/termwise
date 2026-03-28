@@ -28,7 +28,6 @@ func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPat
 	// Determine program input. When stdin is piped we need to reopen the TTY
 	// so bubbletea can receive keyboard events.
 	var programOpts []tea.ProgramOption
-	programOpts = append(programOpts, tea.WithAltScreen())
 
 	if !tty.IsTerminal(os.Stdin) {
 		ttyFile, err := os.Open("/dev/tty")

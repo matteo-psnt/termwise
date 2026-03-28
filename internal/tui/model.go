@@ -505,16 +505,24 @@ func (m *Model) refreshViewport() {
 	m.vp.GotoBottom()
 }
 
+// popupHeight is the maximum number of terminal lines the TUI occupies.
+// Inline mode (no alt screen) renders in place, so we cap the height to
+// keep it feeling like a small popup rather than a full-page takeover.
+const popupHeight = 20
+
 // viewportDims calculates viewport dimensions from terminal size.
 func (m Model) viewportDims() (width, height int) {
-	// Outer border: 2 chars wide, 2 chars tall
-	// Inner padding: 1 char each side horizontally
-	// Layout: border-top | viewport | input | divider | footer | border-bottom
-	innerW := m.width - 4  // 2 border + 2 padding
+	// Layout: top border(1) | viewport | input(1) | bottom border(1)
+	// Outer style: 1 border char each side = 2 chars total horizontal chrome.
+	innerW := m.width - 2
 	if innerW < 10 {
 		innerW = 10
 	}
-	innerH := m.height - 2 - 3 // border(2) + input(1) + divider(1) + footer(1)
+	h := popupHeight
+	if m.height > 0 && m.height < h {
+		h = m.height
+	}
+	innerH := h - 3 // top border(1) + input(1) + bottom border(1)
 	if innerH < 3 {
 		innerH = 3
 	}

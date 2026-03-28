@@ -10,44 +10,55 @@ import (
 // View implements tea.Model.
 func (m Model) View() string {
 	if !m.ready {
-		return "Loading..."
+		return "Loading...\n"
 	}
 
-	innerW, _ := m.viewportDims()
+	vpW, _ := m.viewportDims()
 
-	// Conversation viewport.
-	viewportView := m.vp.View()
-
-	// Input / spinner / picker row.
-	inputSection := m.renderInputSection(innerW)
-
-	// Divider.
-	divider := m.styles.Divider.Render(strings.Repeat("─", innerW))
-
-	// Footer.
-	footer := m.renderFooter()
-
-	// Assemble inner content.
+	// Build inner content: conversation + input line.
 	inner := lipgloss.JoinVertical(lipgloss.Left,
-		viewportView,
-		inputSection,
-		divider,
-		footer,
+		m.vp.View(),
+		m.renderInputRow(),
 	)
 
-	// Wrap in rounded border.
-	return m.styles.Outer.
-		Width(m.width - 2).
-		Render(inner)
+	// Wrap with 3-sided border (left │, right │, bottom ╰─╯).
+	// Width is the content width before padding/borders.
+	boxed := m.styles.Outer.Width(vpW).Render(inner)
+
+	// Prepend the custom top border line with title.
+	top := m.renderBoxTop(m.width)
+
+	return lipgloss.JoinVertical(lipgloss.Left, top, boxed)
 }
 
-func (m Model) renderInputSection(innerW int) string {
+// renderBoxTop renders the top border of the box with model and token info:
+//
+//	╭─ termwise ──────────────── claude-haiku · 1,243 tok ─╮
+func (m Model) renderBoxTop(w int) string {
+	left := "─ termwise "
+	tokens := formatTokens(m.inputTokens + m.outputTokens)
+	right := " " + m.modelID + " · " + tokens + " tok ─"
+
+	inner := w - 2 // space for ╭ and ╮
+	leftW := lipgloss.Width(left)
+	rightW := lipgloss.Width(right)
+	fill := inner - leftW - rightW
+	if fill < 1 {
+		fill = 1
+	}
+
+	title := left + strings.Repeat("─", fill) + right
+	return m.styles.Header.Render("╭" + title + "╮")
+}
+
+// renderInputRow renders the bottom input / status line inside the box.
+func (m Model) renderInputRow() string {
 	switch m.state {
 	case stateThinking:
-		return m.styles.Spinner.Render(m.spin.View()) + " thinking..."
+		return " " + m.styles.Spinner.Render(m.spin.View()) + " thinking..."
 
 	case stateApproval:
-		return m.styles.ApprovalHint.Render("  ↵ Approve   a Allow+save   Esc Deny")
+		return m.styles.ApprovalHint.Render(" ↵ Approve   a Allow+save   Esc Deny")
 
 	case stateAskPicker:
 		if m.activePicker != nil {
@@ -56,19 +67,8 @@ func (m Model) renderInputSection(innerW int) string {
 		return ""
 
 	default: // stateIdle
-		return m.styles.InputPrompt.Render("  > ") + m.input.View()
+		return m.styles.InputPrompt.Render(" › ") + m.input.View()
 	}
-}
-
-func (m Model) renderFooter() string {
-	tokens := m.inputTokens + m.outputTokens
-	return m.styles.Footer.Render(
-		fmt.Sprintf("  %s · %s · %s tokens",
-			m.providerName,
-			m.modelID,
-			formatTokens(tokens),
-		),
-	)
 }
 
 func formatTokens(n int) string {
