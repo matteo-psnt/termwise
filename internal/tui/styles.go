@@ -2,6 +2,15 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
+// glamourStyle returns "dark" or "light" based on the renderer's cached
+// background detection, avoiding any additional OSC 11 terminal queries.
+func glamourStyle(r *lipgloss.Renderer) string {
+	if r.HasDarkBackground() {
+		return "dark"
+	}
+	return "light"
+}
+
 // Styles holds all lipgloss styles for the TUI.
 // Built once at model construction from a renderer tied to the output TTY.
 type Styles struct {

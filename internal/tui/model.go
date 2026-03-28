@@ -79,7 +79,8 @@ type Model struct {
 	lastCtrlC time.Time
 
 	// Styles (built once)
-	styles Styles
+	styles       Styles
+	glamourStyle string // "dark" or "light", fixed at construction
 }
 
 // newModel constructs the TUI model.
@@ -95,6 +96,7 @@ func newModel(
 	prefill string,
 ) Model {
 	ti := textinput.New()
+	ti.Prompt = ""
 	ti.Placeholder = ""
 	ti.SetValue(prefill)
 	ti.Focus()
@@ -123,6 +125,7 @@ func newModel(
 		ctx:           ctx,
 		cancel:        cancel,
 		styles:        newStyles(r),
+		glamourStyle:  glamourStyle(r),
 	}
 
 	if stdin != "" {
@@ -497,7 +500,7 @@ func (m Model) chatRequest() ai.ChatRequest {
 
 // refreshViewport re-renders the thread and updates viewport content.
 func (m *Model) refreshViewport() {
-	content := renderThread(m.thread, m.vp.Width, m.styles)
+	content := renderThread(m.thread, m.vp.Width, m.styles, m.glamourStyle)
 	m.vp.SetContent(content)
 	m.vp.GotoBottom()
 }

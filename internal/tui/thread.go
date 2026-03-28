@@ -34,7 +34,7 @@ type ThreadEntry struct {
 const maxDisplayLines = 20
 
 // renderThread renders all thread entries to a string for the viewport.
-func renderThread(entries []ThreadEntry, width int, s Styles) string {
+func renderThread(entries []ThreadEntry, width int, s Styles, glamour string) string {
 	if len(entries) == 0 {
 		return ""
 	}
@@ -43,18 +43,18 @@ func renderThread(entries []ThreadEntry, width int, s Styles) string {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(renderEntry(e, width, s))
+		b.WriteString(renderEntry(e, width, s, glamour))
 	}
 	return b.String()
 }
 
-func renderEntry(e ThreadEntry, width int, s Styles) string {
+func renderEntry(e ThreadEntry, width int, s Styles, glamour string) string {
 	switch e.Kind {
 	case EntryUser:
 		return s.UserPrefix.Render("You: ") + e.Content
 
 	case EntryAssistant:
-		text := renderMarkdown(e.Content)
+		text := renderMarkdown(e.Content, glamour)
 		return s.TWPrefix.Render("tw: ") + text
 
 	case EntryToolCall:
@@ -79,7 +79,7 @@ func renderEntry(e ThreadEntry, width int, s Styles) string {
 		if e.RespondType == "command" {
 			return "  $ " + s.Command.Render(e.Content)
 		}
-		text := renderMarkdown(e.Content)
+		text := renderMarkdown(e.Content, glamour)
 		return s.TWPrefix.Render("tw: ") + text
 
 	case EntryError:
@@ -113,8 +113,8 @@ func renderToolOutput(content string, isErr bool, s Styles) string {
 	return b.String()
 }
 
-func renderMarkdown(content string) string {
-	rendered, err := glamour.Render(content, "auto")
+func renderMarkdown(content string, style string) string {
+	rendered, err := glamour.Render(content, style)
 	if err != nil {
 		return content
 	}

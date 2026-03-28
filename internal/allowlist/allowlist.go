@@ -147,8 +147,19 @@ func NeedsApproval(userRules []string, command string) bool {
 		return true
 	}
 
-	// Shell metacharacters allow chaining and redirection that bypass
-	// flag-level checks entirely — always require approval.
+	// Pure pipelines (| only — no ||, ;, &, etc.) are approved when every
+	// segment individually passes the allowlist.
+	if segs, ok := splitPipeline(command); ok {
+		for _, seg := range segs {
+			if NeedsApproval(userRules, seg) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// All other shell metacharacters allow chaining or redirection that
+	// bypasses flag-level checks — always require approval.
 	if containsShellMetachar(command) {
 		return true
 	}
@@ -174,11 +185,63 @@ func NeedsApproval(userRules []string, command string) bool {
 	return true
 }
 
+// splitPipeline splits command on | if and only if it is a pure pipeline —
+// single pipes only, no || (logical OR) or any other metacharacter.
+// Returns (nil, false) if the command cannot be safely treated as a pipeline.
+func splitPipeline(command string) ([]string, bool) {
+	stripped := stripNullRedirects(command)
+	if !strings.Contains(stripped, "|") {
+		return nil, false
+	}
+	if strings.Contains(stripped, "||") {
+		return nil, false
+	}
+	// Reject any other hard metacharacters.
+	for i, ch := range stripped {
+		switch ch {
+		case ';', '<', '>':
+			return nil, false
+		case '&':
+			return nil, false
+		case '`':
+			return nil, false
+		case '\n', '\r':
+			return nil, false
+		case '$':
+			if i+1 < len(stripped) && stripped[i+1] == '(' {
+				return nil, false
+			}
+		}
+	}
+	var segs []string
+	for _, p := range strings.Split(stripped, "|") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			segs = append(segs, p)
+		}
+	}
+	if len(segs) == 0 {
+		return nil, false
+	}
+	return segs, true
+}
+
+// stripNullRedirects removes harmless >/dev/null redirections before metachar
+// scanning. Patterns like 2>/dev/null, 1>/dev/null, and >/dev/null discard
+// output and pose no risk, so stripping them avoids a false positive on '>'.
+func stripNullRedirects(command string) string {
+	for _, pat := range []string{"2>/dev/null", "1>/dev/null", ">/dev/null"} {
+		command = strings.ReplaceAll(command, pat, "")
+	}
+	return command
+}
+
 // containsShellMetachar reports whether command contains shell control
 // characters that could chain or redirect execution.
 // We intentionally do not attempt to parse quoting — any occurrence of
 // these characters triggers approval regardless of context.
 func containsShellMetachar(command string) bool {
+	command = stripNullRedirects(command)
 	for i, ch := range command {
 		switch ch {
 		case '|', ';', '<', '>':

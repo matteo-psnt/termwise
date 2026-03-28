@@ -39,8 +39,12 @@ func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPat
 		programOpts = append(programOpts, tea.WithInput(ttyFile))
 	}
 
-	// Build lipgloss renderer from stdout so it detects colour support correctly.
+	// bubbletea's init() already pre-queried lipgloss.HasDarkBackground() on
+	// the global renderer before the program started. Read that cached value
+	// and pin it on our custom renderer so AdaptiveColor never sends a second
+	// OSC 11 query (which would leave unread bytes in the tty buffer).
 	r := lipgloss.NewRenderer(os.Stdout)
+	r.SetHasDarkBackground(lipgloss.HasDarkBackground())
 
 	system := systemprompt.Agent()
 	m := newModel(providerName, provider, modelID, system, stdin, r, cfgPath, allowRules, prefill)
