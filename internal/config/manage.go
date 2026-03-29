@@ -3,11 +3,13 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
 // GetValue returns the string value of a config key by dot-path.
 // Supported paths: active_provider, shell.keybinding, tui.show_footer,
-// providers.<name>.<field>.
+// tui.theme, providers.<name>.<field>.
 func GetValue(cfg Config, key string) (string, error) {
 	parts := strings.SplitN(key, ".", 3)
 	switch parts[0] {
@@ -36,6 +38,11 @@ func GetValue(cfg Config, key string) (string, error) {
 				return "true", nil
 			}
 			return "false", nil
+		case "theme":
+			if cfg.TUI.Theme == "" {
+				return theme.DefaultName, nil
+			}
+			return theme.Normalize(cfg.TUI.Theme), nil
 		}
 
 	case "providers":
@@ -48,12 +55,18 @@ func GetValue(cfg Config, key string) (string, error) {
 			return "", fmt.Errorf("provider %q is not configured", name)
 		}
 		switch field {
-		case "auth_method":    return pc.AuthMethod, nil
-		case "env_var":        return pc.EnvVar, nil
-		case "api_key_cmd":    return pc.APIKeyCmd, nil
-		case "keychain_entry": return pc.KeychainEntry, nil
-		case "model":          return pc.Model, nil
-		case "base_url":       return pc.BaseURL, nil
+		case "auth_method":
+			return pc.AuthMethod, nil
+		case "env_var":
+			return pc.EnvVar, nil
+		case "api_key_cmd":
+			return pc.APIKeyCmd, nil
+		case "keychain_entry":
+			return pc.KeychainEntry, nil
+		case "model":
+			return pc.Model, nil
+		case "base_url":
+			return pc.BaseURL, nil
 		}
 	}
 
@@ -87,6 +100,9 @@ func SetValue(cfg *Config, key, value string) error {
 			b := value == "true" || value == "1" || value == "yes"
 			cfg.TUI.ShowFooter = &b
 			return nil
+		case "theme":
+			cfg.TUI.Theme = theme.Normalize(value)
+			return nil
 		}
 
 	case "providers":
@@ -96,12 +112,18 @@ func SetValue(cfg *Config, key, value string) error {
 		name, field := parts[1], parts[2]
 		pc := cfg.Providers[name]
 		switch field {
-		case "auth_method":    pc.AuthMethod = value
-		case "env_var":        pc.EnvVar = value
-		case "api_key_cmd":    pc.APIKeyCmd = value
-		case "keychain_entry": pc.KeychainEntry = value
-		case "model":          pc.Model = value
-		case "base_url":       pc.BaseURL = value
+		case "auth_method":
+			pc.AuthMethod = value
+		case "env_var":
+			pc.EnvVar = value
+		case "api_key_cmd":
+			pc.APIKeyCmd = value
+		case "keychain_entry":
+			pc.KeychainEntry = value
+		case "model":
+			pc.Model = value
+		case "base_url":
+			pc.BaseURL = value
 		default:
 			return fmt.Errorf("unknown provider field %q", field)
 		}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/matteo-psnt/termwise/internal/ai"
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/theme"
 
 	_ "github.com/matteo-psnt/termwise/internal/ai/anthropic"
 	_ "github.com/matteo-psnt/termwise/internal/ai/openaicompat"
@@ -27,12 +28,13 @@ type editorState int
 
 const (
 	editorNormal          editorState = iota
-	editorPickModel                    // inline model picker open
-	editorPickAuth                     // picking auth method for a provider
-	editorEnterAuthValue               // entering auth value (env var / cmd / keychain)
-	editorAuthWorking                  // verifying auth credentials
-	editorEnterKeybinding              // editing shell keybinding
-	editorAddProvider                  // wizard sub-flow
+	editorPickModel                   // inline model picker open
+	editorPickAuth                    // picking auth method for a provider
+	editorPickTheme                   // picking a TUI theme preset
+	editorEnterAuthValue              // entering auth value (env var / cmd / keychain)
+	editorAuthWorking                 // verifying auth credentials
+	editorEnterKeybinding             // editing shell keybinding
+	editorAddProvider                 // wizard sub-flow
 )
 
 type editorRowKind int
@@ -42,6 +44,7 @@ const (
 	rowModel
 	rowAuth
 	rowKeybinding
+	rowTheme
 	rowAddProvider
 	rowSave
 	rowCancel
@@ -97,6 +100,10 @@ type editorModel struct {
 	// Keybinding editing
 	kbInput textinput.Model
 
+	// Theme picker
+	themeCursor int
+	themePrev   string
+
 	// Add provider — embedded wizard
 	addWizard *wizardModel
 
@@ -117,7 +124,7 @@ func newEditorModel(cfgPath string, cfg config.Config, r *lipgloss.Renderer) edi
 	kbInput.CharLimit = 32
 
 	m := editorModel{
-		styles:    newStyles(r),
+		styles:    newStylesForTheme(r, cfg.TUI.Theme),
 		r:         r,
 		spin:      sp,
 		cfgPath:   cfgPath,
@@ -142,6 +149,7 @@ func (m *editorModel) buildRows() {
 	}
 	m.rows = append(m.rows,
 		editorRow{kind: rowKeybinding},
+		editorRow{kind: rowTheme},
 		editorRow{kind: rowAddProvider},
 		editorRow{kind: rowSave},
 		editorRow{kind: rowCancel},
@@ -269,6 +277,8 @@ func (m editorModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleModelPickerKey(msg)
 	case editorPickAuth:
 		return m.handleAuthPickerKey(msg)
+	case editorPickTheme:
+		return m.handleThemePickerKey(msg)
 	case editorEnterAuthValue:
 		return m.handleAuthEnterKey(msg)
 	case editorEnterKeybinding:
@@ -337,8 +347,14 @@ func (m editorModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.kbInput.Focus()
 			m.state = editorEnterKeybinding
 
+		case rowTheme:
+			m.themePrev = m.cfg.TUI.Theme
+			m.themeCursor = themeIndex(m.themePrev)
+			m.applyTheme(theme.All()[m.themeCursor].Name)
+			m.state = editorPickTheme
+
 		case rowAddProvider:
-			wiz := newWizardModel(m.r)
+			wiz := newWizardModel(m.r, theme.Normalize(m.cfg.TUI.Theme))
 			m.addWizard = &wiz
 			m.state = editorAddProvider
 			return m, m.addWizard.Init()
@@ -467,6 +483,32 @@ func (m editorModel) handleAuthPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.editingAuthMethod = selected
 		m.setupAuthEnterValue()
 		m.state = editorEnterAuthValue
+	}
+	return m, nil
+}
+
+func (m editorModel) handleThemePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	palettes := theme.All()
+	switch msg.String() {
+	case "ctrl+c", "q":
+		m.quit = true
+		return m, tea.Quit
+	case "esc", "b":
+		m.applyTheme(m.themePrev)
+		m.state = editorNormal
+	case "up", "k":
+		if m.themeCursor > 0 {
+			m.themeCursor--
+			m.applyTheme(palettes[m.themeCursor].Name)
+		}
+	case "down", "j":
+		if m.themeCursor < len(palettes)-1 {
+			m.themeCursor++
+			m.applyTheme(palettes[m.themeCursor].Name)
+		}
+	case "enter", " ":
+		m.applyTheme(palettes[m.themeCursor].Name)
+		m.state = editorNormal
 	}
 	return m, nil
 }
@@ -699,6 +741,12 @@ func (m editorModel) fetchModelsCmd(providerName string) tea.Cmd {
 // Helpers
 // ---------------------------------------------------------------------------
 
+func (m *editorModel) applyTheme(themeName string) {
+	themeName = theme.Normalize(themeName)
+	m.cfg.TUI.Theme = themeName
+	m.styles = newStylesForTheme(m.r, themeName)
+}
+
 func (m editorModel) sortedProviders() []string {
 	names := make([]string, 0, len(m.cfg.Providers))
 	for name := range m.cfg.Providers {
@@ -711,6 +759,17 @@ func (m editorModel) sortedProviders() []string {
 func indexOf(slice []string, val string) int {
 	for i, s := range slice {
 		if s == val {
+			return i
+		}
+	}
+	return 0
+}
+
+func themeIndex(name string) int {
+	palettes := theme.All()
+	name = theme.Normalize(name)
+	for i, p := range palettes {
+		if p.Name == name {
 			return i
 		}
 	}
@@ -750,6 +809,41 @@ func describeAuth(pc config.ProviderConfig) string {
 	}
 }
 
+func paletteSwatches(r *lipgloss.Renderer, palette theme.Palette) string {
+	colors := []lipgloss.AdaptiveColor{
+		palette.Accent,
+		palette.Success,
+		palette.Error,
+		palette.Border,
+	}
+	var out strings.Builder
+	for _, c := range colors {
+		out.WriteString(r.NewStyle().Foreground(c).Render("●"))
+		out.WriteString(" ")
+	}
+	return strings.TrimSpace(out.String())
+}
+
+func renderThemePreview(r *lipgloss.Renderer, palette theme.Palette) string {
+	accent := r.NewStyle().Foreground(palette.Accent).Bold(true)
+	success := r.NewStyle().Foreground(palette.Success)
+	errorStyle := r.NewStyle().Foreground(palette.Error)
+	muted := r.NewStyle().Foreground(palette.Muted)
+	box := r.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(palette.Border).
+		Padding(0, 1)
+
+	var b strings.Builder
+	b.WriteString(accent.Render("Preview: ") + palette.Label + "\n")
+	b.WriteString("tw: ")
+	b.WriteString(accent.Render("rg \"theme\" internal") + "\n")
+	b.WriteString(success.Render("connected") + "  ")
+	b.WriteString(errorStyle.Render("error") + "  ")
+	b.WriteString(muted.Render("footer · 12,481 tok"))
+	return box.Render(b.String())
+}
+
 // ---------------------------------------------------------------------------
 // View
 // ---------------------------------------------------------------------------
@@ -766,6 +860,8 @@ func (m editorModel) renderInner() string {
 		return m.renderModelPicker()
 	case editorPickAuth:
 		return m.renderAuthPicker()
+	case editorPickTheme:
+		return m.renderThemePicker()
 	case editorEnterAuthValue:
 		return m.renderEnterAuthValue()
 	case editorAuthWorking:
@@ -850,6 +946,15 @@ func (m editorModel) renderNormal() string {
 				b.WriteString(prefix + label + m.styles.Normal.Render(kb) + "\n")
 			}
 
+		case rowTheme:
+			label := "Theme:           "
+			val := theme.Label(m.cfg.TUI.Theme)
+			if focused {
+				b.WriteString(prefix + m.styles.Selected.Render(label+val) + "\n")
+			} else {
+				b.WriteString(prefix + label + m.styles.Normal.Render(val) + "\n")
+			}
+
 		case rowAddProvider:
 			line := "+ Add provider"
 			if focused {
@@ -887,6 +992,8 @@ func (m editorModel) renderNormal() string {
 		b.WriteString(m.styles.Dim.Render("enter edit auth   ↑/↓ move   q quit"))
 	case rowKeybinding:
 		b.WriteString(m.styles.Dim.Render("enter edit   ↑/↓ move   q quit"))
+	case rowTheme:
+		b.WriteString(m.styles.Dim.Render("enter pick theme   ↑/↓ move   q quit"))
 	case rowAddProvider:
 		b.WriteString(m.styles.Dim.Render("enter add provider   ↑/↓ move   q quit"))
 	default:
@@ -943,6 +1050,31 @@ func (m editorModel) renderAuthPicker() string {
 		}
 	}
 	b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back   q quit"))
+	return b.String()
+}
+
+func (m editorModel) renderThemePicker() string {
+	var b strings.Builder
+	palettes := theme.All()
+
+	b.WriteString(m.styles.Title.Render("termwise config") + "\n\n")
+	b.WriteString("Theme palette:\n\n")
+
+	for i, p := range palettes {
+		line := paletteSwatches(m.r, p) + " " + p.Label
+		if p.Name == theme.Normalize(m.cfg.TUI.Theme) {
+			line += " " + m.styles.Dim.Render("(selected)")
+		}
+		if i == m.themeCursor {
+			b.WriteString(m.styles.Selected.Render("▶ ") + line + "\n")
+		} else {
+			b.WriteString("  " + line + "\n")
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString(renderThemePreview(m.r, palettes[m.themeCursor]))
+	b.WriteString("\n\n" + m.styles.Dim.Render("↑/↓ preview   enter select   esc cancel   q quit"))
 	return b.String()
 }
 

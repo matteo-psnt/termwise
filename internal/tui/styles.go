@@ -1,6 +1,9 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+	"github.com/matteo-psnt/termwise/internal/theme"
+)
 
 // glamourStyle returns "dark" or "light" based on the renderer's cached
 // background detection, avoiding any additional OSC 11 terminal queries.
@@ -29,10 +32,10 @@ type Styles struct {
 	InputPrompt  lipgloss.Style
 }
 
-func newStyles(r *lipgloss.Renderer) Styles {
-	accent := lipgloss.AdaptiveColor{Light: "#5B8DD9", Dark: "#7AA2F7"}
-	errCol := lipgloss.AdaptiveColor{Light: "#E06C75", Dark: "#FF5F87"}
-	dim    := lipgloss.AdaptiveColor{Light: "#AAAAAA", Dark: "#555555"}
+func newStyles(r *lipgloss.Renderer, palette theme.Palette) Styles {
+	accent := palette.Accent
+	errCol := palette.Error
+	dim := palette.Muted
 
 	return Styles{
 		// 3-sided rounded box: left │, right │, bottom ╰─╯. Top is rendered manually.

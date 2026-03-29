@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
 // Open launches the config TUI.
@@ -15,6 +16,7 @@ import (
 // If a config exists it runs the editor.
 func Open(cfgPath string, cfg config.Config, exists bool) error {
 	r := lipgloss.NewRenderer(os.Stdout)
+	r.SetHasDarkBackground(lipgloss.HasDarkBackground())
 
 	if !exists {
 		return runWizard(cfgPath, r)
@@ -23,7 +25,7 @@ func Open(cfgPath string, cfg config.Config, exists bool) error {
 }
 
 func runWizard(cfgPath string, r *lipgloss.Renderer) error {
-	m := newWizardModel(r)
+	m := newWizardModel(r, theme.DefaultName)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	final, err := p.Run()
 	if err != nil {

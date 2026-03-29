@@ -9,7 +9,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/matteo-psnt/termwise/internal/ai"
+	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/systemprompt"
+	"github.com/matteo-psnt/termwise/internal/theme"
 	"github.com/matteo-psnt/termwise/internal/tty"
 )
 
@@ -45,8 +47,16 @@ func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPat
 	r := lipgloss.NewRenderer(os.Stdout)
 	r.SetHasDarkBackground(lipgloss.HasDarkBackground())
 
+	themeName := theme.DefaultName
+	if cfgPath != "" {
+		cfg, exists, err := config.LoadConfig(cfgPath)
+		if err == nil && exists {
+			themeName = theme.Normalize(cfg.TUI.Theme)
+		}
+	}
+
 	system := systemprompt.Agent()
-	m := newModel(providerName, provider, modelID, system, stdin, r, cfgPath, allowRules, prefill)
+	m := newModel(providerName, provider, modelID, system, stdin, r, cfgPath, allowRules, prefill, themeName)
 
 	p := tea.NewProgram(m, programOpts...)
 	if _, err := p.Run(); err != nil {

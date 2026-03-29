@@ -17,6 +17,7 @@ import (
 	"github.com/matteo-psnt/termwise/internal/allowlist"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/models"
+	"github.com/matteo-psnt/termwise/internal/theme"
 	"github.com/matteo-psnt/termwise/internal/tools"
 )
 
@@ -40,7 +41,7 @@ type Model struct {
 
 	// Allow-list
 	cfgPath    string
-	allowRules []string // user-configured rules from config.Shell.Allow
+	allowRules []string // user-configured rules from config.Tools.Bash.Allow
 
 	// Conversation
 	messages []ai.Message
@@ -95,6 +96,7 @@ func newModel(
 	cfgPath string,
 	allowRules []string,
 	prefill string,
+	themeName string,
 ) Model {
 	ti := textinput.New()
 	ti.Prompt = ""
@@ -125,7 +127,7 @@ func newModel(
 		spin:          sp,
 		ctx:           ctx,
 		cancel:        cancel,
-		styles:        newStyles(r),
+		styles:        newStyles(r, theme.Get(themeName)),
 		glamourStyle:  glamourStyle(r),
 	}
 
@@ -431,7 +433,7 @@ func (m Model) saveAllowRules() {
 	if err != nil {
 		return
 	}
-	cfg.Shell.Allow = m.allowRules
+	cfg.Tools.Bash.Allow = m.allowRules
 	_ = config.SaveConfig(m.cfgPath, cfg)
 }
 

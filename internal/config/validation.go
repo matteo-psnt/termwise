@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
 // knownProviders lists all provider names termwise knows about.
@@ -15,6 +17,13 @@ var knownProviders = []string{
 // Returns a list of human-readable error strings (empty = valid).
 func Validate(cfg Config) []string {
 	var errs []string
+
+	if cfg.TUI.Theme != "" && !theme.IsValid(cfg.TUI.Theme) {
+		errs = append(errs, fmt.Sprintf(
+			"unknown tui.theme %q\n  Valid themes: %s",
+			cfg.TUI.Theme, strings.Join(theme.Names(), ", "),
+		))
+	}
 
 	if cfg.ActiveProvider == "" {
 		errs = append(errs, "active_provider is not set — run `tw config` to set up")

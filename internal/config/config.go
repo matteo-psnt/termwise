@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,9 +15,9 @@ import (
 // ProviderConfig holds per-provider settings as stored in config.toml.
 type ProviderConfig struct {
 	// Auth
-	AuthMethod   string `toml:"auth_method,omitempty"`
-	EnvVar       string `toml:"env_var,omitempty"`
-	APIKeyCmd    string `toml:"api_key_cmd,omitempty"`
+	AuthMethod    string `toml:"auth_method,omitempty"`
+	EnvVar        string `toml:"env_var,omitempty"`
+	APIKeyCmd     string `toml:"api_key_cmd,omitempty"`
 	KeychainEntry string `toml:"keychain_entry,omitempty"`
 
 	// Model and endpoint
@@ -26,13 +27,24 @@ type ProviderConfig struct {
 
 // TUIConfig holds TUI display settings.
 type TUIConfig struct {
-	ShowFooter *bool `toml:"show_footer,omitempty"`
+	ShowFooter *bool  `toml:"show_footer,omitempty"`
+	Theme      string `toml:"theme,omitempty"`
 }
 
 // ShellConfig holds shell integration settings.
 type ShellConfig struct {
-	Keybinding string   `toml:"keybinding,omitempty"`
-	Allow      []string `toml:"allow,omitempty"`
+	Keybinding  string    `toml:"keybinding,omitempty"`
+	LegacyAllow *[]string `toml:"allow,omitempty"`
+}
+
+// BashToolConfig holds configuration for the bash tool in agent mode.
+type BashToolConfig struct {
+	Allow []string `toml:"allow,omitempty"`
+}
+
+// ToolsConfig holds tool-specific configuration.
+type ToolsConfig struct {
+	Bash BashToolConfig `toml:"bash,omitempty"`
 }
 
 // Config is the in-memory representation of config.toml.
@@ -41,6 +53,7 @@ type Config struct {
 	Providers      map[string]ProviderConfig `toml:"providers,omitempty"`
 	TUI            TUIConfig                 `toml:"tui,omitempty"`
 	Shell          ShellConfig               `toml:"shell,omitempty"`
+	Tools          ToolsConfig               `toml:"tools,omitempty"`
 }
 
 // DefaultConfigPath returns ~/.config/termwise/config.toml.
@@ -69,8 +82,16 @@ func LoadConfig(path string) (cfg Config, exists bool, err error) {
 		return Config{}, false, fmt.Errorf("could not read config file: %w", err)
 	}
 
-	if err := toml.Unmarshal(data, &cfg); err != nil {
+	dec := toml.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
 		return Config{}, true, fmt.Errorf("config file is invalid: %w\n  File: %s", err, path)
+	}
+	if cfg.Shell.LegacyAllow != nil {
+		return Config{}, true, fmt.Errorf(
+			"config file is invalid: [shell].allow has moved to [tools.bash].allow\n  File: %s",
+			path,
+		)
 	}
 
 	return cfg, true, nil
@@ -83,6 +104,9 @@ func SaveConfig(path string, cfg Config) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("could not create config directory: %w", err)
 	}
+
+	// Deprecated keys should never be written back out.
+	cfg.Shell.LegacyAllow = nil
 
 	data, err := toml.Marshal(cfg)
 	if err != nil {

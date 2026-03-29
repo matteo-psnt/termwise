@@ -1,6 +1,9 @@
 package configtui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+	"github.com/matteo-psnt/termwise/internal/theme"
+)
 
 type configStyles struct {
 	Outer    lipgloss.Style
@@ -15,10 +18,15 @@ type configStyles struct {
 }
 
 func newStyles(r *lipgloss.Renderer) configStyles {
-	accent := lipgloss.AdaptiveColor{Light: "#5B8DD9", Dark: "#7AA2F7"}
-	green  := lipgloss.AdaptiveColor{Light: "#27AE60", Dark: "#98C379"}
-	red    := lipgloss.AdaptiveColor{Light: "#E06C75", Dark: "#FF5F87"}
-	border := lipgloss.AdaptiveColor{Light: "#888888", Dark: "#555555"}
+	return newStylesForTheme(r, theme.DefaultName)
+}
+
+func newStylesForTheme(r *lipgloss.Renderer, themeName string) configStyles {
+	palette := theme.Get(themeName)
+	accent := palette.Accent
+	green := palette.Success
+	red := palette.Error
+	border := palette.Border
 
 	return configStyles{
 		Outer:    r.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1),

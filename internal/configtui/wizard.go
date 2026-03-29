@@ -118,7 +118,7 @@ type wizardModel struct {
 	errBack wizardStep
 }
 
-func newWizardModel(r *lipgloss.Renderer) wizardModel {
+func newWizardModel(r *lipgloss.Renderer, themeName string) wizardModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
@@ -126,7 +126,7 @@ func newWizardModel(r *lipgloss.Renderer) wizardModel {
 	ti.CharLimit = 256
 
 	return wizardModel{
-		styles: newStyles(r),
+		styles: newStylesForTheme(r, themeName),
 		spin:   sp,
 		input:  ti,
 		step:   wizPickProvider,

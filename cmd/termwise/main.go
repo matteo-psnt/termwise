@@ -101,5 +101,5 @@ func openTUI(prefill string) error {
 	if err != nil {
 		return err
 	}
-	return tui.Open(providerName, provider, pc.Model, cfgPath, cfg.Shell.Allow, prefill)
+	return tui.Open(providerName, provider, pc.Model, cfgPath, cfg.Tools.Bash.Allow, prefill)
 }
