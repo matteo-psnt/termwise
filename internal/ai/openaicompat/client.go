@@ -127,7 +127,7 @@ func mapAPIErr(err *openai.Error) *ai.ProviderError {
 	switch err.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return ai.NewProviderErr(ai.ErrAuth,
-			"API key invalid or expired. Run `tw config` to update.", err)
+			"API key invalid or expired.", err)
 	case http.StatusTooManyRequests:
 		return ai.NewProviderErr(ai.ErrRateLimit,
 			"Rate limited. Try again in a moment.", err)
@@ -136,7 +136,7 @@ func mapAPIErr(err *openai.Error) *ai.ProviderError {
 			"Request timed out.", err)
 	case http.StatusNotFound:
 		return ai.NewProviderErr(ai.ErrModelNotFound,
-			"Model not found. Run `tw config` to change.", err)
+			"Model not found.", err)
 	case http.StatusBadRequest:
 		if strings.Contains(body, "too large") || strings.Contains(body, "too long") {
 			return ai.NewProviderErr(ai.ErrInputTooLarge,

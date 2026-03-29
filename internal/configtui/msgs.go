@@ -20,3 +20,10 @@ type editorConnMsg struct {
 	ok  bool
 	err error
 }
+
+// editorAuthMsg is returned when background auth verification completes in the editor.
+type editorAuthMsg struct {
+	providerName string
+	ok           bool
+	err          error
+}

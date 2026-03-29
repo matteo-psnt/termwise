@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -176,7 +177,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agent.ResponseMsg:
 		if msg.Err != nil {
 			m.state = stateIdle
-			m.thread = append(m.thread, ThreadEntry{Kind: EntryError, Content: msg.Err.Error()})
+			m.thread = append(m.thread, ThreadEntry{Kind: EntryError, Content: providerErrMsg(msg.Err)})
 			m.refreshViewport()
 			return m, nil
 		}
@@ -576,6 +577,21 @@ func trimContext(messages []ai.Message, contextWindow int) []ai.Message {
 	}
 
 	return out
+}
+
+// providerErrMsg returns the error string with contextual advice appended for
+// known recoverable error kinds (auth failure, model not found).
+func providerErrMsg(err error) string {
+	var pe *ai.ProviderError
+	if errors.As(err, &pe) {
+		switch pe.Kind {
+		case ai.ErrAuth:
+			return pe.Reason + " Run `tw config` to update your key."
+		case ai.ErrModelNotFound:
+			return pe.Reason + " Run `tw config` to change the model."
+		}
+	}
+	return err.Error()
 }
 
 // toolDetail returns the display string for a tool call (command or path).

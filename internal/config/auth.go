@@ -9,6 +9,16 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
+// DefaultKeychainEntry returns the keychain entry name used for a provider.
+func DefaultKeychainEntry(provider string) string {
+	return "termwise-" + provider
+}
+
+// StoreKeychain writes an API key into the macOS Keychain under the termwise service.
+func StoreKeychain(provider, apiKey string) error {
+	return keyring.Set("termwise", DefaultKeychainEntry(provider), apiKey)
+}
+
 // ResolvedAuth holds the resolved API key and the base URL (if any) for a provider.
 type ResolvedAuth struct {
 	APIKey  string

@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -56,8 +57,8 @@ var authMethods = []struct {
 	label string
 }{
 	{"env", "Environment variable"},
-	{"cmd", "Shell command"},
 	{"keychain", "macOS Keychain"},
+	{"cmd", "Shell command"},
 }
 
 // defaultEnvVar returns the conventional env var for a provider (empty for ollama).
@@ -107,6 +108,10 @@ type wizardModel struct {
 
 	// final result — set when saved
 	Result *config.Config
+
+	// done is set when the wizard exits (quit or completed) so that an
+	// embedding editor model can detect the exit without inspecting tea.Cmd.
+	done bool
 
 	// error display
 	errMsg  string
@@ -185,6 +190,7 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case wizPickProvider:
 		switch msg.String() {
 		case "q", "ctrl+c":
+			m.done = true
 			return m, tea.Quit
 		case "up", "k":
 			if m.cursor > 0 {
@@ -215,6 +221,7 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case wizPickAuth:
 		switch msg.String() {
 		case "q", "ctrl+c":
+			m.done = true
 			return m, tea.Quit
 		case "b", "esc":
 			m.cursor = 0
@@ -237,6 +244,7 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case wizEnterValue:
 		switch msg.String() {
 		case "ctrl+c":
+			m.done = true
 			return m, tea.Quit
 		case "esc":
 			m.input.Blur()
@@ -247,6 +255,10 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.step = wizPickAuth
 			}
 		case "enter":
+			if strings.TrimSpace(m.input.Value()) == "" && m.enterFallback == "" {
+				// Don't submit — leave cursor in the field.
+				return m, nil
+			}
 			m.input.Blur()
 			m.step = wizWorking
 			return m, tea.Batch(m.spin.Tick, m.fetchModelsCmd())
@@ -259,6 +271,7 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case wizPickModel:
 		switch msg.String() {
 		case "q", "ctrl+c":
+			m.done = true
 			return m, tea.Quit
 		case "b", "esc":
 			m.cursor = 0
@@ -284,11 +297,13 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case wizDone:
+		m.done = true
 		return m, tea.Quit
 
 	case wizErr:
 		switch msg.String() {
 		case "q", "ctrl+c":
+			m.done = true
 			return m, tea.Quit
 		case "b", "esc":
 			m.cursor = 0
@@ -317,10 +332,11 @@ func (m *wizardModel) setupEnterValue() {
 		m.enterFallback = ""
 		m.input.Placeholder = "op read op://vault/item/field"
 	case "keychain":
-		m.enterLabel = "Keychain entry name"
-		m.enterHint = "entry name in macOS Keychain (service: termwise)"
+		m.enterLabel = "API key"
+		m.enterHint = "will be stored securely in macOS Keychain"
 		m.enterFallback = ""
-		m.input.Placeholder = "termwise-" + m.provider
+		m.input.EchoMode = textinput.EchoPassword
+		m.input.Placeholder = "sk-..."
 	}
 	m.input.SetValue("")
 	m.input.Focus()
@@ -353,7 +369,11 @@ func (m wizardModel) fetchModelsCmd() tea.Cmd {
 		case authMethod == "cmd":
 			pc.APIKeyCmd = val
 		case authMethod == "keychain":
-			pc.KeychainEntry = val
+			// val is the raw API key — store it in the keychain.
+			if err := config.StoreKeychain(provider, val); err != nil {
+				return wizModelsMsg{err: fmt.Errorf("keychain write: %w", err)}
+			}
+			pc.KeychainEntry = config.DefaultKeychainEntry(provider)
 		}
 
 		auth, err := config.ResolveAuth(provider, pc)
@@ -409,7 +429,7 @@ func (m *wizardModel) saveConfig() error {
 	case m.authMethod == "cmd":
 		pc.APIKeyCmd = val
 	case m.authMethod == "keychain":
-		pc.KeychainEntry = val
+		pc.KeychainEntry = config.DefaultKeychainEntry(m.provider)
 	}
 
 	cfg := config.Config{
