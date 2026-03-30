@@ -121,3 +121,12 @@ func TestSetAndGetThemeValue(t *testing.T) {
 		t.Fatalf("expected normalized theme name, got %q", got)
 	}
 }
+
+func TestSetValueRejectsInvalidBoolean(t *testing.T) {
+	var cfg Config
+
+	err := SetValue(&cfg, "tui.show_footer", "maybe")
+	if err == nil {
+		t.Fatalf("expected SetValue to reject invalid boolean")
+	}
+}

@@ -85,33 +85,15 @@ func resolveProvider() (ai.AgentProvider, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	cfg, exists, err := config.LoadConfig(cfgPath)
+	cfg, err := config.LoadRuntimeConfig(cfgPath)
 	if err != nil {
-		return nil, "", err
-	}
-	if !exists {
-		var ok bool
-		cfg, ok = config.ZeroConfigDefaults()
-		if !ok {
-			return nil, "", fmt.Errorf("no configuration found — run `tw config` to set up")
-		}
-	}
-	if err := config.ValidateForRuntime(cfg); err != nil {
 		return nil, "", err
 	}
 	providerName, pc, err := cfg.ActiveProviderConfig()
 	if err != nil {
 		return nil, "", err
 	}
-	auth, err := config.ResolveAuth(providerName, pc)
-	if err != nil {
-		return nil, "", err
-	}
-	provider, err := ai.GetProvider(providerName, ai.ProviderConfig{
-		APIKey:  auth.APIKey,
-		Model:   pc.Model,
-		BaseURL: auth.BaseURL,
-	})
+	provider, err := config.NewAgentProvider(providerName, pc)
 	if err != nil {
 		return nil, "", err
 	}

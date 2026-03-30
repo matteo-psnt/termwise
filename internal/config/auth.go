@@ -52,7 +52,7 @@ func resolveKey(name string, pc ProviderConfig) (string, error) {
 	case "env":
 		envVar := pc.EnvVar
 		if envVar == "" {
-			envVar = defaultEnvVar(name)
+			envVar = DefaultEnvVar(name)
 		}
 		if envVar == "" {
 			// Provider has no known env var (e.g. ollama needs no key).
@@ -98,35 +98,5 @@ func resolveKey(name string, pc ProviderConfig) (string, error) {
 			"unknown auth_method %q in [providers.%s]\n  Valid methods: env, cmd, keychain",
 			method, name,
 		)
-	}
-}
-
-// defaultEnvVar returns the conventional env var name for a known provider.
-func defaultEnvVar(provider string) string {
-	switch provider {
-	case "anthropic":
-		return "ANTHROPIC_API_KEY"
-	case "openai":
-		return "OPENAI_API_KEY"
-	case "groq":
-		return "GROQ_API_KEY"
-	case "deepseek":
-		return "DEEPSEEK_API_KEY"
-	case "mistral":
-		return "MISTRAL_API_KEY"
-	default:
-		return ""
-	}
-}
-
-// fallbackEnvVar returns the env var to check as a last resort if configured auth fails.
-func fallbackEnvVar(provider string) string {
-	switch provider {
-	case "anthropic":
-		return "ANTHROPIC_API_KEY"
-	case "openai":
-		return "OPENAI_API_KEY"
-	default:
-		return ""
 	}
 }

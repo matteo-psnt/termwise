@@ -40,18 +40,6 @@ const (
 // Data tables
 // ---------------------------------------------------------------------------
 
-var knownProviders = []struct {
-	id    string
-	label string
-}{
-	{"anthropic", "Anthropic"},
-	{"openai", "OpenAI"},
-	{"groq", "Groq"},
-	{"deepseek", "DeepSeek"},
-	{"mistral", "Mistral"},
-	{"ollama", "Ollama (local)"},
-}
-
 var authMethods = []struct {
 	id    string
 	label string
@@ -59,24 +47,6 @@ var authMethods = []struct {
 	{"env", "Environment variable"},
 	{"keychain", "macOS Keychain"},
 	{"cmd", "Shell command"},
-}
-
-// defaultEnvVar returns the conventional env var for a provider (empty for ollama).
-func defaultEnvVar(provider string) string {
-	switch provider {
-	case "anthropic":
-		return "ANTHROPIC_API_KEY"
-	case "openai":
-		return "OPENAI_API_KEY"
-	case "groq":
-		return "GROQ_API_KEY"
-	case "deepseek":
-		return "DEEPSEEK_API_KEY"
-	case "mistral":
-		return "MISTRAL_API_KEY"
-	default:
-		return ""
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +158,7 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.step {
 
 	case wizPickProvider:
+		providers := config.ProviderInfos()
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.done = true
@@ -197,19 +168,19 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor < len(knownProviders)-1 {
+			if m.cursor < len(providers)-1 {
 				m.cursor++
 			}
 		case "enter", " ":
-			m.provider = knownProviders[m.cursor].id
+			m.provider = providers[m.cursor].Name
 			m.cursor = 0
 			if m.provider == "ollama" {
 				// No API key needed — ask for base URL instead.
 				m.authMethod = "env"
 				m.enterLabel = "Ollama base URL"
-				m.enterHint = "leave blank for default (http://localhost:11434)"
-				m.enterFallback = "http://localhost:11434"
-				m.input.Placeholder = "http://localhost:11434"
+				m.enterHint = "leave blank for default (" + defaultOllamaBaseURL + ")"
+				m.enterFallback = defaultOllamaBaseURL
+				m.input.Placeholder = defaultOllamaBaseURL
 				m.input.SetValue("")
 				m.input.Focus()
 				m.step = wizEnterValue
@@ -319,9 +290,11 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // setupEnterValue configures the textinput for the current auth method.
 func (m *wizardModel) setupEnterValue() {
+	m.input.EchoMode = textinput.EchoNormal
+
 	switch m.authMethod {
 	case "env":
-		defVar := defaultEnvVar(m.provider)
+		defVar := config.DefaultEnvVar(m.provider)
 		m.enterLabel = "Environment variable name"
 		m.enterHint = "the env var that holds your API key"
 		m.enterFallback = defVar
@@ -355,47 +328,22 @@ func (m wizardModel) fetchModelsCmd() tea.Cmd {
 			val = fallback
 		}
 
-		pc := config.ProviderConfig{AuthMethod: authMethod}
-		var baseURL string
-
-		switch {
-		case provider == "ollama":
-			if val != "http://localhost:11434" {
-				baseURL = val
-			}
-			pc.AuthMethod = "env"
-		case authMethod == "env":
-			pc.EnvVar = val
-		case authMethod == "cmd":
-			pc.APIKeyCmd = val
-		case authMethod == "keychain":
+		pc := buildProviderConfigFromAuthInput(provider, authMethod, val, fallback)
+		if authMethod == "keychain" {
 			// val is the raw API key — store it in the keychain.
 			if err := config.StoreKeychain(provider, val); err != nil {
 				return wizModelsMsg{err: fmt.Errorf("keychain write: %w", err)}
 			}
-			pc.KeychainEntry = config.DefaultKeychainEntry(provider)
-		}
-
-		auth, err := config.ResolveAuth(provider, pc)
-		if err != nil {
-			return wizModelsMsg{err: fmt.Errorf("auth: %w", err)}
-		}
-		if baseURL != "" {
-			auth.BaseURL = baseURL
-		}
-
-		p, err := ai.GetProvider(provider, ai.ProviderConfig{
-			APIKey:  auth.APIKey,
-			BaseURL: auth.BaseURL,
-		})
-		if err != nil {
-			return wizModelsMsg{err: fmt.Errorf("provider: %w", err)}
+			pc = config.ProviderConfig{
+				AuthMethod:    "keychain",
+				KeychainEntry: config.DefaultKeychainEntry(provider),
+			}
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
-		models, err := p.ListModels(ctx)
+		models, err := config.ListProviderModels(ctx, provider, pc)
 		if err != nil {
 			return wizModelsMsg{err: fmt.Errorf("listing models: %w", err)}
 		}
@@ -413,23 +361,14 @@ func (m *wizardModel) saveConfig() error {
 		val = m.enterFallback
 	}
 
-	pc := config.ProviderConfig{
-		AuthMethod: m.authMethod,
-		Model:      m.modelID,
-	}
-
-	switch {
-	case m.provider == "ollama":
-		pc.AuthMethod = "env"
-		if val != "http://localhost:11434" && val != "" {
-			pc.BaseURL = val
+	pc := buildProviderConfigFromAuthInput(m.provider, m.authMethod, val, m.enterFallback)
+	pc.Model = m.modelID
+	if m.authMethod == "keychain" {
+		pc = config.ProviderConfig{
+			AuthMethod:    "keychain",
+			KeychainEntry: config.DefaultKeychainEntry(m.provider),
+			Model:         m.modelID,
 		}
-	case m.authMethod == "env":
-		pc.EnvVar = val
-	case m.authMethod == "cmd":
-		pc.APIKeyCmd = val
-	case m.authMethod == "keychain":
-		pc.KeychainEntry = config.DefaultKeychainEntry(m.provider)
 	}
 
 	cfg := config.Config{
@@ -459,12 +398,13 @@ func (m wizardModel) renderInner() string {
 	switch m.step {
 
 	case wizPickProvider:
+		providers := config.ProviderInfos()
 		b.WriteString("Choose a provider:\n\n")
-		for i, p := range knownProviders {
+		for i, p := range providers {
 			if i == m.cursor {
-				b.WriteString(m.styles.Selected.Render("▶ "+p.label) + "\n")
+				b.WriteString(m.styles.Selected.Render("▶ "+p.Label) + "\n")
 			} else {
-				b.WriteString(m.styles.Normal.Render("  "+p.label) + "\n")
+				b.WriteString(m.styles.Normal.Render("  "+p.Label) + "\n")
 			}
 		}
 		b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   q quit"))

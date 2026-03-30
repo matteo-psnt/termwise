@@ -7,11 +7,6 @@ import (
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
-// knownProviders lists all provider names termwise knows about.
-var knownProviders = []string{
-	"anthropic", "openai", "ollama", "groq", "deepseek", "mistral",
-}
-
 // Validate performs structural validation of the config.
 // It does not make any network calls.
 // Returns a list of human-readable error strings (empty = valid).
@@ -33,7 +28,7 @@ func Validate(cfg Config) []string {
 	if !isKnownProvider(cfg.ActiveProvider) {
 		errs = append(errs, fmt.Sprintf(
 			"unknown provider %q\n  Supported providers: %s",
-			cfg.ActiveProvider, strings.Join(knownProviders, ", "),
+			cfg.ActiveProvider, strings.Join(ProviderNames(), ", "),
 		))
 	}
 
@@ -76,15 +71,6 @@ func validateProviderConfig(name string, pc ProviderConfig) []string {
 	}
 
 	return errs
-}
-
-func isKnownProvider(name string) bool {
-	for _, p := range knownProviders {
-		if p == name {
-			return true
-		}
-	}
-	return false
 }
 
 // ValidateForRuntime is a convenience wrapper that returns a single combined error

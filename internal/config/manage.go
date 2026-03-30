@@ -2,10 +2,29 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
+
+var providerFieldGetters = map[string]func(ProviderConfig) string{
+	"auth_method":    func(pc ProviderConfig) string { return pc.AuthMethod },
+	"env_var":        func(pc ProviderConfig) string { return pc.EnvVar },
+	"api_key_cmd":    func(pc ProviderConfig) string { return pc.APIKeyCmd },
+	"keychain_entry": func(pc ProviderConfig) string { return pc.KeychainEntry },
+	"model":          func(pc ProviderConfig) string { return pc.Model },
+	"base_url":       func(pc ProviderConfig) string { return pc.BaseURL },
+}
+
+var providerFieldSetters = map[string]func(*ProviderConfig, string){
+	"auth_method":    func(pc *ProviderConfig, value string) { pc.AuthMethod = value },
+	"env_var":        func(pc *ProviderConfig, value string) { pc.EnvVar = value },
+	"api_key_cmd":    func(pc *ProviderConfig, value string) { pc.APIKeyCmd = value },
+	"keychain_entry": func(pc *ProviderConfig, value string) { pc.KeychainEntry = value },
+	"model":          func(pc *ProviderConfig, value string) { pc.Model = value },
+	"base_url":       func(pc *ProviderConfig, value string) { pc.BaseURL = value },
+}
 
 // GetValue returns the string value of a config key by dot-path.
 // Supported paths: active_provider, shell.keybinding, tui.show_footer,
@@ -54,20 +73,11 @@ func GetValue(cfg Config, key string) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("provider %q is not configured", name)
 		}
-		switch field {
-		case "auth_method":
-			return pc.AuthMethod, nil
-		case "env_var":
-			return pc.EnvVar, nil
-		case "api_key_cmd":
-			return pc.APIKeyCmd, nil
-		case "keychain_entry":
-			return pc.KeychainEntry, nil
-		case "model":
-			return pc.Model, nil
-		case "base_url":
-			return pc.BaseURL, nil
+		getter, ok := providerFieldGetters[field]
+		if !ok {
+			return "", fmt.Errorf("unknown provider field %q", field)
 		}
+		return getter(pc), nil
 	}
 
 	return "", fmt.Errorf("unknown config key %q", key)
@@ -97,7 +107,10 @@ func SetValue(cfg *Config, key, value string) error {
 		}
 		switch parts[1] {
 		case "show_footer":
-			b := value == "true" || value == "1" || value == "yes"
+			b, err := parseBoolValue(value)
+			if err != nil {
+				return fmt.Errorf("invalid boolean for %q: %w", key, err)
+			}
 			cfg.TUI.ShowFooter = &b
 			return nil
 		case "theme":
@@ -111,22 +124,11 @@ func SetValue(cfg *Config, key, value string) error {
 		}
 		name, field := parts[1], parts[2]
 		pc := cfg.Providers[name]
-		switch field {
-		case "auth_method":
-			pc.AuthMethod = value
-		case "env_var":
-			pc.EnvVar = value
-		case "api_key_cmd":
-			pc.APIKeyCmd = value
-		case "keychain_entry":
-			pc.KeychainEntry = value
-		case "model":
-			pc.Model = value
-		case "base_url":
-			pc.BaseURL = value
-		default:
+		setter, ok := providerFieldSetters[field]
+		if !ok {
 			return fmt.Errorf("unknown provider field %q", field)
 		}
+		setter(&pc, value)
 		cfg.SetProvider(name, pc)
 		return nil
 	}
@@ -157,4 +159,19 @@ func IsModelKey(key string) (providerName string, ok bool) {
 		return parts[1], true
 	}
 	return "", false
+}
+
+func parseBoolValue(value string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "yes":
+		return true, nil
+	case "no":
+		return false, nil
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, err
+	}
+	return parsed, nil
 }

@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"sort"
 )
 
 // ----------------------------------------------------------------------------
@@ -76,7 +77,7 @@ type ChatRequest struct {
 
 // ChatResponse is the output of AgentProvider.Chat.
 type ChatResponse struct {
-	Content      string     // bare text if model responded without tool calls
+	Content      string // bare text if model responded without tool calls
 	ToolCalls    []ToolCall
 	StopReason   string // "end_turn" or "tool_use"
 	InputTokens  int
@@ -144,6 +145,7 @@ func registeredNames() []string {
 	for k := range registry {
 		names = append(names, k)
 	}
+	sort.Strings(names)
 	return names
 }
 

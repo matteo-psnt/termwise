@@ -14,7 +14,6 @@ import (
 	_ "github.com/matteo-psnt/termwise/internal/ai/anthropic"
 	_ "github.com/matteo-psnt/termwise/internal/ai/openaicompat"
 
-	"github.com/matteo-psnt/termwise/internal/ai"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/runner"
 	"github.com/matteo-psnt/termwise/internal/tui"
@@ -71,33 +70,15 @@ func openTUI(prefill string) error {
 	if err != nil {
 		return err
 	}
-	cfg, exists, err := config.LoadConfig(cfgPath)
+	cfg, err := config.LoadRuntimeConfig(cfgPath)
 	if err != nil {
-		return err
-	}
-	if !exists {
-		var ok bool
-		cfg, ok = config.ZeroConfigDefaults()
-		if !ok {
-			return fmt.Errorf("no configuration found — run `tw config` to set up")
-		}
-	}
-	if err := config.ValidateForRuntime(cfg); err != nil {
 		return err
 	}
 	providerName, pc, err := cfg.ActiveProviderConfig()
 	if err != nil {
 		return err
 	}
-	auth, err := config.ResolveAuth(providerName, pc)
-	if err != nil {
-		return err
-	}
-	provider, err := ai.GetProvider(providerName, ai.ProviderConfig{
-		APIKey:  auth.APIKey,
-		Model:   pc.Model,
-		BaseURL: auth.BaseURL,
-	})
+	provider, err := config.NewAgentProvider(providerName, pc)
 	if err != nil {
 		return err
 	}

@@ -250,15 +250,13 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				KeychainEntry: config.DefaultKeychainEntry(m.editingAuthProvider),
 			}
 		} else {
-			pc = buildPCFromAuthInput(m.editingAuthProvider, m.editingAuthMethod, m.authInput.Value(), m.authInputFallback)
+			pc = buildProviderConfigFromAuthInput(m.editingAuthProvider, m.editingAuthMethod, m.authInput.Value(), m.authInputFallback)
 		}
 		existing := m.cfg.Providers[m.editingAuthProvider]
 		pc.Model = existing.Model
 		m.cfg.SetProvider(m.editingAuthProvider, pc)
 		m.state = editorNormal
-		m.connChecked = false
-		m.connOK = false
-		m.connErr = ""
+		m.resetConnectivity()
 		return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
 
 	case tea.KeyMsg:
@@ -305,22 +303,19 @@ func (m editorModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch row.kind {
 
 		case rowActiveProvider:
-			providers := m.sortedProviders()
-			if len(providers) == 0 {
-				return m, nil
-			}
-			idx := indexOf(providers, m.cfg.ActiveProvider)
-			m.cfg.ActiveProvider = providers[(idx+1)%len(providers)]
-			m.connChecked = false
-			m.connOK = false
-			m.connErr = ""
-			return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
+			return m.cycleActiveProvider(1)
 
 		case rowModel:
 			return m.openModelPicker(row.provider)
 
 		case rowAuth:
 			m.editingAuthProvider = row.provider
+			if row.provider == "ollama" {
+				m.editingAuthMethod = "env"
+				m.setupAuthEnterValue()
+				m.state = editorEnterAuthValue
+				return m, nil
+			}
 			pc := m.cfg.Providers[row.provider]
 			cur := pc.AuthMethod
 			if cur == "" {
@@ -367,30 +362,12 @@ func (m editorModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "left", "h":
 		if row := m.rows[m.cursor]; row.kind == rowActiveProvider {
-			providers := m.sortedProviders()
-			if len(providers) == 0 {
-				return m, nil
-			}
-			idx := indexOf(providers, m.cfg.ActiveProvider)
-			m.cfg.ActiveProvider = providers[(idx-1+len(providers))%len(providers)]
-			m.connChecked = false
-			m.connOK = false
-			m.connErr = ""
-			return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
+			return m.cycleActiveProvider(-1)
 		}
 
 	case "right", "l":
 		if row := m.rows[m.cursor]; row.kind == rowActiveProvider {
-			providers := m.sortedProviders()
-			if len(providers) == 0 {
-				return m, nil
-			}
-			idx := indexOf(providers, m.cfg.ActiveProvider)
-			m.cfg.ActiveProvider = providers[(idx+1)%len(providers)]
-			m.connChecked = false
-			m.connOK = false
-			m.connErr = ""
-			return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
+			return m.cycleActiveProvider(1)
 		}
 	}
 
@@ -588,9 +565,20 @@ func (m *editorModel) setupAuthEnterValue() {
 
 	m.authInput.EchoMode = textinput.EchoNormal // reset; keychain overrides below
 
+	if provider == "ollama" {
+		m.authInputLabel = "Ollama base URL"
+		m.authInputHint = "leave blank for default (http://localhost:11434)"
+		m.authInputFallback = defaultOllamaBaseURL
+		m.authInput.Placeholder = defaultOllamaBaseURL
+		m.authInput.SetValue(pc.BaseURL)
+		m.authErr = ""
+		m.authInput.Focus()
+		return
+	}
+
 	switch method {
 	case "env":
-		def := defaultEnvVar(provider)
+		def := config.DefaultEnvVar(provider)
 		m.authInputLabel = "Environment variable name"
 		m.authInputHint = "the env var that holds your API key"
 		m.authInputFallback = def
@@ -633,50 +621,15 @@ func (m editorModel) verifyAuthCmd() tea.Cmd {
 				KeychainEntry: config.DefaultKeychainEntry(provider),
 			}
 		} else {
-			pc = buildPCFromAuthInput(provider, method, inputVal, fallback)
-		}
-		auth, err := config.ResolveAuth(provider, pc)
-		if err != nil {
-			return editorAuthMsg{providerName: provider, ok: false, err: err}
-		}
-		p, err := ai.GetProvider(provider, ai.ProviderConfig{
-			APIKey:  auth.APIKey,
-			BaseURL: auth.BaseURL,
-		})
-		if err != nil {
-			return editorAuthMsg{providerName: provider, ok: false, err: err}
+			pc = buildProviderConfigFromAuthInput(provider, method, inputVal, fallback)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_, err = p.ListModels(ctx)
-		if err != nil {
+		if err := config.CheckProviderConnectivity(ctx, provider, pc); err != nil {
 			return editorAuthMsg{providerName: provider, ok: false, err: err}
 		}
 		return editorAuthMsg{providerName: provider, ok: true}
 	}
-}
-
-// buildPCFromAuthInput constructs a ProviderConfig from auth sub-flow state.
-func buildPCFromAuthInput(provider, method, inputVal, fallback string) config.ProviderConfig {
-	val := inputVal
-	if val == "" {
-		val = fallback
-	}
-	pc := config.ProviderConfig{AuthMethod: method}
-	switch {
-	case provider == "ollama":
-		pc.AuthMethod = "env"
-		if val != "" && val != "http://localhost:11434" {
-			pc.BaseURL = val
-		}
-	case method == "env":
-		pc.EnvVar = val
-	case method == "cmd":
-		pc.APIKeyCmd = val
-	case method == "keychain":
-		pc.KeychainEntry = val
-	}
-	return pc
 }
 
 // ---------------------------------------------------------------------------
@@ -692,21 +645,9 @@ func (m editorModel) checkConnectivityCmd() tea.Cmd {
 		}
 	}
 	return func() tea.Msg {
-		auth, err := config.ResolveAuth(providerName, pc)
-		if err != nil {
-			return editorConnMsg{ok: false, err: err}
-		}
-		p, err := ai.GetProvider(providerName, ai.ProviderConfig{
-			APIKey:  auth.APIKey,
-			BaseURL: auth.BaseURL,
-		})
-		if err != nil {
-			return editorConnMsg{ok: false, err: err}
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_, err = p.ListModels(ctx)
-		if err != nil {
+		if err := config.CheckProviderConnectivity(ctx, providerName, pc); err != nil {
 			return editorConnMsg{ok: false, err: err}
 		}
 		return editorConnMsg{ok: true}
@@ -731,20 +672,9 @@ func (m editorModel) fetchModelsCmd(providerName string) tea.Cmd {
 		}
 	}
 	return func() tea.Msg {
-		auth, err := config.ResolveAuth(providerName, pc)
-		if err != nil {
-			return editorModelsMsg{providerName: providerName, err: err}
-		}
-		p, err := ai.GetProvider(providerName, ai.ProviderConfig{
-			APIKey:  auth.APIKey,
-			BaseURL: auth.BaseURL,
-		})
-		if err != nil {
-			return editorModelsMsg{providerName: providerName, err: err}
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		models, err := p.ListModels(ctx)
+		models, err := config.ListProviderModels(ctx, providerName, pc)
 		return editorModelsMsg{providerName: providerName, models: models, err: err}
 	}
 }
@@ -789,7 +719,14 @@ func themeIndex(name string) int {
 }
 
 // describeAuth returns a short human-readable summary of a provider's auth config.
-func describeAuth(pc config.ProviderConfig) string {
+func describeAuth(provider string, pc config.ProviderConfig) string {
+	if provider == "ollama" {
+		if pc.BaseURL == "" {
+			return "base URL · (default)"
+		}
+		return "base URL · " + pc.BaseURL
+	}
+
 	method := pc.AuthMethod
 	if method == "" {
 		method = "env"
@@ -939,7 +876,7 @@ func (m editorModel) renderNormal() string {
 		case rowAuth:
 			pc := m.cfg.Providers[row.provider]
 			label := row.provider + " auth:   "
-			val := describeAuth(pc)
+			val := describeAuth(row.provider, pc)
 			if focused {
 				b.WriteString(prefix + m.styles.Selected.Render(label+val) + "\n")
 			} else {
@@ -1142,4 +1079,21 @@ func (m editorModel) connIndicator() string {
 		return m.styles.Success.Render("●")
 	}
 	return m.styles.Error.Render("●")
+}
+
+func (m *editorModel) resetConnectivity() {
+	m.connChecked = false
+	m.connOK = false
+	m.connErr = ""
+}
+
+func (m editorModel) cycleActiveProvider(step int) (tea.Model, tea.Cmd) {
+	providers := m.sortedProviders()
+	if len(providers) == 0 {
+		return m, nil
+	}
+	idx := indexOf(providers, m.cfg.ActiveProvider)
+	m.cfg.ActiveProvider = providers[(idx+step+len(providers))%len(providers)]
+	m.resetConnectivity()
+	return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
 }

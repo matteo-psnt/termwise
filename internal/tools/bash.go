@@ -51,7 +51,7 @@ func Bash(input map[string]any) (string, bool) {
 		ExitCode: exitCode,
 	}
 	data, _ := json.Marshal(result)
-	return string(data), false
+	return string(data), exitCode != 0
 }
 
 func truncateBashOutput(s string) string {
