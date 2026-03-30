@@ -97,8 +97,9 @@ type editorModel struct {
 	authInputFallback   string
 	authErr             string
 
-	// Keybinding editing
-	kbInput textinput.Model
+	// Keybinding capture (Path 1 — table-based)
+	kbCaptured   string // last captured zsh binding string
+	kbConfirming bool   // true when showing captured key, waiting for confirmation
 
 	// Theme picker
 	themeCursor int
@@ -120,9 +121,6 @@ func newEditorModel(cfgPath string, cfg config.Config, r *lipgloss.Renderer) edi
 	authInput := textinput.New()
 	authInput.CharLimit = 256
 
-	kbInput := textinput.New()
-	kbInput.CharLimit = 32
-
 	m := editorModel{
 		styles:    newStylesForTheme(r, cfg.TUI.Theme),
 		r:         r,
@@ -130,7 +128,6 @@ func newEditorModel(cfgPath string, cfg config.Config, r *lipgloss.Renderer) edi
 		cfgPath:   cfgPath,
 		cfg:       cfg,
 		authInput: authInput,
-		kbInput:   kbInput,
 	}
 	m.buildRows()
 	return m
@@ -339,12 +336,8 @@ func (m editorModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = editorPickAuth
 
 		case rowKeybinding:
-			kb := m.cfg.Shell.Keybinding
-			if kb == "" {
-				kb = "^T"
-			}
-			m.kbInput.SetValue(kb)
-			m.kbInput.Focus()
+			m.kbCaptured = ""
+			m.kbConfirming = false
 			m.state = editorEnterKeybinding
 
 		case rowTheme:
@@ -541,24 +534,43 @@ func (m editorModel) handleAuthEnterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m editorModel) handleKbEnterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.kbConfirming {
+		// Waiting for confirmation after a key was captured.
+		switch msg.String() {
+		case "ctrl+c":
+			m.quit = true
+			return m, tea.Quit
+		case "esc":
+			m.kbCaptured = ""
+			m.kbConfirming = false
+			m.state = editorNormal
+		case "enter":
+			m.cfg.Shell.Keybinding = m.kbCaptured
+			m.kbCaptured = ""
+			m.kbConfirming = false
+			m.state = editorNormal
+		default:
+			// Any other key — try capturing it instead.
+			if binding, ok := keyMsgToZsh(msg); ok {
+				m.kbCaptured = binding
+			}
+		}
+		return m, nil
+	}
+
+	// Waiting for first key press.
 	switch msg.String() {
 	case "ctrl+c":
 		m.quit = true
 		return m, tea.Quit
 	case "esc":
-		m.kbInput.Blur()
-		m.state = editorNormal
-	case "enter":
-		m.kbInput.Blur()
-		val := strings.TrimSpace(m.kbInput.Value())
-		if val != "" {
-			m.cfg.Shell.Keybinding = val
-		}
 		m.state = editorNormal
 	default:
-		var cmd tea.Cmd
-		m.kbInput, cmd = m.kbInput.Update(msg)
-		return m, cmd
+		if binding, ok := keyMsgToZsh(msg); ok {
+			m.kbCaptured = binding
+			m.kbConfirming = true
+		}
+		// Unrecognised keys are silently ignored — prompt stays.
 	}
 	return m, nil
 }
@@ -940,10 +952,11 @@ func (m editorModel) renderNormal() string {
 				kb = "^T"
 			}
 			label := "Keybinding:      "
+			display := zshToLabel(kb)
 			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(label+kb) + "\n")
+				b.WriteString(prefix + m.styles.Selected.Render(label+display) + "\n")
 			} else {
-				b.WriteString(prefix + label + m.styles.Normal.Render(kb) + "\n")
+				b.WriteString(prefix + label + m.styles.Normal.Render(display) + "\n")
 			}
 
 		case rowTheme:
@@ -1104,10 +1117,20 @@ func (m editorModel) renderEnterKeybinding() string {
 	var b strings.Builder
 	b.WriteString(m.styles.Title.Render("termwise config") + "\n\n")
 	b.WriteString("Shell keybinding:\n\n")
-	b.WriteString(m.kbInput.View() + "\n")
-	b.WriteString("\n" + m.styles.Hint.Render("type the binding string, e.g. ^T, ^G, ^X"))
-	b.WriteString("\n" + m.styles.Hint.Render("takes effect in new terminals, or run: eval \"$(termwise init zsh)\""))
-	b.WriteString("\n\n" + m.styles.Dim.Render("enter confirm   esc cancel"))
+
+	if m.kbConfirming {
+		b.WriteString("Captured: " + m.styles.Selected.Render(zshToLabel(m.kbCaptured)) + "\n\n")
+		b.WriteString(m.styles.Hint.Render("takes effect in new terminals, or run: eval \"$(termwise init zsh)\""))
+		b.WriteString("\n\n" + m.styles.Dim.Render("enter confirm   any key to retry   esc cancel"))
+	} else {
+		kb := m.cfg.Shell.Keybinding
+		if kb == "" {
+			kb = "^T"
+		}
+		b.WriteString("Current: " + m.styles.Normal.Render(zshToLabel(kb)) + "\n\n")
+		b.WriteString("Press a key combination...\n")
+		b.WriteString("\n" + m.styles.Dim.Render("esc cancel"))
+	}
 	return b.String()
 }
 

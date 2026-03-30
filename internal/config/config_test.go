@@ -49,7 +49,7 @@ show_footer = true
 	}
 }
 
-func TestLoadConfigRejectsLegacyShellAllow(t *testing.T) {
+func TestLoadConfigMigratesLegacyShellAllow(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	data := `
 active_provider = "anthropic"
@@ -58,18 +58,34 @@ active_provider = "anthropic"
 model = "claude-haiku-4-5-20251001"
 
 [shell]
-allow = []
+allow = ["git diff", "rg"]
 `
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
-	_, _, err := LoadConfig(path)
-	if err == nil {
-		t.Fatalf("expected legacy shell.allow to be rejected")
+	cfg, exists, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig returned error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "[tools.bash].allow") {
-		t.Fatalf("expected migration hint in error, got %v", err)
+	if !exists {
+		t.Fatalf("expected config to exist")
+	}
+	if got := cfg.Tools.Bash.Allow; len(got) != 2 || got[0] != "git diff" || got[1] != "rg" {
+		t.Fatalf("expected migrated allow rules, got %#v", got)
+	}
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("SaveConfig returned error: %v", err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if strings.Contains(string(saved), "allow = [\"git diff\", \"rg\"]") && !strings.Contains(string(saved), "[tools.bash]") {
+		t.Fatalf("expected migrated allow rules to be written under [tools.bash], got %s", saved)
+	}
+	if strings.Contains(string(saved), "[shell]\nallow") {
+		t.Fatalf("expected legacy allow to be removed after save, got %s", saved)
 	}
 }
 

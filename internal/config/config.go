@@ -88,10 +88,10 @@ func LoadConfig(path string) (cfg Config, exists bool, err error) {
 		return Config{}, true, fmt.Errorf("config file is invalid: %w\n  File: %s", err, path)
 	}
 	if cfg.Shell.LegacyAllow != nil {
-		return Config{}, true, fmt.Errorf(
-			"config file is invalid: [shell].allow has moved to [tools.bash].allow\n  File: %s",
-			path,
-		)
+		if len(cfg.Tools.Bash.Allow) == 0 {
+			cfg.Tools.Bash.Allow = append([]string(nil), (*cfg.Shell.LegacyAllow)...)
+		}
+		cfg.Shell.LegacyAllow = nil
 	}
 
 	return cfg, true, nil
