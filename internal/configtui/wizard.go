@@ -3,6 +3,7 @@ package configtui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -54,10 +55,11 @@ var authMethods = []struct {
 // ---------------------------------------------------------------------------
 
 type wizardModel struct {
-	styles configStyles
-	width  int
-	height int
-	spin   spinner.Model
+	styles  configStyles
+	width   int
+	height  int
+	spin    spinner.Model
+	exclude map[string]bool // providers to hide (already configured)
 
 	step   wizardStep
 	cursor int
@@ -101,6 +103,21 @@ func newWizardModel(r *lipgloss.Renderer, themeName string) wizardModel {
 		input:  ti,
 		step:   wizPickProvider,
 	}
+}
+
+// availableProviders returns the provider list with already-configured ones removed.
+func (m wizardModel) availableProviders() []config.ProviderInfo {
+	all := config.ProviderInfos()
+	if len(m.exclude) == 0 {
+		return all
+	}
+	out := all[:0:0]
+	for _, p := range all {
+		if !m.exclude[p.Name] {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------
@@ -158,7 +175,7 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.step {
 
 	case wizPickProvider:
-		providers := config.ProviderInfos()
+		providers := m.availableProviders()
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.done = true
@@ -209,6 +226,11 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.authMethod = authMethods[m.cursor].id
 			m.cursor = 0
 			m.setupEnterValue()
+			if m.authMethod == "env" && os.Getenv(config.DefaultEnvVar(m.provider)) != "" {
+				m.input.Blur()
+				m.step = wizWorking
+				return m, tea.Batch(m.spin.Tick, m.fetchModelsCmd())
+			}
 			m.step = wizEnterValue
 		}
 
@@ -398,7 +420,7 @@ func (m wizardModel) renderInner() string {
 	switch m.step {
 
 	case wizPickProvider:
-		providers := config.ProviderInfos()
+		providers := m.availableProviders()
 		b.WriteString("Choose a provider:\n\n")
 		for i, p := range providers {
 			if i == m.cursor {
@@ -412,10 +434,16 @@ func (m wizardModel) renderInner() string {
 	case wizPickAuth:
 		b.WriteString("Auth method for " + m.styles.Title.Render(m.provider) + ":\n\n")
 		for i, a := range authMethods {
+			detected := ""
+			if a.id == "env" {
+				if defVar := config.DefaultEnvVar(m.provider); defVar != "" && os.Getenv(defVar) != "" {
+					detected = "  " + m.styles.Success.Render("●")
+				}
+			}
 			if i == m.cursor {
-				b.WriteString(m.styles.Selected.Render("▶ "+a.label) + "\n")
+				b.WriteString(m.styles.Selected.Render("▶ "+a.label) + detected + "\n")
 			} else {
-				b.WriteString(m.styles.Normal.Render("  "+a.label) + "\n")
+				b.WriteString(m.styles.Normal.Render("  "+a.label) + detected + "\n")
 			}
 		}
 		b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back   q quit"))

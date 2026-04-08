@@ -28,32 +28,31 @@ type editorState int
 
 const (
 	editorNormal          editorState = iota
-	editorPickModel                   // inline model picker open
-	editorPickAuth                    // picking auth method for a provider
-	editorPickTheme                   // picking a TUI theme preset
-	editorEnterAuthValue              // entering auth value (env var / cmd / keychain)
-	editorAuthWorking                 // verifying auth credentials
-	editorEnterKeybinding             // editing shell keybinding
-	editorAddProvider                 // wizard sub-flow
+	editorPickModel                   // inline model picker
+	editorPickAuth                    // picking auth method
+	editorEnterAuthValue              // text entry for auth value
+	editorAuthWorking                 // verifying credentials
+	editorEnterKeybinding             // key-capture mode
+	editorPickTheme                   // inline theme picker
+	editorAddProvider                 // embedded add-provider wizard
 )
 
 type editorRowKind int
 
 const (
-	rowActiveProvider editorRowKind = iota
-	rowModel
-	rowAuth
-	rowKeybinding
-	rowTheme
-	rowAddProvider
-	rowSave
-	rowCancel
+	rowSectionHeader editorRowKind = iota // non-interactive visual separator
+	rowProvHeader                         // provider name — enter sets active
+	rowProvModel                          // model sub-row — enter opens picker
+	rowProvAuth                           // auth sub-row  — enter opens editor
+	rowAddProvider                        // "+ Add provider"
+	rowKeybinding                         // keybinding setting
+	rowTheme                              // theme setting
 )
 
-// editorRow is one navigable row in the editor.
 type editorRow struct {
 	kind     editorRowKind
-	provider string // for rowModel and rowAuth
+	provider string // set for rowProvHeader / rowProvModel / rowProvAuth
+	label    string // set for rowSectionHeader
 }
 
 // ---------------------------------------------------------------------------
@@ -70,26 +69,26 @@ type editorModel struct {
 	cfgPath string
 	cfg     config.Config
 
-	// Navigation
 	state  editorState
 	rows   []editorRow
 	cursor int
 
-	// Connectivity check (for active provider)
+	// Connectivity check for the active provider.
 	connChecked bool
 	connOK      bool
 	connErr     string
 
-	// Model picker sub-state
+	// Model picker sub-state.
 	pickingProvider string
 	modelList       []ai.Model
 	modelCursor     int
 	modelLoading    bool
 	modelErr        string
 
-	// Auth editing sub-flow
+	// Auth editing sub-flow.
 	editingAuthProvider string
 	editingAuthMethod   string
+	authFromPicker      bool // true when reached via auth picker (esc goes back there)
 	authMethodCursor    int
 	authInput           textinput.Model
 	authInputLabel      string
@@ -97,21 +96,18 @@ type editorModel struct {
 	authInputFallback   string
 	authErr             string
 
-	// Keybinding capture (Path 1 — table-based)
-	kbCaptured   string // last captured zsh binding string
-	kbConfirming bool   // true when showing captured key, waiting for confirmation
+	// Keybinding capture.
+	kbCaptured   string
+	kbConfirming bool
 
-	// Theme picker
+	// Theme picker.
 	themeCursor int
 	themePrev   string
 
-	// Add provider — embedded wizard
+	// Add-provider wizard (embedded).
 	addWizard *wizardModel
 
-	// Exit
-	saved bool
-	quit  bool
-	err   error
+	err error
 }
 
 func newEditorModel(cfgPath string, cfg config.Config, r *lipgloss.Renderer) editorModel {
@@ -133,24 +129,52 @@ func newEditorModel(cfgPath string, cfg config.Config, r *lipgloss.Renderer) edi
 	return m
 }
 
-// buildRows constructs the flat list of navigable rows from cfg.
+// buildRows reconstructs the navigable row list from the current config.
+// Section-header rows are skipped by the cursor.
 func (m *editorModel) buildRows() {
 	m.rows = []editorRow{
-		{kind: rowActiveProvider},
+		{kind: rowSectionHeader, label: "Providers"},
 	}
 	for _, name := range m.sortedProviders() {
 		m.rows = append(m.rows,
-			editorRow{kind: rowModel, provider: name},
-			editorRow{kind: rowAuth, provider: name},
+			editorRow{kind: rowProvHeader, provider: name},
+			editorRow{kind: rowProvModel, provider: name},
+			editorRow{kind: rowProvAuth, provider: name},
 		)
 	}
+	if len(m.cfg.Providers) < len(config.ProviderInfos()) {
+		m.rows = append(m.rows, editorRow{kind: rowAddProvider})
+	}
 	m.rows = append(m.rows,
+		editorRow{kind: rowSectionHeader, label: "Settings"},
 		editorRow{kind: rowKeybinding},
 		editorRow{kind: rowTheme},
-		editorRow{kind: rowAddProvider},
-		editorRow{kind: rowSave},
-		editorRow{kind: rowCancel},
 	)
+	// Ensure the cursor lands on a navigable row.
+	m.snapCursor()
+}
+
+// snapCursor advances the cursor forward until it rests on a navigable row.
+func (m *editorModel) snapCursor() {
+	for m.cursor < len(m.rows) && m.rows[m.cursor].kind == rowSectionHeader {
+		m.cursor++
+	}
+	if m.cursor >= len(m.rows) {
+		m.cursor = len(m.rows) - 1
+	}
+}
+
+// moveCursor moves the cursor by delta steps, skipping section headers.
+func (m editorModel) moveCursor(delta int) editorModel {
+	next := m.cursor + delta
+	for next >= 0 && next < len(m.rows) {
+		if m.rows[next].kind != rowSectionHeader {
+			m.cursor = next
+			return m
+		}
+		next += delta
+	}
+	return m
 }
 
 // ---------------------------------------------------------------------------
@@ -166,27 +190,23 @@ func (m editorModel) Init() tea.Cmd {
 // ---------------------------------------------------------------------------
 
 func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// When the add-provider wizard is active, delegate all messages to it.
+	// The add-provider wizard takes priority.
 	if m.state == editorAddProvider && m.addWizard != nil {
 		newModel, cmd := m.addWizard.Update(msg)
 		newWiz := newModel.(wizardModel)
 		m.addWizard = &newWiz
 
 		if newWiz.Result != nil {
-			// Wizard completed — merge new provider into our config.
 			for name, pc := range newWiz.Result.Providers {
 				m.cfg.SetProvider(name, pc)
 			}
 			m.addWizard = nil
 			m.state = editorNormal
 			m.buildRows()
-			m.connChecked = false
-			m.connOK = false
-			m.connErr = ""
+			m.resetConnectivity()
 			return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
 		}
 		if newWiz.done {
-			// User quit the wizard without completing.
 			m.addWizard = nil
 			m.state = editorNormal
 			return m, nil
@@ -195,7 +215,6 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
-
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -242,7 +261,6 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = editorEnterAuthValue
 			return m, nil
 		}
-		// Success — build updated ProviderConfig preserving model.
 		var pc config.ProviderConfig
 		if m.editingAuthMethod == "keychain" {
 			pc = config.ProviderConfig{
@@ -250,7 +268,10 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				KeychainEntry: config.DefaultKeychainEntry(m.editingAuthProvider),
 			}
 		} else {
-			pc = buildProviderConfigFromAuthInput(m.editingAuthProvider, m.editingAuthMethod, m.authInput.Value(), m.authInputFallback)
+			pc = buildProviderConfigFromAuthInput(
+				m.editingAuthProvider, m.editingAuthMethod,
+				m.authInput.Value(), m.authInputFallback,
+			)
 		}
 		existing := m.cfg.Providers[m.editingAuthProvider]
 		pc.Model = existing.Model
@@ -272,112 +293,119 @@ func (m editorModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleModelPickerKey(msg)
 	case editorPickAuth:
 		return m.handleAuthPickerKey(msg)
-	case editorPickTheme:
-		return m.handleThemePickerKey(msg)
 	case editorEnterAuthValue:
 		return m.handleAuthEnterKey(msg)
 	case editorEnterKeybinding:
-		return m.handleKbEnterKey(msg)
+		return m.handleKbKey(msg)
+	case editorPickTheme:
+		return m.handleThemePickerKey(msg)
 	}
 	return m.handleNormalKey(msg)
 }
 
+// ---------------------------------------------------------------------------
+// Key handlers — normal state
+// ---------------------------------------------------------------------------
+
 func (m editorModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "ctrl+c", "q":
-		m.quit = true
+	case "ctrl+c":
+		return m, tea.Quit
+
+	case "q":
+		if err := config.SaveConfig(m.cfgPath, m.cfg); err != nil {
+			m.err = err
+		}
 		return m, tea.Quit
 
 	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
+		return m.moveCursor(-1), nil
 
 	case "down", "j":
-		if m.cursor < len(m.rows)-1 {
-			m.cursor++
-		}
+		return m.moveCursor(1), nil
 
 	case "enter", " ":
-		row := m.rows[m.cursor]
-		switch row.kind {
-
-		case rowActiveProvider:
-			return m.cycleActiveProvider(1)
-
-		case rowModel:
-			return m.openModelPicker(row.provider)
-
-		case rowAuth:
-			m.editingAuthProvider = row.provider
-			if row.provider == "ollama" {
-				m.editingAuthMethod = "env"
-				m.setupAuthEnterValue()
-				m.state = editorEnterAuthValue
-				return m, nil
-			}
-			pc := m.cfg.Providers[row.provider]
-			cur := pc.AuthMethod
-			if cur == "" {
-				cur = "env"
-			}
-			m.authMethodCursor = 0
-			for i, am := range authMethods {
-				if am.id == cur {
-					m.authMethodCursor = i
-					break
-				}
-			}
-			m.state = editorPickAuth
-
-		case rowKeybinding:
-			m.kbCaptured = ""
-			m.kbConfirming = false
-			m.state = editorEnterKeybinding
-
-		case rowTheme:
-			m.themePrev = m.cfg.TUI.Theme
-			m.themeCursor = themeIndex(m.themePrev)
-			m.applyTheme(theme.All()[m.themeCursor].Name)
-			m.state = editorPickTheme
-
-		case rowAddProvider:
-			wiz := newWizardModel(m.r, theme.Normalize(m.cfg.TUI.Theme))
-			m.addWizard = &wiz
-			m.state = editorAddProvider
-			return m, m.addWizard.Init()
-
-		case rowSave:
-			if err := config.SaveConfig(m.cfgPath, m.cfg); err != nil {
-				m.err = err
-				return m, tea.Quit
-			}
-			m.saved = true
-			return m, tea.Quit
-
-		case rowCancel:
-			m.quit = true
-			return m, tea.Quit
-		}
-
-	case "left", "h":
-		if row := m.rows[m.cursor]; row.kind == rowActiveProvider {
-			return m.cycleActiveProvider(-1)
-		}
-
-	case "right", "l":
-		if row := m.rows[m.cursor]; row.kind == rowActiveProvider {
-			return m.cycleActiveProvider(1)
-		}
+		return m.activateRow()
 	}
-
 	return m, nil
 }
 
+func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
+	if len(m.rows) == 0 {
+		return m, nil
+	}
+	row := m.rows[m.cursor]
+	switch row.kind {
+	case rowProvHeader:
+		if row.provider != m.cfg.ActiveProvider {
+			m.cfg.ActiveProvider = row.provider
+			m.resetConnectivity()
+			return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
+		}
+
+	case rowProvModel:
+		return m.openModelPicker(row.provider)
+
+	case rowProvAuth:
+		m.editingAuthProvider = row.provider
+		if row.provider == "ollama" {
+			m.editingAuthMethod = "env"
+			m.authFromPicker = false
+			m.setupAuthEnterValue()
+			m.state = editorEnterAuthValue
+			return m, nil
+		}
+		pc := m.cfg.Providers[row.provider]
+		cur := pc.AuthMethod
+		if cur == "" {
+			cur = "env"
+		}
+		m.authMethodCursor = 0
+		for i, am := range authMethods {
+			if am.id == cur {
+				m.authMethodCursor = i
+				break
+			}
+		}
+		m.state = editorPickAuth
+
+	case rowAddProvider:
+		exclude := make(map[string]bool, len(m.cfg.Providers))
+		for name := range m.cfg.Providers {
+			exclude[name] = true
+		}
+		wiz := newWizardModel(m.r, theme.Normalize(m.cfg.TUI.Theme))
+		wiz.exclude = exclude
+		m.addWizard = &wiz
+		m.state = editorAddProvider
+		return m, m.addWizard.Init()
+
+	case rowKeybinding:
+		m.kbCaptured = ""
+		m.kbConfirming = false
+		m.state = editorEnterKeybinding
+
+	case rowTheme:
+		m.themePrev = m.cfg.TUI.Theme
+		m.themeCursor = themeIndex(m.themePrev)
+		m.applyTheme(theme.All()[m.themeCursor].Name)
+		m.state = editorPickTheme
+	}
+	return m, nil
+}
+
+// ---------------------------------------------------------------------------
+// Key handlers — sub-states
+// ---------------------------------------------------------------------------
+
 func (m editorModel) handleModelPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "ctrl+c", "q":
-		m.quit = true
+	case "ctrl+c":
+		return m, tea.Quit
+	case "q":
+		if err := config.SaveConfig(m.cfgPath, m.cfg); err != nil {
+			m.err = err
+		}
 		return m, tea.Quit
 	case "esc", "b":
 		m.state = editorNormal
@@ -393,7 +421,7 @@ func (m editorModel) handleModelPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", " ":
 		if len(m.modelList) == 0 {
-			return m, nil
+			break
 		}
 		selected := m.modelList[m.modelCursor].ID
 		pc := m.cfg.Providers[m.pickingProvider]
@@ -408,8 +436,12 @@ func (m editorModel) handleModelPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m editorModel) handleAuthPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "ctrl+c", "q":
-		m.quit = true
+	case "ctrl+c":
+		return m, tea.Quit
+	case "q":
+		if err := config.SaveConfig(m.cfgPath, m.cfg); err != nil {
+			m.err = err
+		}
 		return m, tea.Quit
 	case "esc", "b":
 		m.state = editorNormal
@@ -423,22 +455,17 @@ func (m editorModel) handleAuthPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", " ":
 		selected := authMethods[m.authMethodCursor].id
-
 		cur := m.cfg.Providers[m.editingAuthProvider].AuthMethod
 		if cur == "" {
 			cur = "env"
 		}
-
 		if selected == cur {
-			// Same method as currently configured.
-			// If this is the active provider and connectivity is already verified, nothing to do.
 			if m.editingAuthProvider == m.cfg.ActiveProvider && m.connChecked && m.connOK {
 				m.state = editorNormal
 				return m, nil
 			}
-			// Keychain always asks for the key again (can't read it back to show it).
-			// Other methods skip value entry and go straight to re-verification.
 			m.editingAuthMethod = selected
+			m.authFromPicker = true
 			m.setupAuthEnterValue()
 			if selected != "keychain" {
 				m.authInput.Blur()
@@ -448,11 +475,75 @@ func (m editorModel) handleAuthPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = editorEnterAuthValue
 			return m, nil
 		}
-
-		// Different method — full flow.
 		m.editingAuthMethod = selected
+		m.authFromPicker = true
 		m.setupAuthEnterValue()
 		m.state = editorEnterAuthValue
+	}
+	return m, nil
+}
+
+func (m editorModel) handleAuthEnterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.authInput.Blur()
+		m.authErr = ""
+		if m.authFromPicker {
+			m.state = editorPickAuth
+		} else {
+			m.state = editorNormal
+		}
+	case "enter":
+		val := strings.TrimSpace(m.authInput.Value())
+		if val == "" && m.authInputFallback == "" {
+			m.authErr = "value cannot be empty"
+			return m, nil
+		}
+		m.authInput.Blur()
+		m.authErr = ""
+		m.state = editorAuthWorking
+		return m, tea.Batch(m.spin.Tick, m.verifyAuthCmd())
+	default:
+		var cmd tea.Cmd
+		m.authInput, cmd = m.authInput.Update(msg)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m editorModel) handleKbKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.kbConfirming {
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "esc":
+			m.kbCaptured = ""
+			m.kbConfirming = false
+			m.state = editorNormal
+		case "enter":
+			m.cfg.Shell.Keybinding = m.kbCaptured
+			m.kbCaptured = ""
+			m.kbConfirming = false
+			m.state = editorNormal
+		default:
+			if binding, ok := keyMsgToZsh(msg); ok {
+				m.kbCaptured = binding
+			}
+		}
+		return m, nil
+	}
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.state = editorNormal
+	default:
+		if binding, ok := keyMsgToZsh(msg); ok {
+			m.kbCaptured = binding
+			m.kbConfirming = true
+		}
 	}
 	return m, nil
 }
@@ -460,8 +551,12 @@ func (m editorModel) handleAuthPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m editorModel) handleThemePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	palettes := theme.All()
 	switch msg.String() {
-	case "ctrl+c", "q":
-		m.quit = true
+	case "ctrl+c":
+		return m, tea.Quit
+	case "q":
+		if err := config.SaveConfig(m.cfgPath, m.cfg); err != nil {
+			m.err = err
+		}
 		return m, tea.Quit
 	case "esc", "b":
 		m.applyTheme(m.themePrev)
@@ -483,91 +578,20 @@ func (m editorModel) handleThemePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m editorModel) handleAuthEnterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
-		m.quit = true
-		return m, tea.Quit
-	case "esc":
-		m.authInput.Blur()
-		m.authErr = ""
-		m.state = editorPickAuth
-	case "enter":
-		val := strings.TrimSpace(m.authInput.Value())
-		if val == "" && m.authInputFallback == "" {
-			m.authErr = "value cannot be empty"
-			return m, nil
-		}
-		m.authInput.Blur()
-		m.authErr = ""
-		m.state = editorAuthWorking
-		return m, tea.Batch(m.spin.Tick, m.verifyAuthCmd())
-	default:
-		var cmd tea.Cmd
-		m.authInput, cmd = m.authInput.Update(msg)
-		return m, cmd
-	}
-	return m, nil
-}
-
-func (m editorModel) handleKbEnterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.kbConfirming {
-		// Waiting for confirmation after a key was captured.
-		switch msg.String() {
-		case "ctrl+c":
-			m.quit = true
-			return m, tea.Quit
-		case "esc":
-			m.kbCaptured = ""
-			m.kbConfirming = false
-			m.state = editorNormal
-		case "enter":
-			m.cfg.Shell.Keybinding = m.kbCaptured
-			m.kbCaptured = ""
-			m.kbConfirming = false
-			m.state = editorNormal
-		default:
-			// Any other key — try capturing it instead.
-			if binding, ok := keyMsgToZsh(msg); ok {
-				m.kbCaptured = binding
-			}
-		}
-		return m, nil
-	}
-
-	// Waiting for first key press.
-	switch msg.String() {
-	case "ctrl+c":
-		m.quit = true
-		return m, tea.Quit
-	case "esc":
-		m.state = editorNormal
-	default:
-		if binding, ok := keyMsgToZsh(msg); ok {
-			m.kbCaptured = binding
-			m.kbConfirming = true
-		}
-		// Unrecognised keys are silently ignored — prompt stays.
-	}
-	return m, nil
-}
-
 // ---------------------------------------------------------------------------
-// Auth sub-flow helpers
+// Auth helpers
 // ---------------------------------------------------------------------------
 
-// setupAuthEnterValue configures the auth textinput for the chosen method,
-// pre-filling with the provider's current value if any.
 func (m *editorModel) setupAuthEnterValue() {
 	provider := m.editingAuthProvider
 	method := m.editingAuthMethod
 	pc := m.cfg.Providers[provider]
 
-	m.authInput.EchoMode = textinput.EchoNormal // reset; keychain overrides below
+	m.authInput.EchoMode = textinput.EchoNormal
 
 	if provider == "ollama" {
 		m.authInputLabel = "Ollama base URL"
-		m.authInputHint = "leave blank for default (http://localhost:11434)"
+		m.authInputHint = "leave blank for default (" + defaultOllamaBaseURL + ")"
 		m.authInputFallback = defaultOllamaBaseURL
 		m.authInput.Placeholder = defaultOllamaBaseURL
 		m.authInput.SetValue(pc.BaseURL)
@@ -596,40 +620,22 @@ func (m *editorModel) setupAuthEnterValue() {
 		m.authInputFallback = ""
 		m.authInput.EchoMode = textinput.EchoPassword
 		m.authInput.Placeholder = "sk-..."
-		m.authInput.SetValue("") // never pre-fill a key
+		m.authInput.SetValue("")
 	}
 	m.authErr = ""
 	m.authInput.Focus()
 }
 
-// verifyAuthCmd verifies the entered credentials by calling ListModels.
-func (m editorModel) verifyAuthCmd() tea.Cmd {
-	provider := m.editingAuthProvider
-	method := m.editingAuthMethod
-	inputVal := m.authInput.Value()
-	fallback := m.authInputFallback
+func (m *editorModel) resetConnectivity() {
+	m.connChecked = false
+	m.connOK = false
+	m.connErr = ""
+}
 
-	return func() tea.Msg {
-		var pc config.ProviderConfig
-		if method == "keychain" {
-			// inputVal is the raw API key — write it to the keychain.
-			if err := config.StoreKeychain(provider, inputVal); err != nil {
-				return editorAuthMsg{providerName: provider, ok: false, err: fmt.Errorf("keychain write: %w", err)}
-			}
-			pc = config.ProviderConfig{
-				AuthMethod:    "keychain",
-				KeychainEntry: config.DefaultKeychainEntry(provider),
-			}
-		} else {
-			pc = buildProviderConfigFromAuthInput(provider, method, inputVal, fallback)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := config.CheckProviderConnectivity(ctx, provider, pc); err != nil {
-			return editorAuthMsg{providerName: provider, ok: false, err: err}
-		}
-		return editorAuthMsg{providerName: provider, ok: true}
-	}
+func (m *editorModel) applyTheme(name string) {
+	name = theme.Normalize(name)
+	m.cfg.TUI.Theme = name
+	m.styles = newStylesForTheme(m.r, name)
 }
 
 // ---------------------------------------------------------------------------
@@ -679,15 +685,37 @@ func (m editorModel) fetchModelsCmd(providerName string) tea.Cmd {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+func (m editorModel) verifyAuthCmd() tea.Cmd {
+	provider := m.editingAuthProvider
+	method := m.editingAuthMethod
+	inputVal := m.authInput.Value()
+	fallback := m.authInputFallback
 
-func (m *editorModel) applyTheme(themeName string) {
-	themeName = theme.Normalize(themeName)
-	m.cfg.TUI.Theme = themeName
-	m.styles = newStylesForTheme(m.r, themeName)
+	return func() tea.Msg {
+		var pc config.ProviderConfig
+		if method == "keychain" {
+			if err := config.StoreKeychain(provider, inputVal); err != nil {
+				return editorAuthMsg{providerName: provider, ok: false, err: fmt.Errorf("keychain write: %w", err)}
+			}
+			pc = config.ProviderConfig{
+				AuthMethod:    "keychain",
+				KeychainEntry: config.DefaultKeychainEntry(provider),
+			}
+		} else {
+			pc = buildProviderConfigFromAuthInput(provider, method, inputVal, fallback)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := config.CheckProviderConnectivity(ctx, provider, pc); err != nil {
+			return editorAuthMsg{providerName: provider, ok: false, err: err}
+		}
+		return editorAuthMsg{providerName: provider, ok: true}
+	}
 }
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
 
 func (m editorModel) sortedProviders() []string {
 	names := make([]string, 0, len(m.cfg.Providers))
@@ -696,15 +724,6 @@ func (m editorModel) sortedProviders() []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-func indexOf(slice []string, val string) int {
-	for i, s := range slice {
-		if s == val {
-			return i
-		}
-	}
-	return 0
 }
 
 func themeIndex(name string) int {
@@ -718,7 +737,6 @@ func themeIndex(name string) int {
 	return 0
 }
 
-// describeAuth returns a short human-readable summary of a provider's auth config.
 func describeAuth(provider string, pc config.ProviderConfig) string {
 	if provider == "ollama" {
 		if pc.BaseURL == "" {
@@ -726,7 +744,6 @@ func describeAuth(provider string, pc config.ProviderConfig) string {
 		}
 		return "base URL · " + pc.BaseURL
 	}
-
 	method := pc.AuthMethod
 	if method == "" {
 		method = "env"
@@ -793,6 +810,16 @@ func renderThemePreview(r *lipgloss.Renderer, palette theme.Palette) string {
 	return box.Render(b.String())
 }
 
+func (m editorModel) connIndicator() string {
+	if !m.connChecked {
+		return m.styles.Spinner.Render(m.spin.View())
+	}
+	if m.connOK {
+		return m.styles.Success.Render("●")
+	}
+	return m.styles.Error.Render("●")
+}
+
 // ---------------------------------------------------------------------------
 // View
 // ---------------------------------------------------------------------------
@@ -809,14 +836,14 @@ func (m editorModel) renderInner() string {
 		return m.renderModelPicker()
 	case editorPickAuth:
 		return m.renderAuthPicker()
-	case editorPickTheme:
-		return m.renderThemePicker()
 	case editorEnterAuthValue:
 		return m.renderEnterAuthValue()
 	case editorAuthWorking:
 		return m.renderAuthWorking()
 	case editorEnterKeybinding:
-		return m.renderEnterKeybinding()
+		return m.renderKeybinding()
+	case editorPickTheme:
+		return m.renderThemePicker()
 	case editorAddProvider:
 		if m.addWizard != nil {
 			return m.addWizard.renderInner()
@@ -827,131 +854,129 @@ func (m editorModel) renderInner() string {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Render — normal view
+// ---------------------------------------------------------------------------
+
 func (m editorModel) renderNormal() string {
 	var b strings.Builder
-	b.WriteString(m.styles.Title.Render("termwise config") + "\n\n")
 
-	prevProvider := ""
 	for i, row := range m.rows {
 		focused := i == m.cursor
-		prefix := "  "
-		if focused {
-			prefix = m.styles.Selected.Render("▶ ")
-		}
-
-		// Blank line between provider groups.
-		if row.provider != "" && row.provider != prevProvider && prevProvider != "" {
-			b.WriteString("\n")
-		}
-		prevProvider = row.provider
 
 		switch row.kind {
-		case rowActiveProvider:
-			conn := m.connIndicator()
-			label := "Active provider: "
-			val := m.cfg.ActiveProvider
+		case rowSectionHeader:
+			if i > 0 {
+				b.WriteString("\n")
+			}
+			b.WriteString("  " + m.styles.Title.Render(row.label) + "\n")
+
+		case rowProvHeader:
+			cur := "  "
 			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(label+val) + " " + conn + "\n")
+				cur = m.styles.Selected.Render("▶ ")
+			}
+			indicator := ""
+			if row.provider == m.cfg.ActiveProvider {
+				indicator = " " + m.connIndicator()
+			}
+			if focused {
+				b.WriteString(cur + m.styles.Selected.Render(row.provider) + indicator + "\n")
 			} else {
-				b.WriteString(prefix + label + m.styles.Normal.Render(val) + " " + conn + "\n")
+				b.WriteString(cur + row.provider + indicator + "\n")
 			}
 
-		case rowModel:
-			pc := m.cfg.Providers[row.provider]
-			val := pc.Model
+		case rowProvModel:
+			cur := "  "
+			if focused {
+				cur = m.styles.Selected.Render("▶ ")
+			}
+			val := m.cfg.Providers[row.provider].Model
 			if val == "" {
 				val = "(none)"
 			}
-			label := row.provider + " model:  "
-			active := ""
-			if row.provider == m.cfg.ActiveProvider {
-				active = m.styles.Dim.Render(" (active)")
-			}
 			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(label+val) + active + "\n")
+				b.WriteString(cur + m.styles.Selected.Render("     Model   "+val) + "\n")
 			} else {
-				b.WriteString(prefix + label + m.styles.Normal.Render(val) + active + "\n")
+				b.WriteString(cur + m.styles.Dim.Render("     Model   ") + val + "\n")
 			}
 
-		case rowAuth:
-			pc := m.cfg.Providers[row.provider]
-			label := row.provider + " auth:   "
-			val := describeAuth(row.provider, pc)
+		case rowProvAuth:
+			cur := "  "
 			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(label+val) + "\n")
+				cur = m.styles.Selected.Render("▶ ")
+			}
+			val := describeAuth(row.provider, m.cfg.Providers[row.provider])
+			if focused {
+				b.WriteString(cur + m.styles.Selected.Render("     Auth    "+val) + "\n")
 			} else {
-				b.WriteString(prefix + label + m.styles.Normal.Render(val) + "\n")
+				b.WriteString(cur + m.styles.Dim.Render("     Auth    ") + val + "\n")
+			}
+
+		case rowAddProvider:
+			cur := "  "
+			if focused {
+				cur = m.styles.Selected.Render("▶ ")
+			}
+			line := "+ Add provider"
+			if focused {
+				b.WriteString(cur + m.styles.Selected.Render(line) + "\n")
+			} else {
+				b.WriteString(cur + m.styles.Dim.Render(line) + "\n")
 			}
 
 		case rowKeybinding:
+			cur := "  "
+			if focused {
+				cur = m.styles.Selected.Render("▶ ")
+			}
 			kb := m.cfg.Shell.Keybinding
 			if kb == "" {
 				kb = "^T"
 			}
-			label := "Keybinding:      "
-			display := zshToLabel(kb)
+			line := fmt.Sprintf("%-13s%s", "Keybinding", zshToLabel(kb))
 			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(label+display) + "\n")
+				b.WriteString(cur + m.styles.Selected.Render(line) + "\n")
 			} else {
-				b.WriteString(prefix + label + m.styles.Normal.Render(display) + "\n")
+				b.WriteString(cur + m.styles.Dim.Render("Keybinding   ") + zshToLabel(kb) + "\n")
 			}
 
 		case rowTheme:
-			label := "Theme:           "
+			cur := "  "
+			if focused {
+				cur = m.styles.Selected.Render("▶ ")
+			}
 			val := theme.Label(m.cfg.TUI.Theme)
 			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(label+val) + "\n")
+				b.WriteString(cur + m.styles.Selected.Render(fmt.Sprintf("%-13s%s", "Theme", val)) + "\n")
 			} else {
-				b.WriteString(prefix + label + m.styles.Normal.Render(val) + "\n")
-			}
-
-		case rowAddProvider:
-			line := "+ Add provider"
-			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(line) + "\n")
-			} else {
-				b.WriteString(prefix + m.styles.Dim.Render(line) + "\n")
-			}
-
-		case rowSave:
-			line := "[Save]"
-			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(line) + "\n")
-			} else {
-				b.WriteString(prefix + m.styles.Normal.Render(line) + "\n")
-			}
-
-		case rowCancel:
-			line := "[Cancel]"
-			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(line) + "\n")
-			} else {
-				b.WriteString(prefix + m.styles.Normal.Render(line) + "\n")
+				b.WriteString(cur + m.styles.Dim.Render("Theme        ") + val + "\n")
 			}
 		}
 	}
 
 	b.WriteString("\n")
-	row := m.rows[m.cursor]
-	switch row.kind {
-	case rowActiveProvider:
-		b.WriteString(m.styles.Dim.Render("←/→ or enter cycle   ↑/↓ move   q quit"))
-	case rowModel:
-		b.WriteString(m.styles.Dim.Render("enter pick model   ↑/↓ move   q quit"))
-	case rowAuth:
-		b.WriteString(m.styles.Dim.Render("enter edit auth   ↑/↓ move   q quit"))
-	case rowKeybinding:
-		b.WriteString(m.styles.Dim.Render("enter edit   ↑/↓ move   q quit"))
-	case rowTheme:
-		b.WriteString(m.styles.Dim.Render("enter pick theme   ↑/↓ move   q quit"))
-	case rowAddProvider:
-		b.WriteString(m.styles.Dim.Render("enter add provider   ↑/↓ move   q quit"))
-	default:
-		b.WriteString(m.styles.Dim.Render("↑/↓ move   enter select   q quit"))
+	if len(m.rows) > 0 && m.cursor < len(m.rows) {
+		switch m.rows[m.cursor].kind {
+		case rowProvHeader:
+			b.WriteString(m.styles.Dim.Render("enter set active   ↑/↓ navigate   q quit"))
+		case rowProvModel:
+			b.WriteString(m.styles.Dim.Render("enter pick model   ↑/↓ navigate   q quit"))
+		case rowProvAuth:
+			b.WriteString(m.styles.Dim.Render("enter edit auth   ↑/↓ navigate   q quit"))
+		case rowAddProvider:
+			b.WriteString(m.styles.Dim.Render("enter add provider   ↑/↓ navigate   q quit"))
+		default:
+			b.WriteString(m.styles.Dim.Render("enter edit   ↑/↓ navigate   q quit"))
+		}
 	}
 
 	return b.String()
 }
+
+// ---------------------------------------------------------------------------
+// Render — sub-views
+// ---------------------------------------------------------------------------
 
 func (m editorModel) renderModelPicker() string {
 	var b strings.Builder
@@ -971,7 +996,7 @@ func (m editorModel) renderModelPicker() string {
 		if i == m.modelCursor {
 			b.WriteString(m.styles.Selected.Render("▶ "+mod.ID) + "\n")
 		} else {
-			b.WriteString(m.styles.Normal.Render("  "+mod.ID) + "\n")
+			b.WriteString("  " + mod.ID + "\n")
 		}
 	}
 	b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back   q quit"))
@@ -987,7 +1012,6 @@ func (m editorModel) renderAuthPicker() string {
 	if cur == "" {
 		cur = "env"
 	}
-
 	for i, a := range authMethods {
 		current := ""
 		if a.id == cur {
@@ -996,35 +1020,10 @@ func (m editorModel) renderAuthPicker() string {
 		if i == m.authMethodCursor {
 			b.WriteString(m.styles.Selected.Render("▶ "+a.label) + current + "\n")
 		} else {
-			b.WriteString(m.styles.Normal.Render("  "+a.label) + current + "\n")
+			b.WriteString("  " + a.label + current + "\n")
 		}
 	}
 	b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back   q quit"))
-	return b.String()
-}
-
-func (m editorModel) renderThemePicker() string {
-	var b strings.Builder
-	palettes := theme.All()
-
-	b.WriteString(m.styles.Title.Render("termwise config") + "\n\n")
-	b.WriteString("Theme palette:\n\n")
-
-	for i, p := range palettes {
-		line := paletteSwatches(m.r, p) + " " + p.Label
-		if p.Name == theme.Normalize(m.cfg.TUI.Theme) {
-			line += " " + m.styles.Dim.Render("(selected)")
-		}
-		if i == m.themeCursor {
-			b.WriteString(m.styles.Selected.Render("▶ ") + line + "\n")
-		} else {
-			b.WriteString("  " + line + "\n")
-		}
-	}
-
-	b.WriteString("\n")
-	b.WriteString(renderThemePreview(m.r, palettes[m.themeCursor]))
-	b.WriteString("\n\n" + m.styles.Dim.Render("↑/↓ preview   enter select   esc cancel   q quit"))
 	return b.String()
 }
 
@@ -1050,15 +1049,15 @@ func (m editorModel) renderAuthWorking() string {
 	return b.String()
 }
 
-func (m editorModel) renderEnterKeybinding() string {
+func (m editorModel) renderKeybinding() string {
 	var b strings.Builder
 	b.WriteString(m.styles.Title.Render("termwise config") + "\n\n")
 	b.WriteString("Shell keybinding:\n\n")
 
 	if m.kbConfirming {
 		b.WriteString("Captured: " + m.styles.Selected.Render(zshToLabel(m.kbCaptured)) + "\n\n")
-		b.WriteString(m.styles.Hint.Render("takes effect in new terminals, or run: eval \"$(termwise init zsh)\""))
-		b.WriteString("\n\n" + m.styles.Dim.Render("enter confirm   any key to retry   esc cancel"))
+		b.WriteString(m.styles.Hint.Render(`takes effect in new terminals, or run: eval "$(termwise init zsh)"`))
+		b.WriteString("\n\n" + m.styles.Dim.Render("enter confirm   any key retry   esc cancel"))
 	} else {
 		kb := m.cfg.Shell.Keybinding
 		if kb == "" {
@@ -1071,29 +1070,26 @@ func (m editorModel) renderEnterKeybinding() string {
 	return b.String()
 }
 
-func (m editorModel) connIndicator() string {
-	if !m.connChecked {
-		return m.styles.Spinner.Render(m.spin.View())
-	}
-	if m.connOK {
-		return m.styles.Success.Render("●")
-	}
-	return m.styles.Error.Render("●")
-}
+func (m editorModel) renderThemePicker() string {
+	palettes := theme.All()
+	var b strings.Builder
+	b.WriteString(m.styles.Title.Render("termwise config") + "\n\n")
+	b.WriteString("Theme palette:\n\n")
 
-func (m *editorModel) resetConnectivity() {
-	m.connChecked = false
-	m.connOK = false
-	m.connErr = ""
-}
-
-func (m editorModel) cycleActiveProvider(step int) (tea.Model, tea.Cmd) {
-	providers := m.sortedProviders()
-	if len(providers) == 0 {
-		return m, nil
+	for i, p := range palettes {
+		line := paletteSwatches(m.r, p) + " " + p.Label
+		if p.Name == theme.Normalize(m.cfg.TUI.Theme) {
+			line += " " + m.styles.Dim.Render("(selected)")
+		}
+		if i == m.themeCursor {
+			b.WriteString(m.styles.Selected.Render("▶ ") + line + "\n")
+		} else {
+			b.WriteString("  " + line + "\n")
+		}
 	}
-	idx := indexOf(providers, m.cfg.ActiveProvider)
-	m.cfg.ActiveProvider = providers[(idx+step+len(providers))%len(providers)]
-	m.resetConnectivity()
-	return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
+
+	b.WriteString("\n")
+	b.WriteString(renderThemePreview(m.r, palettes[m.themeCursor]))
+	b.WriteString("\n\n" + m.styles.Dim.Render("↑/↓ preview   enter select   esc cancel   q quit"))
+	return b.String()
 }
