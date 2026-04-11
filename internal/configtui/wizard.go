@@ -3,7 +3,6 @@ package configtui
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -36,19 +35,6 @@ const (
 	wizDone
 	wizErr
 )
-
-// ---------------------------------------------------------------------------
-// Data tables
-// ---------------------------------------------------------------------------
-
-var authMethods = []struct {
-	id    string
-	label string
-}{
-	{"env", "Environment variable"},
-	{"keychain", "macOS Keychain"},
-	{"cmd", "Shell command"},
-}
 
 // ---------------------------------------------------------------------------
 // Model
@@ -192,14 +178,8 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.provider = providers[m.cursor].Name
 			m.cursor = 0
 			if m.provider == "ollama" {
-				// No API key needed — ask for base URL instead.
 				m.authMethod = "env"
-				m.enterLabel = "Ollama base URL"
-				m.enterHint = "leave blank for default (" + defaultOllamaBaseURL + ")"
-				m.enterFallback = defaultOllamaBaseURL
-				m.input.Placeholder = defaultOllamaBaseURL
-				m.input.SetValue("")
-				m.input.Focus()
+				m.setupEnterValue()
 				m.step = wizEnterValue
 			} else {
 				m.step = wizPickAuth
@@ -226,7 +206,7 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.authMethod = authMethods[m.cursor].id
 			m.cursor = 0
 			m.setupEnterValue()
-			if m.authMethod == "env" && os.Getenv(config.DefaultEnvVar(m.provider)) != "" {
+			if m.authMethod == "env" && envVarDetected(m.provider) {
 				m.input.Blur()
 				m.step = wizWorking
 				return m, tea.Batch(m.spin.Tick, m.fetchModelsCmd())
@@ -312,27 +292,12 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // setupEnterValue configures the textinput for the current auth method.
 func (m *wizardModel) setupEnterValue() {
-	m.input.EchoMode = textinput.EchoNormal
-
-	switch m.authMethod {
-	case "env":
-		defVar := config.DefaultEnvVar(m.provider)
-		m.enterLabel = "Environment variable name"
-		m.enterHint = "the env var that holds your API key"
-		m.enterFallback = defVar
-		m.input.Placeholder = defVar
-	case "cmd":
-		m.enterLabel = "Shell command"
-		m.enterHint = "command whose stdout is the API key"
-		m.enterFallback = ""
-		m.input.Placeholder = "op read op://vault/item/field"
-	case "keychain":
-		m.enterLabel = "API key"
-		m.enterHint = "will be stored securely in macOS Keychain"
-		m.enterFallback = ""
-		m.input.EchoMode = textinput.EchoPassword
-		m.input.Placeholder = "sk-..."
-	}
+	cfg := buildAuthInputConfig(m.provider, m.authMethod)
+	m.enterLabel = cfg.Label
+	m.enterHint = cfg.Hint
+	m.enterFallback = cfg.Fallback
+	m.input.Placeholder = cfg.Placeholder
+	m.input.EchoMode = cfg.EchoMode
 	m.input.SetValue("")
 	m.input.Focus()
 }
@@ -433,19 +398,7 @@ func (m wizardModel) renderInner() string {
 
 	case wizPickAuth:
 		b.WriteString("Auth method for " + m.styles.Title.Render(m.provider) + ":\n\n")
-		for i, a := range authMethods {
-			detected := ""
-			if a.id == "env" {
-				if defVar := config.DefaultEnvVar(m.provider); defVar != "" && os.Getenv(defVar) != "" {
-					detected = "  " + m.styles.Success.Render("●")
-				}
-			}
-			if i == m.cursor {
-				b.WriteString(m.styles.Selected.Render("▶ "+a.label) + detected + "\n")
-			} else {
-				b.WriteString(m.styles.Normal.Render("  "+a.label) + detected + "\n")
-			}
-		}
+		b.WriteString(renderAuthMethodRows(m.provider, m.cursor, "", true, m.styles))
 		b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back   q quit"))
 
 	case wizEnterValue:

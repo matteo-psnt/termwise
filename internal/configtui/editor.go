@@ -307,16 +307,20 @@ func (m editorModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // Key handlers — normal state
 // ---------------------------------------------------------------------------
 
+func (m editorModel) saveAndQuit() (tea.Model, tea.Cmd) {
+	if err := config.SaveConfig(m.cfgPath, m.cfg); err != nil {
+		m.err = err
+	}
+	return m, tea.Quit
+}
+
 func (m editorModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
 
 	case "q":
-		if err := config.SaveConfig(m.cfgPath, m.cfg); err != nil {
-			m.err = err
-		}
-		return m, tea.Quit
+		return m.saveAndQuit()
 
 	case "up", "k":
 		return m.moveCursor(-1), nil
@@ -403,10 +407,7 @@ func (m editorModel) handleModelPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "q":
-		if err := config.SaveConfig(m.cfgPath, m.cfg); err != nil {
-			m.err = err
-		}
-		return m, tea.Quit
+		return m.saveAndQuit()
 	case "esc", "b":
 		m.state = editorNormal
 		m.modelList = nil
@@ -439,10 +440,7 @@ func (m editorModel) handleAuthPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "q":
-		if err := config.SaveConfig(m.cfgPath, m.cfg); err != nil {
-			m.err = err
-		}
-		return m, tea.Quit
+		return m.saveAndQuit()
 	case "esc", "b":
 		m.state = editorNormal
 	case "up", "k":
@@ -554,10 +552,7 @@ func (m editorModel) handleThemePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "q":
-		if err := config.SaveConfig(m.cfgPath, m.cfg); err != nil {
-			m.err = err
-		}
-		return m, tea.Quit
+		return m.saveAndQuit()
 	case "esc", "b":
 		m.applyTheme(m.themePrev)
 		m.state = editorNormal
@@ -587,39 +582,22 @@ func (m *editorModel) setupAuthEnterValue() {
 	method := m.editingAuthMethod
 	pc := m.cfg.Providers[provider]
 
-	m.authInput.EchoMode = textinput.EchoNormal
+	cfg := buildAuthInputConfig(provider, method)
+	m.authInputLabel = cfg.Label
+	m.authInputHint = cfg.Hint
+	m.authInputFallback = cfg.Fallback
+	m.authInput.Placeholder = cfg.Placeholder
+	m.authInput.EchoMode = cfg.EchoMode
 
-	if provider == "ollama" {
-		m.authInputLabel = "Ollama base URL"
-		m.authInputHint = "leave blank for default (" + defaultOllamaBaseURL + ")"
-		m.authInputFallback = defaultOllamaBaseURL
-		m.authInput.Placeholder = defaultOllamaBaseURL
+	// Restore existing value where applicable.
+	switch {
+	case provider == "ollama":
 		m.authInput.SetValue(pc.BaseURL)
-		m.authErr = ""
-		m.authInput.Focus()
-		return
-	}
-
-	switch method {
-	case "env":
-		def := config.DefaultEnvVar(provider)
-		m.authInputLabel = "Environment variable name"
-		m.authInputHint = "the env var that holds your API key"
-		m.authInputFallback = def
-		m.authInput.Placeholder = def
+	case method == "env":
 		m.authInput.SetValue(pc.EnvVar)
-	case "cmd":
-		m.authInputLabel = "Shell command"
-		m.authInputHint = "command whose stdout is the API key"
-		m.authInputFallback = ""
-		m.authInput.Placeholder = "op read op://vault/item/field"
+	case method == "cmd":
 		m.authInput.SetValue(pc.APIKeyCmd)
-	case "keychain":
-		m.authInputLabel = "API key"
-		m.authInputHint = "will be stored securely in macOS Keychain"
-		m.authInputFallback = ""
-		m.authInput.EchoMode = textinput.EchoPassword
-		m.authInput.Placeholder = "sk-..."
+	default:
 		m.authInput.SetValue("")
 	}
 	m.authErr = ""
@@ -1012,17 +990,7 @@ func (m editorModel) renderAuthPicker() string {
 	if cur == "" {
 		cur = "env"
 	}
-	for i, a := range authMethods {
-		current := ""
-		if a.id == cur {
-			current = " " + m.styles.Dim.Render("(current)")
-		}
-		if i == m.authMethodCursor {
-			b.WriteString(m.styles.Selected.Render("▶ "+a.label) + current + "\n")
-		} else {
-			b.WriteString("  " + a.label + current + "\n")
-		}
-	}
+	b.WriteString(renderAuthMethodRows(m.editingAuthProvider, m.authMethodCursor, cur, false, m.styles))
 	b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back   q quit"))
 	return b.String()
 }
