@@ -61,8 +61,8 @@ func (m Model) renderInputRow() string {
 		return m.styles.ApprovalHint.Render(" ↵ Approve   a Allow+save   Esc Deny")
 
 	case stateAskPicker:
-		if m.activePicker != nil {
-			return m.activePicker.View(m.styles)
+		if m.pending.picker != nil {
+			return m.pending.picker.View(m.styles)
 		}
 		return ""
 

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -52,12 +51,7 @@ type Model struct {
 	state tuiState
 
 	// Pending tool loop (used during stateApproval / stateAskPicker)
-	pendingToolCall  ai.ToolCall
-	pendingRemaining []ai.ToolCall
-	pendingCollected []ai.ToolResult
-
-	// Ask picker
-	activePicker *picker
+	pending pendingToolState
 
 	// Token counters
 	inputTokens  int
@@ -76,9 +70,6 @@ type Model struct {
 	// Cancellation (ctrl+c / esc during thinking)
 	ctx    context.Context
 	cancel context.CancelFunc
-
-	// Double ctrl+c tracking
-	lastCtrlC time.Time
 
 	// Styles (built once)
 	styles       Styles
@@ -149,185 +140,33 @@ func (m Model) Init() tea.Cmd {
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-
-	// ── Window resize ──────────────────────────────────────────────────────────
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		vpW, vpH := m.viewportDims()
-		if !m.ready {
-			m.vp = viewport.New(vpW, vpH)
-			m.ready = true
-		} else {
-			m.vp.Width = vpW
-			m.vp.Height = vpH
-		}
-		m.input.Width = vpW - 4
-		m.refreshViewport()
-		return m, nil
-
-	// ── Spinner tick ───────────────────────────────────────────────────────────
+		return m.handleWindowSize(msg)
 	case spinner.TickMsg:
-		if m.state == stateThinking {
-			var cmd tea.Cmd
-			m.spin, cmd = m.spin.Update(msg)
-			return m, cmd
-		}
-		return m, nil
-
-	// ── Agent: model responded ─────────────────────────────────────────────────
+		return m.handleSpinnerTick(msg)
 	case agent.ResponseMsg:
-		if msg.Err != nil {
-			m.state = stateIdle
-			m.thread = append(m.thread, ThreadEntry{Kind: EntryError, Content: providerErrMsg(msg.Err)})
-			m.refreshViewport()
-			return m, nil
-		}
-
-		resp := msg.Resp
-		m.inputTokens += resp.InputTokens
-		m.outputTokens += resp.OutputTokens
-
-		// Append assistant message to history.
-		assistantMsg := ai.Message{
-			Role:      "assistant",
-			Content:   resp.Content,
-			ToolCalls: resp.ToolCalls,
-		}
-		m.messages = append(m.messages, assistantMsg)
-
-		// Show bare text in thread (if any, and no tool calls — implicit respond).
-		if resp.Content != "" && len(resp.ToolCalls) == 0 {
-			m.thread = append(m.thread, ThreadEntry{Kind: EntryAssistant, Content: resp.Content})
-			m.refreshViewport()
-			m.state = stateIdle
-			return m, nil
-		}
-
-		if len(resp.ToolCalls) == 0 {
-			m.state = stateIdle
-			m.refreshViewport()
-			return m, nil
-		}
-
-		// Start processing tool calls.
-		return m, agent.ProcessToolsCmd(resp.ToolCalls, nil, m.needsApproval)
-
-	// ── Agent: tool executed (read or auto-bash) ───────────────────────────────
+		return m.handleResponseMsg(msg)
 	case agent.ToolExecutedMsg:
-		tc := msg.ToolCall
-		m.thread = append(m.thread,
-			ThreadEntry{
-				Kind:       EntryToolCall,
-				ToolName:   tc.Name,
-				ToolDetail: toolDetail(tc),
-				Auto:       msg.AutoAccepted,
-			},
-			ThreadEntry{
-				Kind:    EntryToolResult,
-				Content: msg.Result.Content,
-				IsError: msg.Result.IsError,
-			},
-		)
-		m.refreshViewport()
-
-		if len(msg.Remaining) == 0 {
-			return m, agent.ProcessToolsCmd(nil, msg.Collected, m.needsApproval)
-		}
-		return m, agent.ProcessToolsCmd(msg.Remaining, msg.Collected, m.needsApproval)
-
-	// ── Agent: bash needs approval ─────────────────────────────────────────────
+		return m.handleToolExecutedMsg(msg)
 	case agent.NeedsApprovalMsg:
-		m.state = stateApproval
-		m.pendingToolCall = msg.ToolCall
-		m.pendingRemaining = msg.Remaining
-		m.pendingCollected = msg.Collected
-		// Show the command in the thread (without result yet).
-		m.thread = append(m.thread, ThreadEntry{
-			Kind:       EntryToolCall,
-			ToolName:   msg.ToolCall.Name,
-			ToolDetail: msg.Command,
-			Auto:       false,
-		})
-		m.refreshViewport()
-		return m, nil
-
-	// ── Agent: ask tool ───────────────────────────────────────────────────────
+		return m.handleNeedsApprovalMsg(msg)
 	case agent.AskMsg:
-		m.state = stateAskPicker
-		m.pendingToolCall = msg.ToolCall
-		m.pendingRemaining = msg.Remaining
-		m.pendingCollected = msg.Collected
-		p := newPicker(msg.Question, msg.Options, msg.MultiSelect)
-		m.activePicker = &p
-		// Show the question in the thread.
-		if msg.Question != "" {
-			m.thread = append(m.thread, ThreadEntry{Kind: EntryAssistant, Content: msg.Question})
-		}
-		m.refreshViewport()
-		return m, nil
-
-	// ── Agent: respond tool ───────────────────────────────────────────────────
+		return m.handleAskMsg(msg)
 	case agent.RespondMsg:
-		m.thread = append(m.thread, ThreadEntry{
-			Kind:        EntryRespond,
-			RespondType: msg.RespondType,
-			Content:     msg.Content,
-		})
-		// Append tool results as a user message, then return to idle.
-		m.messages = append(m.messages, ai.Message{
-			Role:        "user",
-			ToolResults: msg.Collected,
-		})
-		m.refreshViewport()
-		m.state = stateIdle
-		return m, nil
-
-	// ── Agent: all non-respond tools done — send results back to model ─────────
+		return m.handleRespondMsg(msg)
 	case agent.AllToolsDoneMsg:
-		m.messages = append(m.messages, ai.Message{
-			Role:        "user",
-			ToolResults: msg.Collected,
-		})
-		m.state = stateThinking
-		return m, tea.Batch(
-			m.spin.Tick,
-			agent.ChatCmd(m.ctx, m.provider, m.chatRequest()),
-		)
-
-	// ── Keyboard ──────────────────────────────────────────────────────────────
+		return m.handleAllToolsDoneMsg(msg)
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
 
-	// Forward to viewport when idle/thinking.
-	if m.state == stateIdle || m.state == stateThinking {
-		var vpCmd tea.Cmd
-		m.vp, vpCmd = m.vp.Update(msg)
-		return m, vpCmd
-	}
-
-	return m, nil
+	return m.updateViewportOnly(msg)
 }
 
 // handleKey handles all keyboard input based on current state.
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Double ctrl+c = quit regardless of state.
 	if msg.Type == tea.KeyCtrlC {
-		if time.Since(m.lastCtrlC) < time.Second {
-			return m, tea.Quit
-		}
-		m.lastCtrlC = time.Now()
-		if m.state == stateThinking {
-			m.cancel()
-			ctx, cancel := context.WithCancel(context.Background())
-			m.ctx = ctx
-			m.cancel = cancel
-			m.state = stateIdle
-			m.thread = append(m.thread, ThreadEntry{Kind: EntryError, Content: "interrupted"})
-			m.refreshViewport()
-		}
-		return m, nil
+		return m, tea.Quit
 	}
 
 	switch m.state {
@@ -365,54 +204,20 @@ func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
-		// Approve: execute the command.
-		m.state = stateThinking
-		tc := m.pendingToolCall
-		remaining := m.pendingRemaining
-		collected := m.pendingCollected
-		return m, tea.Batch(
-			m.spin.Tick,
-			agent.ExecuteBashCmd(tc, remaining, collected),
-		)
+		return m.approvePendingBash(false)
 
 	case tea.KeyEsc:
-		// Deny: add denial result and continue processing.
-		denial := ai.ToolResult{
-			ToolCallID: m.pendingToolCall.ID,
-			Content:    "User denied this command.",
-			IsError:    true,
-		}
-		m.thread = append(m.thread, ThreadEntry{
+		m.appendThreadEntries(ThreadEntry{
 			Kind:    EntryToolResult,
 			Content: "User denied this command.",
 			IsError: true,
 		})
-		collected := append(m.pendingCollected, denial)
-		remaining := m.pendingRemaining
-		m.state = stateThinking
 		m.refreshViewport()
-		return m, tea.Batch(
-			m.spin.Tick,
-			agent.ProcessToolsCmd(remaining, collected, m.needsApproval),
-		)
+		return m.resumePendingToolLoop(m.pending.result("User denied this command.", true))
 
 	case tea.KeyRunes:
 		if msg.String() == "a" {
-			// Allow + add to user allow-list: save rule and approve.
-			cmd, _ := m.pendingToolCall.Input["command"].(string)
-			rule := allowlist.BuildRuleFromCommand(cmd)
-			if rule != "" {
-				m.allowRules = append(m.allowRules, rule)
-				m.saveAllowRules()
-			}
-			m.state = stateThinking
-			tc := m.pendingToolCall
-			remaining := m.pendingRemaining
-			collected := m.pendingCollected
-			return m, tea.Batch(
-				m.spin.Tick,
-				agent.ExecuteBashCmd(tc, remaining, collected),
-			)
+			return m.approvePendingBash(true)
 		}
 	}
 	return m, nil
@@ -438,11 +243,11 @@ func (m Model) saveAllowRules() {
 }
 
 func (m Model) handlePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.activePicker == nil {
+	if m.pending.picker == nil {
 		return m, nil
 	}
-	updated, result, submitted, cancelled := m.activePicker.Update(msg)
-	m.activePicker = &updated
+	updated, result, submitted, cancelled := m.pending.picker.Update(msg)
+	m.pending.picker = &updated
 
 	if cancelled {
 		result = "User cancelled"
@@ -450,22 +255,9 @@ func (m Model) handlePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if submitted {
-		m.activePicker = nil
-		// Record answer in thread.
-		m.thread = append(m.thread, ThreadEntry{Kind: EntryUser, Content: result})
-		// Add tool result and continue.
-		toolResult := ai.ToolResult{
-			ToolCallID: m.pendingToolCall.ID,
-			Content:    result,
-		}
-		collected := append(m.pendingCollected, toolResult)
-		remaining := m.pendingRemaining
-		m.state = stateThinking
+		m.appendThreadEntries(ThreadEntry{Kind: EntryUser, Content: result})
 		m.refreshViewport()
-		return m, tea.Batch(
-			m.spin.Tick,
-			agent.ProcessToolsCmd(remaining, collected, m.needsApproval),
-		)
+		return m.resumePendingToolLoop(m.pending.result(result, false))
 	}
 	return m, nil
 }
