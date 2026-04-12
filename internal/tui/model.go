@@ -14,7 +14,6 @@ import (
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/ai"
 	"github.com/matteo-psnt/termwise/internal/allowlist"
-	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/matteo-psnt/termwise/internal/theme"
 	"github.com/matteo-psnt/termwise/internal/tools"
@@ -26,6 +25,7 @@ const (
 	stateIdle      tuiState = iota
 	stateThinking           // waiting for model
 	stateApproval           // waiting for bash approval
+	stateJudging            // LLM judging a bash command
 	stateAskPicker          // waiting for ask answer
 )
 
@@ -38,9 +38,8 @@ type Model struct {
 	system        string
 	contextWindow int
 
-	// Allow-list
-	cfgPath    string
-	allowRules []string // user-configured rules from config.Tools.Bash.Allow
+	// Config
+	llmJudge bool
 
 	// Conversation
 	messages []ai.Message
@@ -84,8 +83,7 @@ func newModel(
 	system string,
 	stdin string,
 	r *lipgloss.Renderer,
-	cfgPath string,
-	allowRules []string,
+	llmJudge bool,
 	prefill string,
 	themeName string,
 ) Model {
@@ -112,8 +110,7 @@ func newModel(
 		system:        system,
 		stdin:         stdin,
 		contextWindow: contextWindow,
-		cfgPath:       cfgPath,
-		allowRules:    allowRules,
+		llmJudge:      llmJudge,
 		input:         ti,
 		spin:          sp,
 		ctx:           ctx,
@@ -156,6 +153,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleRespondMsg(msg)
 	case agent.AllToolsDoneMsg:
 		return m.handleAllToolsDoneMsg(msg)
+	case judgmentMsg:
+		return m.handleJudgmentMsg(msg)
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -204,7 +203,7 @@ func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
-		return m.approvePendingBash(false)
+		return m.approvePendingBash()
 
 	case tea.KeyEsc:
 		m.appendThreadEntries(ThreadEntry{
@@ -214,32 +213,13 @@ func (m Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		})
 		m.refreshViewport()
 		return m.resumePendingToolLoop(m.pending.result("User denied this command.", true))
-
-	case tea.KeyRunes:
-		if msg.String() == "a" {
-			return m.approvePendingBash(true)
-		}
 	}
 	return m, nil
 }
 
 // needsApproval returns true if the bash command must be confirmed by the user.
 func (m Model) needsApproval(cmd string) bool {
-	return allowlist.NeedsApproval(m.allowRules, cmd)
-}
-
-// saveAllowRules persists the current allowRules to config on disk.
-// Failures are silently ignored — the in-memory list is still updated.
-func (m Model) saveAllowRules() {
-	if m.cfgPath == "" {
-		return
-	}
-	cfg, _, err := config.LoadConfig(m.cfgPath)
-	if err != nil {
-		return
-	}
-	cfg.Tools.Bash.Allow = m.allowRules
-	_ = config.SaveConfig(m.cfgPath, cfg)
+	return allowlist.NeedsApproval(nil, cmd)
 }
 
 func (m Model) handlePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

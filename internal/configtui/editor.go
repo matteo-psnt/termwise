@@ -32,6 +32,7 @@ const (
 	rowAddProvider
 	rowKeybinding
 	rowTheme
+	rowLLMJudge
 )
 
 type editorRow struct {
@@ -106,6 +107,7 @@ func (m *editorModel) buildRows() {
 		editorRow{kind: rowSectionHeader, label: "Settings"},
 		editorRow{kind: rowKeybinding},
 		editorRow{kind: rowTheme},
+		editorRow{kind: rowLLMJudge},
 	)
 	m.snapCursor()
 }
@@ -348,6 +350,10 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		tp := newThemePicker(m.cfg.TUI.Theme, m.r, m.styles)
 		m.themePicker = &tp
 		return m, nil
+
+	case rowLLMJudge:
+		m.cfg.Tools.Bash.LLMJudge = !m.cfg.Tools.Bash.LLMJudge
+		return m, nil
 	}
 	return m, nil
 }
@@ -550,6 +556,18 @@ func (m editorModel) renderNormal() string {
 			} else {
 				b.WriteString(prefix + m.styles.Dim.Render("Theme        ") + val + "\n")
 			}
+
+		case rowLLMJudge:
+			prefix := m.rowPrefix(focused)
+			val := "off"
+			if m.cfg.Tools.Bash.LLMJudge {
+				val = "on"
+			}
+			if focused {
+				b.WriteString(prefix + m.styles.Selected.Render(fmt.Sprintf("%-13s%s", "LLM judge", val)) + "\n")
+			} else {
+				b.WriteString(prefix + m.styles.Dim.Render("LLM judge    ") + val + "\n")
+			}
 		}
 	}
 
@@ -564,6 +582,8 @@ func (m editorModel) renderNormal() string {
 			b.WriteString(m.styles.Dim.Render("enter edit auth   ↑/↓ navigate   q quit"))
 		case rowAddProvider:
 			b.WriteString(m.styles.Dim.Render("enter add provider   ↑/↓ navigate   q quit"))
+		case rowLLMJudge:
+			b.WriteString(m.styles.Dim.Render("enter toggle   ↑/↓ navigate   q quit"))
 		default:
 			b.WriteString(m.styles.Dim.Render("enter edit   ↑/↓ navigate   q quit"))
 		}

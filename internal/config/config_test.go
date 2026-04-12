@@ -38,9 +38,6 @@ show_footer = true
 	if !exists {
 		t.Fatalf("expected config to exist")
 	}
-	if got := cfg.Tools.Bash.Allow; len(got) != 3 || got[0] != "git diff" || got[2] != "rg" {
-		t.Fatalf("unexpected bash allow rules: %#v", got)
-	}
 	if cfg.TUI.Theme != "ocean" {
 		t.Fatalf("expected theme ocean, got %q", cfg.TUI.Theme)
 	}

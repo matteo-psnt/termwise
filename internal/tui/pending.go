@@ -6,7 +6,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/ai"
-	"github.com/matteo-psnt/termwise/internal/allowlist"
 )
 
 type pendingToolState struct {
@@ -66,16 +65,7 @@ func (m *Model) interruptThinking() {
 	m.refreshViewport()
 }
 
-func (m Model) approvePendingBash(saveRule bool) (tea.Model, tea.Cmd) {
-	if saveRule {
-		cmd, _ := m.pending.toolCall.Input["command"].(string)
-		rule := allowlist.BuildRuleFromCommand(cmd)
-		if rule != "" {
-			m.allowRules = append(m.allowRules, rule)
-			m.saveAllowRules()
-		}
-	}
-
+func (m Model) approvePendingBash() (tea.Model, tea.Cmd) {
 	tc := m.pending.toolCall
 	remaining := m.pending.remaining
 	collected := m.pending.collected

@@ -16,7 +16,7 @@ import (
 )
 
 // Open launches the agent TUI. It handles stdin pre-loading and TTY setup.
-func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPath string, allowRules []string, prefill string) error {
+func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPath string, prefill string) error {
 	// Read stdin if piped.
 	var stdin string
 	if !tty.IsTerminal(os.Stdin) {
@@ -48,15 +48,17 @@ func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPat
 	r.SetHasDarkBackground(lipgloss.HasDarkBackground())
 
 	themeName := theme.DefaultName
+	var llmJudge bool
 	if cfgPath != "" {
 		cfg, exists, err := config.LoadConfig(cfgPath)
 		if err == nil && exists {
 			themeName = theme.Normalize(cfg.TUI.Theme)
+			llmJudge = cfg.Tools.Bash.LLMJudge
 		}
 	}
 
 	system := systemprompt.Agent()
-	m := newModel(providerName, provider, modelID, system, stdin, r, cfgPath, allowRules, prefill, themeName)
+	m := newModel(providerName, provider, modelID, system, stdin, r, llmJudge, prefill, themeName)
 
 	p := tea.NewProgram(m, programOpts...)
 	if _, err := p.Run(); err != nil {

@@ -1,12 +1,39 @@
 package tui
 
 import (
+	"context"
+	"strings"
+	"time"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/ai"
 )
+
+type judgmentMsg struct{ safe bool }
+
+func (m Model) judgeCmd(tc ai.ToolCall, remaining []ai.ToolCall, collected []ai.ToolResult) tea.Cmd {
+	cmd, _ := tc.Input["command"].(string)
+	provider := m.provider
+	modelID := m.modelID
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		resp, err := provider.Chat(ctx, ai.ChatRequest{
+			Model:  modelID,
+			System: "You are a safety classifier for bash commands. Respond with exactly one word: safe or unsafe.",
+			Messages: []ai.Message{
+				{Role: "user", Content: "Should this bash command auto-execute without user confirmation?\n\n" + cmd},
+			},
+		})
+		if err != nil {
+			return judgmentMsg{safe: false}
+		}
+		return judgmentMsg{safe: strings.ToLower(strings.TrimSpace(resp.Content)) == "safe"}
+	}
+}
 
 func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
@@ -25,7 +52,7 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleSpinnerTick(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
-	if m.state != stateThinking {
+	if m.state != stateThinking && m.state != stateJudging {
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -81,7 +108,6 @@ func (m Model) handleToolExecutedMsg(msg agent.ToolExecutedMsg) (tea.Model, tea.
 }
 
 func (m Model) handleNeedsApprovalMsg(msg agent.NeedsApprovalMsg) (tea.Model, tea.Cmd) {
-	m.state = stateApproval
 	m.setPendingTool(msg.ToolCall, msg.Remaining, msg.Collected)
 	m.appendThreadEntries(ThreadEntry{
 		Kind:       EntryToolCall,
@@ -90,6 +116,21 @@ func (m Model) handleNeedsApprovalMsg(msg agent.NeedsApprovalMsg) (tea.Model, te
 		Auto:       false,
 	})
 	m.refreshViewport()
+
+	if m.llmJudge {
+		m.state = stateJudging
+		return m, tea.Batch(m.spin.Tick, m.judgeCmd(msg.ToolCall, msg.Remaining, msg.Collected))
+	}
+
+	m.state = stateApproval
+	return m, nil
+}
+
+func (m Model) handleJudgmentMsg(msg judgmentMsg) (tea.Model, tea.Cmd) {
+	if msg.safe {
+		return m.approvePendingBash()
+	}
+	m.state = stateApproval
 	return m, nil
 }
 

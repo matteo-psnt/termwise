@@ -58,7 +58,11 @@ func (m Model) renderInputRow() string {
 		return " " + m.styles.Spinner.Render(m.spin.View()) + " thinking..."
 
 	case stateApproval:
-		return m.styles.ApprovalHint.Render(" ↵ Approve   a Allow+save   Esc Deny")
+		return m.styles.ApprovalHint.Render(" ↵ Approve   Esc Deny")
+
+	case stateJudging:
+		cmd, _ := m.pending.toolCall.Input["command"].(string)
+		return " " + m.styles.Spinner.Render(m.spin.View()) + " " + cmd
 
 	case stateAskPicker:
 		if m.pending.picker != nil {
