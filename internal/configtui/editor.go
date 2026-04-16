@@ -30,15 +30,72 @@ const (
 	rowProvModel
 	rowProvAuth
 	rowAddProvider
-	rowKeybinding
-	rowTheme
-	rowLLMJudge
+	rowSetting // driven by editorSettings table; settingIdx identifies which one
 )
 
 type editorRow struct {
-	kind     editorRowKind
-	provider string
+	kind       editorRowKind
+	provider   string
+	label      string
+	settingIdx int // only meaningful when kind == rowSetting
+}
+
+// settingDef describes a single settings row declaratively.
+// Adding a new setting requires only a new entry here — nothing else changes.
+type settingDef struct {
 	label    string
+	hint     string
+	getValue func(cfg config.Config) string
+	activate func(m editorModel) (editorModel, tea.Cmd)
+}
+
+var editorSettings = []settingDef{
+	{
+		label: "Keybinding",
+		hint:  "enter edit   ↑/↓ navigate   q quit",
+		getValue: func(cfg config.Config) string {
+			kb := cfg.Shell.Keybinding
+			if kb == "" {
+				kb = "^T"
+			}
+			return zshToLabel(kb)
+		},
+		activate: func(m editorModel) (editorModel, tea.Cmd) {
+			kb := m.cfg.Shell.Keybinding
+			if kb == "" {
+				kb = "^T"
+			}
+			kbm := newKeybindingCapture(kb, m.styles)
+			m.keybinding = &kbm
+			return m, nil
+		},
+	},
+	{
+		label: "Theme",
+		hint:  "enter edit   ↑/↓ navigate   q quit",
+		getValue: func(cfg config.Config) string {
+			return theme.Label(cfg.TUI.Theme)
+		},
+		activate: func(m editorModel) (editorModel, tea.Cmd) {
+			tp := newThemePicker(m.cfg.TUI.Theme, m.r, m.styles)
+			m.themePicker = &tp
+			return m, nil
+		},
+	},
+	{
+		label: "LLM judge",
+		hint:  "enter toggle   ↑/↓ navigate   q quit",
+		getValue: func(cfg config.Config) string {
+			if cfg.Tools.Bash.LLMJudge {
+				return "on"
+			}
+			return "off"
+		},
+		activate: func(m editorModel) (editorModel, tea.Cmd) {
+			m.cfg.Tools.Bash.LLMJudge = !m.cfg.Tools.Bash.LLMJudge
+			return m, nil
+		},
+	},
 }
 
 // ---------------------------------------------------------------------------
@@ -103,12 +160,10 @@ func (m *editorModel) buildRows() {
 	if len(m.cfg.Providers) < len(config.ProviderInfos()) {
 		m.rows = append(m.rows, editorRow{kind: rowAddProvider})
 	}
-	m.rows = append(m.rows,
-		editorRow{kind: rowSectionHeader, label: "Settings"},
-		editorRow{kind: rowKeybinding},
-		editorRow{kind: rowTheme},
-		editorRow{kind: rowLLMJudge},
-	)
+	m.rows = append(m.rows, editorRow{kind: rowSectionHeader, label: "Settings"})
+	for i := range editorSettings {
+		m.rows = append(m.rows, editorRow{kind: rowSetting, settingIdx: i})
+	}
 	m.snapCursor()
 }
 
@@ -337,23 +392,9 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		m.addWizard = &wiz
 		return m, m.addWizard.Init()
 
-	case rowKeybinding:
-		kb := m.cfg.Shell.Keybinding
-		if kb == "" {
-			kb = "^T"
-		}
-		kbm := newKeybindingCapture(kb, m.styles)
-		m.keybinding = &kbm
-		return m, nil
-
-	case rowTheme:
-		tp := newThemePicker(m.cfg.TUI.Theme, m.r, m.styles)
-		m.themePicker = &tp
-		return m, nil
-
-	case rowLLMJudge:
-		m.cfg.Tools.Bash.LLMJudge = !m.cfg.Tools.Bash.LLMJudge
-		return m, nil
+	case rowSetting:
+		updated, cmd := editorSettings[row.settingIdx].activate(m)
+		return updated, cmd
 	}
 	return m, nil
 }
@@ -508,25 +549,14 @@ func (m editorModel) renderNormal() string {
 			}
 
 		case rowProvModel:
-			prefix := m.rowPrefix(focused)
 			val := m.cfg.Providers[row.provider].Model
 			if val == "" {
 				val = "(none)"
 			}
-			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render("     Model   "+val) + "\n")
-			} else {
-				b.WriteString(prefix + m.styles.Dim.Render("     Model   ") + val + "\n")
-			}
+			m.renderRow(&b, focused, "     Model   ", val)
 
 		case rowProvAuth:
-			prefix := m.rowPrefix(focused)
-			val := describeAuth(row.provider, m.cfg.Providers[row.provider])
-			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render("     Auth    "+val) + "\n")
-			} else {
-				b.WriteString(prefix + m.styles.Dim.Render("     Auth    ") + val + "\n")
-			}
+			m.renderRow(&b, focused, "     Auth    ", describeAuth(row.provider, m.cfg.Providers[row.provider]))
 
 		case rowAddProvider:
 			prefix := m.rowPrefix(focused)
@@ -536,38 +566,9 @@ func (m editorModel) renderNormal() string {
 				b.WriteString(prefix + m.styles.Dim.Render("+ Add provider") + "\n")
 			}
 
-		case rowKeybinding:
-			prefix := m.rowPrefix(focused)
-			kb := m.cfg.Shell.Keybinding
-			if kb == "" {
-				kb = "^T"
-			}
-			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(fmt.Sprintf("%-13s%s", "Keybinding", zshToLabel(kb))) + "\n")
-			} else {
-				b.WriteString(prefix + m.styles.Dim.Render("Keybinding   ") + zshToLabel(kb) + "\n")
-			}
-
-		case rowTheme:
-			prefix := m.rowPrefix(focused)
-			val := theme.Label(m.cfg.TUI.Theme)
-			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(fmt.Sprintf("%-13s%s", "Theme", val)) + "\n")
-			} else {
-				b.WriteString(prefix + m.styles.Dim.Render("Theme        ") + val + "\n")
-			}
-
-		case rowLLMJudge:
-			prefix := m.rowPrefix(focused)
-			val := "off"
-			if m.cfg.Tools.Bash.LLMJudge {
-				val = "on"
-			}
-			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(fmt.Sprintf("%-13s%s", "LLM judge", val)) + "\n")
-			} else {
-				b.WriteString(prefix + m.styles.Dim.Render("LLM judge    ") + val + "\n")
-			}
+		case rowSetting:
+			def := editorSettings[row.settingIdx]
+			m.renderRow(&b, focused, fmt.Sprintf("%-13s", def.label), def.getValue(m.cfg))
 		}
 	}
 
@@ -582,8 +583,8 @@ func (m editorModel) renderNormal() string {
 			b.WriteString(m.styles.Dim.Render("enter edit auth   ↑/↓ navigate   q quit"))
 		case rowAddProvider:
 			b.WriteString(m.styles.Dim.Render("enter add provider   ↑/↓ navigate   q quit"))
-		case rowLLMJudge:
-			b.WriteString(m.styles.Dim.Render("enter toggle   ↑/↓ navigate   q quit"))
+		case rowSetting:
+			b.WriteString(m.styles.Dim.Render(editorSettings[m.rows[m.cursor].settingIdx].hint))
 		default:
 			b.WriteString(m.styles.Dim.Render("enter edit   ↑/↓ navigate   q quit"))
 		}
@@ -597,4 +598,15 @@ func (m editorModel) rowPrefix(focused bool) string {
 		return m.styles.Selected.Render("▶ ")
 	}
 	return "  "
+}
+
+// renderRow renders a labeled value row. label should already be padded/formatted
+// for display (e.g. "     Model   " for sub-rows, fmt.Sprintf("%-13s", ...) for settings).
+func (m editorModel) renderRow(b *strings.Builder, focused bool, label, value string) {
+	prefix := m.rowPrefix(focused)
+	if focused {
+		b.WriteString(prefix + m.styles.Selected.Render(label+value) + "\n")
+	} else {
+		b.WriteString(prefix + m.styles.Dim.Render(label) + value + "\n")
+	}
 }

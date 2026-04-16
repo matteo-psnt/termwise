@@ -14,7 +14,7 @@ import (
 
 type judgmentMsg struct{ safe bool }
 
-func (m Model) judgeCmd(tc ai.ToolCall, remaining []ai.ToolCall, collected []ai.ToolResult) tea.Cmd {
+func (m Model) judgeCmd(tc ai.ToolCall) tea.Cmd {
 	cmd, _ := tc.Input["command"].(string)
 	provider := m.provider
 	modelID := m.modelID
@@ -119,7 +119,7 @@ func (m Model) handleNeedsApprovalMsg(msg agent.NeedsApprovalMsg) (tea.Model, te
 
 	if m.llmJudge {
 		m.state = stateJudging
-		return m, tea.Batch(m.spin.Tick, m.judgeCmd(msg.ToolCall, msg.Remaining, msg.Collected))
+		return m, tea.Batch(m.spin.Tick, m.judgeCmd(msg.ToolCall))
 	}
 
 	m.state = stateApproval
@@ -168,7 +168,7 @@ func (m Model) handleAllToolsDoneMsg(msg agent.AllToolsDoneMsg) (tea.Model, tea.
 }
 
 func (m Model) updateViewportOnly(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.state != stateIdle && m.state != stateThinking {
+	if m.state != stateIdle && m.state != stateThinking && m.state != stateJudging {
 		return m, nil
 	}
 	var vpCmd tea.Cmd

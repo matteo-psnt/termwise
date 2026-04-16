@@ -18,8 +18,9 @@ import (
 // Open launches the agent TUI. It handles stdin pre-loading and TTY setup.
 func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPath string, prefill string) error {
 	// Read stdin if piped.
+	stdinPiped := !tty.IsTerminal(os.Stdin)
 	var stdin string
-	if !tty.IsTerminal(os.Stdin) {
+	if stdinPiped {
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return fmt.Errorf("reading stdin: %w", err)
@@ -31,7 +32,7 @@ func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPat
 	// so bubbletea can receive keyboard events.
 	var programOpts []tea.ProgramOption
 
-	if !tty.IsTerminal(os.Stdin) {
+	if stdinPiped {
 		ttyFile, err := os.Open("/dev/tty")
 		if err != nil {
 			return fmt.Errorf("opening /dev/tty for keyboard input: %w", err)
