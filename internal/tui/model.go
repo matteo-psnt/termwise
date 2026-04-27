@@ -14,6 +14,7 @@ import (
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/ai"
 	"github.com/matteo-psnt/termwise/internal/allowlist"
+	"github.com/matteo-psnt/termwise/internal/configtui"
 	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/matteo-psnt/termwise/internal/theme"
 	"github.com/matteo-psnt/termwise/internal/tools"
@@ -73,6 +74,14 @@ type Model struct {
 	// Styles (built once)
 	styles       Styles
 	glamourStyle string // "dark" or "light", fixed at construction
+
+	// closeKey is the zsh bindkey string (e.g. "^T") that quits the TUI,
+	// matching the shell keybinding that opened it.
+	closeKey string
+
+	// quitting is set before tea.Quit so View() returns "" on the final frame,
+	// causing bubbletea's inline renderer to clear all drawn lines on exit.
+	quitting bool
 }
 
 // newModel constructs the TUI model.
@@ -86,6 +95,7 @@ func newModel(
 	llmJudge bool,
 	prefill string,
 	themeName string,
+	closeKey string,
 ) Model {
 	ti := textinput.New()
 	ti.Prompt = ""
@@ -117,6 +127,7 @@ func newModel(
 		cancel:        cancel,
 		styles:        newStyles(r, theme.Get(themeName)),
 		glamourStyle:  glamourStyle(r),
+		closeKey:      closeKey,
 	}
 
 	if stdin != "" {
@@ -162,10 +173,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m.updateViewportOnly(msg)
 }
 
+func (m Model) quit() (tea.Model, tea.Cmd) {
+	m.quitting = true
+	return m, tea.Quit
+}
+
 // handleKey handles all keyboard input based on current state.
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.KeyCtrlC {
-		return m, tea.Quit
+		return m.quit()
+	}
+	if m.closeKey != "" {
+		if zsh, ok := configtui.KeyMsgToZsh(msg); ok && zsh == m.closeKey {
+			return m.quit()
+		}
 	}
 
 	switch m.state {
@@ -275,7 +296,7 @@ func (m Model) chatRequest() ai.ChatRequest {
 
 // refreshViewport re-renders the thread and updates viewport content.
 func (m *Model) refreshViewport() {
-	content := renderThread(m.thread, m.vp.Width, m.styles, m.glamourStyle)
+	content := renderThread(m.thread, m.styles, m.glamourStyle)
 	m.vp.SetContent(content)
 	m.vp.GotoBottom()
 }

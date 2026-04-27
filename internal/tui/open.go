@@ -50,16 +50,18 @@ func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPat
 
 	themeName := theme.DefaultName
 	var llmJudge bool
+	var closeKey string
 	if cfgPath != "" {
 		cfg, exists, err := config.LoadConfig(cfgPath)
 		if err == nil && exists {
 			themeName = theme.Normalize(cfg.TUI.Theme)
 			llmJudge = cfg.Tools.Bash.LLMJudge
+			closeKey = cfg.Shell.Keybinding
 		}
 	}
 
 	system := systemprompt.Agent()
-	m := newModel(providerName, provider, modelID, system, stdin, r, llmJudge, prefill, themeName)
+	m := newModel(providerName, provider, modelID, system, stdin, r, llmJudge, prefill, themeName, closeKey)
 
 	p := tea.NewProgram(m, programOpts...)
 	if _, err := p.Run(); err != nil {
@@ -67,3 +69,4 @@ func Open(providerName string, provider ai.AgentProvider, modelID string, cfgPat
 	}
 	return nil
 }
+

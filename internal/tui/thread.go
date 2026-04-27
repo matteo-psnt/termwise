@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // EntryKind identifies the type of a thread entry.
@@ -34,7 +33,7 @@ type ThreadEntry struct {
 const maxDisplayLines = 20
 
 // renderThread renders all thread entries to a string for the viewport.
-func renderThread(entries []ThreadEntry, width int, s Styles, glamour string) string {
+func renderThread(entries []ThreadEntry, s Styles, glamour string) string {
 	if len(entries) == 0 {
 		return ""
 	}
@@ -43,44 +42,33 @@ func renderThread(entries []ThreadEntry, width int, s Styles, glamour string) st
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(renderEntry(e, width, s, glamour))
+		b.WriteString(renderEntry(e, s, glamour))
 	}
 	return b.String()
 }
 
-func renderEntry(e ThreadEntry, width int, s Styles, glamour string) string {
+func renderEntry(e ThreadEntry, s Styles, glamour string) string {
 	switch e.Kind {
 	case EntryUser:
-		return s.UserPrefix.Render("You: ") + e.Content
+		return s.UserSymbol.Render("› ") + e.Content
 
 	case EntryAssistant:
-		text := renderMarkdown(e.Content, glamour)
-		return s.TWPrefix.Render("tw: ") + text
+		text := strings.TrimLeft(renderMarkdown(e.Content, glamour), "\n")
+		return s.TWSymbol.Render("◆ ") + text
 
 	case EntryToolCall:
-		tag := s.ToolName.Render(fmt.Sprintf("[%s] %s", e.ToolName, e.ToolDetail))
-		if !e.Auto {
-			return tag
-		}
-		// Right-align "(auto)" marker.
-		autoStr := s.ToolAuto.Render("(auto)")
-		tagWidth := lipgloss.Width(tag)
-		autoWidth := lipgloss.Width(autoStr)
-		padding := width - tagWidth - autoWidth - 4
-		if padding < 1 {
-			padding = 1
-		}
-		return tag + strings.Repeat(" ", padding) + autoStr
+		name := capitalizeFirst(e.ToolName)
+		return s.ToolCall.Render(name + "(" + e.ToolDetail + ")")
 
 	case EntryToolResult:
 		return renderToolOutput(e.Content, e.IsError, s)
 
 	case EntryRespond:
 		if e.RespondType == "command" {
-			return "  $ " + s.Command.Render(e.Content)
+			return s.TWSymbol.Render("◆ ") + "$ " + s.Command.Render(e.Content)
 		}
-		text := renderMarkdown(e.Content, glamour)
-		return s.TWPrefix.Render("tw: ") + text
+		text := strings.TrimLeft(renderMarkdown(e.Content, glamour), "\n")
+		return s.TWSymbol.Render("◆ ") + text
 
 	case EntryError:
 		return s.Error.Render("Error: " + e.Content)
@@ -88,7 +76,14 @@ func renderEntry(e ThreadEntry, width int, s Styles, glamour string) string {
 	return ""
 }
 
-// renderToolOutput formats tool result lines with "→" prefix, truncating to maxDisplayLines.
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// renderToolOutput formats tool result lines as an indented │ block, truncating to maxDisplayLines.
 func renderToolOutput(content string, isErr bool, s Styles) string {
 	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
 	total := len(lines)
@@ -100,15 +95,20 @@ func renderToolOutput(content string, isErr bool, s Styles) string {
 		truncated = total - maxDisplayLines
 	}
 
+	borderStyle := s.ToolOutput
+	if isErr {
+		borderStyle = s.Error
+	}
+
 	var b strings.Builder
 	for i, l := range display {
-		b.WriteString(s.ToolOutput.Render("→ " + l))
+		b.WriteString(borderStyle.Render("  "+l))
 		if i < len(display)-1 || truncated > 0 {
 			b.WriteString("\n")
 		}
 	}
 	if truncated > 0 {
-		b.WriteString(s.ToolOutput.Render(fmt.Sprintf("[output truncated — %d more lines]", truncated)))
+		b.WriteString(borderStyle.Render(fmt.Sprintf("  [%d more lines]", truncated)))
 	}
 	return b.String()
 }

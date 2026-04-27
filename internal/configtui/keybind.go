@@ -126,9 +126,9 @@ var keyTypeLabel = map[tea.KeyType]string{
 	tea.KeyF20: "F20",
 }
 
-// keyMsgToZsh converts a bubbletea key event to a zsh bindkey-compatible string.
+// KeyMsgToZsh converts a bubbletea key event to a zsh bindkey-compatible string.
 // Returns ("", false) if the key cannot be used as a terminal keybinding.
-func keyMsgToZsh(msg tea.KeyMsg) (string, bool) {
+func KeyMsgToZsh(msg tea.KeyMsg) (string, bool) {
 	// Alt+rune (e.g. alt+f): \ef
 	if msg.Alt && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
 		return `\e` + string(msg.Runes), true

@@ -37,7 +37,7 @@ func (m keybindingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.result = m.captured
 			m.done = true
 		default:
-			if binding, ok := keyMsgToZsh(key); ok {
+			if binding, ok := KeyMsgToZsh(key); ok {
 				m.captured = binding
 			}
 		}
@@ -48,7 +48,7 @@ func (m keybindingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancelled = true
 		m.done = true
 	default:
-		if binding, ok := keyMsgToZsh(key); ok {
+		if binding, ok := KeyMsgToZsh(key); ok {
 			m.captured = binding
 			m.confirming = true
 		}

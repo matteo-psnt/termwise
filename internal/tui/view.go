@@ -9,6 +9,9 @@ import (
 
 // View implements tea.Model.
 func (m Model) View() string {
+	if m.quitting {
+		return ""
+	}
 	if !m.ready {
 		return "Loading...\n"
 	}

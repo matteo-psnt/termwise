@@ -19,10 +19,9 @@ func glamourStyle(r *lipgloss.Renderer) string {
 type Styles struct {
 	Outer        lipgloss.Style
 	Header       lipgloss.Style
-	UserPrefix   lipgloss.Style
-	TWPrefix     lipgloss.Style
-	ToolName     lipgloss.Style
-	ToolAuto     lipgloss.Style
+	UserSymbol   lipgloss.Style
+	TWSymbol     lipgloss.Style
+	ToolCall     lipgloss.Style
 	ToolOutput   lipgloss.Style
 	ApprovalHint lipgloss.Style
 	Footer       lipgloss.Style
@@ -47,10 +46,9 @@ func newStyles(r *lipgloss.Renderer, palette theme.Palette) Styles {
 			BorderTop(false).
 			BorderForeground(dim),
 		Header:       r.NewStyle().Foreground(dim),
-		UserPrefix:   r.NewStyle().Faint(true),
-		TWPrefix:     r.NewStyle().Foreground(accent),
-		ToolName:     r.NewStyle().Faint(true),
-		ToolAuto:     r.NewStyle().Faint(true).Italic(true),
+		UserSymbol:   r.NewStyle().Faint(true),
+		TWSymbol:     r.NewStyle().Foreground(accent),
+		ToolCall:     r.NewStyle().Faint(true),
 		ToolOutput:   r.NewStyle().Faint(true),
 		ApprovalHint: r.NewStyle().Faint(true),
 		Footer:       r.NewStyle().Faint(true),
