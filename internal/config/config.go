@@ -39,7 +39,7 @@ type ShellConfig struct {
 
 // BashToolConfig holds configuration for the bash tool in agent mode.
 type BashToolConfig struct {
-	Allow    []string `toml:"allow,omitempty"`    // Deprecated: no longer used.
+	Allow    []string `toml:"allow,omitempty"`     // Deprecated: no longer used.
 	LLMJudge bool     `toml:"llm_judge,omitempty"` // Use LLM to auto-approve safe commands.
 }
 

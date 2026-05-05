@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/matteo-psnt/termwise/internal/ai"
+	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/systemprompt"
 )
 
@@ -16,12 +16,12 @@ var tagRe = regexp.MustCompile(`(?s)<(?:command|text)>(.*?)</(?:command|text)>`)
 // It always outputs raw text (no glamour, no exit codes) and suppresses errors
 // so they never corrupt the shell buffer.
 func ShellWidget(ctx context.Context, prompt string) error {
-	provider, modelID, err := resolveProvider()
+	client, modelID, err := resolveProvider()
 	if err != nil {
 		return nil // suppress — never corrupt shell buffer
 	}
 
-	resp, err := provider.Complete(ctx, ai.CompleteRequest{
+	resp, err := client.Complete(ctx, provider.CompleteRequest{
 		Model:  modelID,
 		System: systemprompt.SingleShot(false), // always treat as piped (raw output)
 		Prompt: prompt,

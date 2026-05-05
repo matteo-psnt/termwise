@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/glamour"
-	"github.com/matteo-psnt/termwise/internal/ai"
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/systemprompt"
 	"github.com/matteo-psnt/termwise/internal/tty"
 )
@@ -37,12 +37,12 @@ func SingleShot(ctx context.Context, prompt string) error {
 		}
 	}
 
-	provider, modelID, err := resolveProvider()
+	client, modelID, err := resolveProvider()
 	if err != nil {
 		return err
 	}
 
-	resp, err := provider.Complete(ctx, ai.CompleteRequest{
+	resp, err := client.Complete(ctx, provider.CompleteRequest{
 		Model:  modelID,
 		System: systemprompt.SingleShot(isTTY),
 		Prompt: prompt,
@@ -79,8 +79,8 @@ func writeOutput(content string, isTTY bool) error {
 	return ExitCode{10}
 }
 
-// resolveProvider loads config and returns a ready AgentProvider and model ID.
-func resolveProvider() (ai.AgentProvider, string, error) {
+// resolveProvider loads config and returns a ready provider client and model ID.
+func resolveProvider() (provider.AgentClient, string, error) {
 	cfgPath, err := config.DefaultConfigPath()
 	if err != nil {
 		return nil, "", err
@@ -93,9 +93,9 @@ func resolveProvider() (ai.AgentProvider, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	provider, err := config.NewAgentProvider(providerName, pc)
+	client, err := config.NewProviderClient(providerName, pc)
 	if err != nil {
 		return nil, "", err
 	}
-	return provider, pc.Model, nil
+	return client, pc.Model, nil
 }

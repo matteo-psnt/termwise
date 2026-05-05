@@ -5,12 +5,12 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/matteo-psnt/termwise/internal/ai"
-	"github.com/matteo-psnt/termwise/internal/tools"
+	"github.com/matteo-psnt/termwise/internal/agent/tools"
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 // ChatCmd sends the current conversation to the model and returns a ResponseMsg.
-func ChatCmd(ctx context.Context, provider ai.AgentProvider, req ai.ChatRequest) tea.Cmd {
+func ChatCmd(ctx context.Context, provider provider.AgentClient, req provider.ChatRequest) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := provider.Chat(ctx, req)
 		return ResponseMsg{Resp: resp, Err: err}
@@ -21,10 +21,10 @@ func ChatCmd(ctx context.Context, provider ai.AgentProvider, req ai.ChatRequest)
 // one that requires user input (approval or ask). Auto-executed tools (read)
 // return immediately so the TUI can update the display and continue.
 // needsApproval is called for bash commands to determine if approval is required.
-func ProcessToolsCmd(toolCalls []ai.ToolCall, collected []ai.ToolResult, needsApproval func(string) bool) tea.Cmd {
+func ProcessToolsCmd(toolCalls []provider.ToolCall, collected []provider.ToolResult, needsApproval func(string) bool) tea.Cmd {
 	return func() tea.Msg {
 		for i, tc := range toolCalls {
-			remaining := make([]ai.ToolCall, len(toolCalls)-i-1)
+			remaining := make([]provider.ToolCall, len(toolCalls)-i-1)
 			copy(remaining, toolCalls[i+1:])
 
 			switch tc.Name {
@@ -38,12 +38,12 @@ func ProcessToolsCmd(toolCalls []ai.ToolCall, collected []ai.ToolResult, needsAp
 					ToolCallID:  tc.ID,
 					RespondType: respondType,
 					Content:     content,
-					Collected:   append(collected, ai.ToolResult{ToolCallID: tc.ID, Content: "ok"}),
+					Collected:   append(collected, provider.ToolResult{ToolCallID: tc.ID, Content: "ok"}),
 				}
 
 			case "read":
 				content, isErr := tools.Read(tc.Input)
-				result := ai.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
+				result := provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
 				return ToolExecutedMsg{
 					ToolCall:     tc,
 					Result:       result,
@@ -63,7 +63,7 @@ func ProcessToolsCmd(toolCalls []ai.ToolCall, collected []ai.ToolResult, needsAp
 					}
 				}
 				content, isErr := tools.Bash(tc.Input)
-				result := ai.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
+				result := provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
 				return ToolExecutedMsg{
 					ToolCall:     tc,
 					Result:       result,
@@ -94,7 +94,7 @@ func ProcessToolsCmd(toolCalls []ai.ToolCall, collected []ai.ToolResult, needsAp
 
 			default:
 				// Unknown tool — record error and continue.
-				result := ai.ToolResult{
+				result := provider.ToolResult{
 					ToolCallID: tc.ID,
 					Content:    fmt.Sprintf("error: unknown tool %q", tc.Name),
 					IsError:    true,
@@ -107,10 +107,10 @@ func ProcessToolsCmd(toolCalls []ai.ToolCall, collected []ai.ToolResult, needsAp
 }
 
 // ExecuteBashCmd executes a bash command after the user has approved it.
-func ExecuteBashCmd(tc ai.ToolCall, remaining []ai.ToolCall, collected []ai.ToolResult) tea.Cmd {
+func ExecuteBashCmd(tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) tea.Cmd {
 	return func() tea.Msg {
 		content, isErr := tools.Bash(tc.Input)
-		result := ai.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
+		result := provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
 		return ToolExecutedMsg{
 			ToolCall:     tc,
 			Result:       result,

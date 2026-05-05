@@ -1,38 +1,38 @@
 package agent
 
-import "github.com/matteo-psnt/termwise/internal/ai"
+import "github.com/matteo-psnt/termwise/internal/provider"
 
 // ResponseMsg is sent when the model returns a chat response.
 type ResponseMsg struct {
-	Resp *ai.ChatResponse
+	Resp *provider.ChatResponse
 	Err  error
 }
 
 // ToolExecutedMsg is sent when a tool (read or auto-accepted bash) has been executed.
 type ToolExecutedMsg struct {
-	ToolCall     ai.ToolCall
-	Result       ai.ToolResult
-	Remaining    []ai.ToolCall
-	Collected    []ai.ToolResult
+	ToolCall     provider.ToolCall
+	Result       provider.ToolResult
+	Remaining    []provider.ToolCall
+	Collected    []provider.ToolResult
 	AutoAccepted bool
 }
 
 // NeedsApprovalMsg is sent when a bash command requires user approval before running.
 type NeedsApprovalMsg struct {
-	ToolCall  ai.ToolCall
+	ToolCall  provider.ToolCall
 	Command   string
-	Remaining []ai.ToolCall
-	Collected []ai.ToolResult
+	Remaining []provider.ToolCall
+	Collected []provider.ToolResult
 }
 
 // AskMsg is sent when the model uses the ask tool.
 type AskMsg struct {
-	ToolCall    ai.ToolCall
+	ToolCall    provider.ToolCall
 	Question    string
 	Options     []string
 	MultiSelect bool
-	Remaining   []ai.ToolCall
-	Collected   []ai.ToolResult
+	Remaining   []provider.ToolCall
+	Collected   []provider.ToolResult
 }
 
 // RespondMsg is sent when the model calls the respond tool.
@@ -40,11 +40,11 @@ type RespondMsg struct {
 	ToolCallID  string
 	RespondType string // "command" | "text"
 	Content     string
-	Collected   []ai.ToolResult
+	Collected   []provider.ToolResult
 }
 
 // AllToolsDoneMsg is sent when all tool calls have been processed and results
 // should be sent back to the model.
 type AllToolsDoneMsg struct {
-	Collected []ai.ToolResult
+	Collected []provider.ToolResult
 }

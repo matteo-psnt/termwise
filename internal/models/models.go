@@ -1,21 +1,21 @@
 package models
 
 import (
+	_ "embed"
 	"fmt"
 	"sync"
 
-	"github.com/matteo-psnt/termwise/assets"
 	"gopkg.in/yaml.v3"
 )
 
 // ModelData holds metadata for a single model.
 type ModelData struct {
-	ID           string  `yaml:"id"`
-	Name         string  `yaml:"name"`
-	Context      int     `yaml:"context"`       // tokens
-	InputPrice   float64 `yaml:"input_price"`   // per 1M tokens
-	OutputPrice  float64 `yaml:"output_price"`  // per 1M tokens
-	SupportsTools bool   `yaml:"supports_tools"`
+	ID            string  `yaml:"id"`
+	Name          string  `yaml:"name"`
+	Context       int     `yaml:"context"`      // tokens
+	InputPrice    float64 `yaml:"input_price"`  // per 1M tokens
+	OutputPrice   float64 `yaml:"output_price"` // per 1M tokens
+	SupportsTools bool    `yaml:"supports_tools"`
 }
 
 // ProviderData holds all model metadata for one provider.
@@ -34,14 +34,17 @@ type modelsFile struct {
 // ----------------------------------------------------------------------------
 
 var (
-	once     sync.Once
-	loaded   modelsFile
-	loadErr  error
+	once    sync.Once
+	loaded  modelsFile
+	loadErr error
 )
+
+//go:embed models.yaml
+var builtinModelsYAML []byte
 
 func load() {
 	once.Do(func() {
-		if err := yaml.Unmarshal(assets.ModelsYAML, &loaded); err != nil {
+		if err := yaml.Unmarshal(builtinModelsYAML, &loaded); err != nil {
 			loadErr = fmt.Errorf("failed to parse embedded models.yaml: %w", err)
 		}
 	})

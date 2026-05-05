@@ -10,13 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	// Register providers via their init() functions.
-	_ "github.com/matteo-psnt/termwise/internal/ai/anthropic"
-	_ "github.com/matteo-psnt/termwise/internal/ai/openaicompat"
-
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/runner"
-	"github.com/matteo-psnt/termwise/internal/tui"
+	"github.com/matteo-psnt/termwise/internal/tui/agentui"
 )
 
 func main() {
@@ -78,9 +74,9 @@ func openTUI(prefill string) error {
 	if err != nil {
 		return err
 	}
-	provider, err := config.NewAgentProvider(providerName, pc)
+	provider, err := config.NewProviderClient(providerName, pc)
 	if err != nil {
 		return err
 	}
-	return tui.Open(providerName, provider, pc.Model, cfgPath, prefill)
+	return agentui.Open(providerName, provider, pc.Model, cfgPath, prefill)
 }

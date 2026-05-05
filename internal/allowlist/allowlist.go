@@ -1,13 +1,12 @@
 package allowlist
 
 import (
+	_ "embed"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/matteo-psnt/termwise/assets"
 )
 
 // Rule describes one entry in the allow-list.
@@ -31,14 +30,17 @@ type allowlistFile struct {
 // ----------------------------------------------------------------------------
 
 var (
-	once        sync.Once
+	once         sync.Once
 	builtinRules []Rule
 )
+
+//go:embed allowlist.yaml
+var builtinAllowlistYAML []byte
 
 func loadBuiltin() {
 	once.Do(func() {
 		var f allowlistFile
-		if err := yaml.Unmarshal(assets.AllowlistYAML, &f); err != nil {
+		if err := yaml.Unmarshal(builtinAllowlistYAML, &f); err != nil {
 			// Malformed embedded file is a build-time bug; degrade gracefully.
 			builtinRules = nil
 			return
