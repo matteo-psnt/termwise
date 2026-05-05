@@ -71,9 +71,8 @@ type Model struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// Styles (built once)
-	styles       Styles
-	glamourStyle string // "dark" or "light", fixed at construction
+	// Renderer (built once)
+	renderer Renderer
 
 	// closeKey is the zsh bindkey string (e.g. "^T") that quits the TUI,
 	// matching the shell keybinding that opened it.
@@ -125,14 +124,15 @@ func newModel(
 		spin:          sp,
 		ctx:           ctx,
 		cancel:        cancel,
-		styles:        newStyles(r, theme.Get(themeName)),
-		glamourStyle:  glamourStyle(r),
+		renderer: Renderer{
+			styles:  newStyles(r, theme.Get(themeName)),
+			glamour: glamourStyle(r),
+		},
 		closeKey:      closeKey,
 	}
 
 	if stdin != "" {
-		m.thread = append(m.thread, ThreadEntry{
-			Kind:    EntryUser,
+		m.thread = append(m.thread, UserEntry{
 			Content: fmt.Sprintf("[stdin: %d lines]", strings.Count(stdin, "\n")+1),
 		})
 	}
@@ -227,11 +227,7 @@ func (m Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.approvePendingBash()
 
 	case tea.KeyEsc:
-		m.appendThreadEntries(ThreadEntry{
-			Kind:    EntryToolResult,
-			Content: "User denied this command.",
-			IsError: true,
-		})
+		m.appendThreadEntries(ToolResultEntry{Content: "User denied this command.", IsError: true})
 		m.refreshViewport()
 		return m.resumePendingToolLoop(m.pending.result("User denied this command.", true))
 	}
@@ -256,7 +252,7 @@ func (m Model) handlePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if submitted {
-		m.appendThreadEntries(ThreadEntry{Kind: EntryUser, Content: result})
+		m.appendThreadEntries(UserEntry{Content: result})
 		m.refreshViewport()
 		return m.resumePendingToolLoop(m.pending.result(result, false))
 	}
@@ -272,7 +268,7 @@ func (m Model) submitMessage(text string) (tea.Model, tea.Cmd) {
 		m.stdin = ""
 	}
 
-	m.thread = append(m.thread, ThreadEntry{Kind: EntryUser, Content: text})
+	m.thread = append(m.thread, UserEntry{Content: text})
 	m.messages = append(m.messages, ai.Message{Role: "user", Content: content})
 	m.messages = trimContext(m.messages, m.contextWindow)
 	m.state = stateThinking
@@ -296,7 +292,7 @@ func (m Model) chatRequest() ai.ChatRequest {
 
 // refreshViewport re-renders the thread and updates viewport content.
 func (m *Model) refreshViewport() {
-	content := renderThread(m.thread, m.styles, m.glamourStyle)
+	content := m.renderer.RenderThread(m.thread)
 	m.vp.SetContent(content)
 	m.vp.GotoBottom()
 }

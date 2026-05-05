@@ -94,7 +94,7 @@ func (p picker) Update(msg tea.KeyMsg) (picker, string, bool, bool) {
 }
 
 // View renders the picker list.
-func (p picker) View(s Styles) string {
+func (p picker) View(r Renderer) string {
 	var b strings.Builder
 
 	for i, opt := range p.options {

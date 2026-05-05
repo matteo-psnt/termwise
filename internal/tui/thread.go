@@ -7,33 +7,16 @@ import (
 	"github.com/charmbracelet/glamour"
 )
 
-// EntryKind identifies the type of a thread entry.
-type EntryKind int
-
-const (
-	EntryUser      EntryKind = iota // "You: ..."
-	EntryAssistant                  // bare text from model (implicit respond)
-	EntryToolCall                   // "[bash] cmd" or "[read] path"
-	EntryToolResult                 // "→ output"
-	EntryRespond                    // final respond tool output
-	EntryError                      // error inline
-)
-
-// ThreadEntry is one display item in the conversation thread.
-type ThreadEntry struct {
-	Kind        EntryKind
-	Content     string
-	ToolName    string // for EntryToolCall
-	ToolDetail  string // for EntryToolCall: command or path
-	Auto        bool   // for EntryToolCall: was auto-accepted
-	RespondType string // for EntryRespond: "command" | "text"
-	IsError     bool   // for EntryToolResult: marks as error result
+// Renderer holds the config needed to render thread entries.
+// Passed as a value to each entry's render method, keeping rendering stateless
+// with all presentation config in one place.
+type Renderer struct {
+	styles  Styles
+	glamour string // "dark" or "light"
 }
 
-const maxDisplayLines = 20
-
-// renderThread renders all thread entries to a string for the viewport.
-func renderThread(entries []ThreadEntry, s Styles, glamour string) string {
+// RenderThread renders all thread entries joined by newlines.
+func (r Renderer) RenderThread(entries []ThreadEntry) string {
 	if len(entries) == 0 {
 		return ""
 	}
@@ -42,50 +25,51 @@ func renderThread(entries []ThreadEntry, s Styles, glamour string) string {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(renderEntry(e, s, glamour))
+		b.WriteString(e.render(r))
 	}
 	return b.String()
 }
 
-func renderEntry(e ThreadEntry, s Styles, glamour string) string {
-	switch e.Kind {
-	case EntryUser:
-		return s.UserSymbol.Render("› ") + e.Content
-
-	case EntryAssistant:
-		text := strings.TrimLeft(renderMarkdown(e.Content, glamour), "\n")
-		return s.TWSymbol.Render("◆ ") + text
-
-	case EntryToolCall:
-		name := capitalizeFirst(e.ToolName)
-		return s.ToolCall.Render(name + "(" + e.ToolDetail + ")")
-
-	case EntryToolResult:
-		return renderToolOutput(e.Content, e.IsError, s)
-
-	case EntryRespond:
-		if e.RespondType == "command" {
-			return s.TWSymbol.Render("◆ ") + "$ " + s.Command.Render(e.Content)
-		}
-		text := strings.TrimLeft(renderMarkdown(e.Content, glamour), "\n")
-		return s.TWSymbol.Render("◆ ") + text
-
-	case EntryError:
-		return s.Error.Render("Error: " + e.Content)
-	}
-	return ""
+// ThreadEntry is any displayable item in the conversation thread.
+type ThreadEntry interface {
+	render(r Renderer) string
 }
 
-func capitalizeFirst(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
+// UserEntry is a message typed by the user.
+type UserEntry struct{ Content string }
+
+func (e UserEntry) render(r Renderer) string {
+	return r.styles.UserSymbol.Render("› ") + e.Content
 }
 
-// renderToolOutput formats tool result lines as an indented │ block, truncating to maxDisplayLines.
-func renderToolOutput(content string, isErr bool, s Styles) string {
-	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+// AssistantEntry is text output from the model (direct or via the respond tool).
+type AssistantEntry struct{ Content string }
+
+func (e AssistantEntry) render(r Renderer) string {
+	text := strings.TrimLeft(renderMarkdown(e.Content, r.glamour), "\n")
+	return r.styles.TWSymbol.Render("◆ ") + text
+}
+
+// ToolCallEntry shows a tool being invoked.
+type ToolCallEntry struct {
+	Name   string // e.g. "bash"
+	Detail string // e.g. the command or path
+}
+
+func (e ToolCallEntry) render(r Renderer) string {
+	return r.styles.ToolCall.Render(capitalizeFirst(e.Name) + "(" + e.Detail + ")")
+}
+
+// ToolResultEntry shows the output of a tool call.
+type ToolResultEntry struct {
+	Content string
+	IsError bool
+}
+
+const maxDisplayLines = 20
+
+func (e ToolResultEntry) render(r Renderer) string {
+	lines := strings.Split(strings.TrimRight(e.Content, "\n"), "\n")
 	total := len(lines)
 
 	display := lines
@@ -95,25 +79,46 @@ func renderToolOutput(content string, isErr bool, s Styles) string {
 		truncated = total - maxDisplayLines
 	}
 
-	borderStyle := s.ToolOutput
-	if isErr {
-		borderStyle = s.Error
+	style := r.styles.ToolOutput
+	if e.IsError {
+		style = r.styles.Error
 	}
 
 	var b strings.Builder
 	for i, l := range display {
-		b.WriteString(borderStyle.Render("  "+l))
+		b.WriteString(style.Render("  " + l))
 		if i < len(display)-1 || truncated > 0 {
 			b.WriteString("\n")
 		}
 	}
 	if truncated > 0 {
-		b.WriteString(borderStyle.Render(fmt.Sprintf("  [%d more lines]", truncated)))
+		b.WriteString(style.Render(fmt.Sprintf("  [%d more lines]", truncated)))
 	}
 	return b.String()
 }
 
-func renderMarkdown(content string, style string) string {
+// CommandEntry shows a shell command the model wants to push to the shell buffer.
+type CommandEntry struct{ Content string }
+
+func (e CommandEntry) render(r Renderer) string {
+	return r.styles.TWSymbol.Render("◆ ") + "$ " + r.styles.Command.Render(e.Content)
+}
+
+// ErrorEntry shows an inline error message.
+type ErrorEntry struct{ Content string }
+
+func (e ErrorEntry) render(r Renderer) string {
+	return r.styles.Error.Render("Error: " + e.Content)
+}
+
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func renderMarkdown(content, style string) string {
 	rendered, err := glamour.Render(content, style)
 	if err != nil {
 		return content

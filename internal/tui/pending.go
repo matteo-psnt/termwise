@@ -61,7 +61,7 @@ func (m *Model) interruptThinking() {
 	m.ctx = ctx
 	m.cancel = cancel
 	m.state = stateIdle
-	m.appendThreadEntries(ThreadEntry{Kind: EntryError, Content: "interrupted"})
+	m.appendThreadEntries(ErrorEntry{Content: "interrupted"})
 	m.refreshViewport()
 }
 

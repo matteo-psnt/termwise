@@ -26,7 +26,7 @@ func (m Model) View() string {
 
 	// Wrap with 3-sided border (left │, right │, bottom ╰─╯).
 	// Width is the content width before padding/borders.
-	boxed := m.styles.Outer.Width(vpW).Render(inner)
+	boxed := m.renderer.styles.Outer.Width(vpW).Render(inner)
 
 	// Prepend the custom top border line with title.
 	top := m.renderBoxTop(m.width)
@@ -51,30 +51,30 @@ func (m Model) renderBoxTop(w int) string {
 	}
 
 	title := left + strings.Repeat("─", fill) + right
-	return m.styles.Header.Render("╭" + title + "╮")
+	return m.renderer.styles.Header.Render("╭" + title + "╮")
 }
 
 // renderInputRow renders the bottom input / status line inside the box.
 func (m Model) renderInputRow() string {
 	switch m.state {
 	case stateThinking:
-		return " " + m.styles.Spinner.Render(m.spin.View()) + " thinking..."
+		return " " + m.renderer.styles.Spinner.Render(m.spin.View()) + " thinking..."
 
 	case stateApproval:
-		return m.styles.ApprovalHint.Render(" ↵ Approve   Esc Deny")
+		return m.renderer.styles.ApprovalHint.Render(" ↵ Approve   Esc Deny")
 
 	case stateJudging:
 		cmd, _ := m.pending.toolCall.Input["command"].(string)
-		return " " + m.styles.Spinner.Render(m.spin.View()) + " " + cmd
+		return " " + m.renderer.styles.Spinner.Render(m.spin.View()) + " " + cmd
 
 	case stateAskPicker:
 		if m.pending.picker != nil {
-			return m.pending.picker.View(m.styles)
+			return m.pending.picker.View(m.renderer)
 		}
 		return ""
 
 	default: // stateIdle
-		return m.styles.InputPrompt.Render(" › ") + m.input.View()
+		return m.renderer.styles.InputPrompt.Render(" › ") + m.input.View()
 	}
 }
 

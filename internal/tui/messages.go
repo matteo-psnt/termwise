@@ -63,7 +63,7 @@ func (m Model) handleSpinnerTick(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
 		m.state = stateIdle
-		m.appendThreadEntries(ThreadEntry{Kind: EntryError, Content: providerErrMsg(msg.Err)})
+		m.appendThreadEntries(ErrorEntry{Content: providerErrMsg(msg.Err)})
 		m.refreshViewport()
 		return m, nil
 	}
@@ -79,7 +79,7 @@ func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
 
 	if len(resp.ToolCalls) == 0 {
 		if resp.Content != "" {
-			m.appendThreadEntries(ThreadEntry{Kind: EntryAssistant, Content: resp.Content})
+			m.appendThreadEntries(AssistantEntry{Content: resp.Content})
 		}
 		m.state = stateIdle
 		m.refreshViewport()
@@ -91,17 +91,8 @@ func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleToolExecutedMsg(msg agent.ToolExecutedMsg) (tea.Model, tea.Cmd) {
 	m.appendThreadEntries(
-		ThreadEntry{
-			Kind:       EntryToolCall,
-			ToolName:   msg.ToolCall.Name,
-			ToolDetail: toolDetail(msg.ToolCall),
-			Auto:       msg.AutoAccepted,
-		},
-		ThreadEntry{
-			Kind:    EntryToolResult,
-			Content: msg.Result.Content,
-			IsError: msg.Result.IsError,
-		},
+		ToolCallEntry{Name: msg.ToolCall.Name, Detail: toolDetail(msg.ToolCall)},
+		ToolResultEntry{Content: msg.Result.Content, IsError: msg.Result.IsError},
 	)
 	m.refreshViewport()
 	return m, agent.ProcessToolsCmd(msg.Remaining, msg.Collected, m.needsApproval)
@@ -109,12 +100,7 @@ func (m Model) handleToolExecutedMsg(msg agent.ToolExecutedMsg) (tea.Model, tea.
 
 func (m Model) handleNeedsApprovalMsg(msg agent.NeedsApprovalMsg) (tea.Model, tea.Cmd) {
 	m.setPendingTool(msg.ToolCall, msg.Remaining, msg.Collected)
-	m.appendThreadEntries(ThreadEntry{
-		Kind:       EntryToolCall,
-		ToolName:   msg.ToolCall.Name,
-		ToolDetail: msg.Command,
-		Auto:       false,
-	})
+	m.appendThreadEntries(ToolCallEntry{Name: msg.ToolCall.Name, Detail: msg.Command})
 	m.refreshViewport()
 
 	if m.llmJudge {
@@ -140,18 +126,18 @@ func (m Model) handleAskMsg(msg agent.AskMsg) (tea.Model, tea.Cmd) {
 	p := newPicker(msg.Question, msg.Options, msg.MultiSelect)
 	m.pending = m.pending.withPicker(p)
 	if msg.Question != "" {
-		m.appendThreadEntries(ThreadEntry{Kind: EntryAssistant, Content: msg.Question})
+		m.appendThreadEntries(AssistantEntry{Content: msg.Question})
 	}
 	m.refreshViewport()
 	return m, nil
 }
 
 func (m Model) handleRespondMsg(msg agent.RespondMsg) (tea.Model, tea.Cmd) {
-	m.appendThreadEntries(ThreadEntry{
-		Kind:        EntryRespond,
-		RespondType: msg.RespondType,
-		Content:     msg.Content,
-	})
+	if msg.RespondType == "command" {
+		m.appendThreadEntries(CommandEntry{Content: msg.Content})
+	} else {
+		m.appendThreadEntries(AssistantEntry{Content: msg.Content})
+	}
 	m.appendToolResultsMessage(msg.Collected)
 	m.state = stateIdle
 	m.refreshViewport()
