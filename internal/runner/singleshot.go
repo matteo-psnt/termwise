@@ -85,17 +85,13 @@ func resolveProvider() (provider.AgentClient, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	cfg, err := config.LoadRuntimeConfig(cfgPath)
+	rc, err := config.LoadRuntimeConfig(cfgPath)
 	if err != nil {
 		return nil, "", err
 	}
-	providerName, pc, err := cfg.ActiveProviderConfig()
+	client, err := config.NewClientFromResolved(rc)
 	if err != nil {
 		return nil, "", err
 	}
-	client, err := config.NewProviderClient(providerName, pc)
-	if err != nil {
-		return nil, "", err
-	}
-	return client, pc.Model, nil
+	return client, rc.Model, nil
 }

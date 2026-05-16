@@ -66,17 +66,13 @@ func openTUI(prefill string) error {
 	if err != nil {
 		return err
 	}
-	cfg, err := config.LoadRuntimeConfig(cfgPath)
+	rc, err := config.LoadRuntimeConfig(cfgPath)
 	if err != nil {
 		return err
 	}
-	providerName, pc, err := cfg.ActiveProviderConfig()
+	client, err := config.NewClientFromResolved(rc)
 	if err != nil {
 		return err
 	}
-	provider, err := config.NewProviderClient(providerName, pc)
-	if err != nil {
-		return err
-	}
-	return agentui.Open(providerName, provider, pc.Model, cfgPath, prefill)
+	return agentui.Open(rc.ProviderName, client, rc.Model, cfgPath, prefill)
 }

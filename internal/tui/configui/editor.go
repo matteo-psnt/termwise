@@ -43,7 +43,7 @@ type editorRow struct {
 type settingDef struct {
 	label    string
 	hint     string
-	getValue func(cfg config.Config) string
+	getValue func(cfg config.FileConfig) string
 	activate func(m editorModel) (editorModel, tea.Cmd)
 }
 
@@ -51,7 +51,7 @@ var editorSettings = []settingDef{
 	{
 		label: "Keybinding",
 		hint:  "enter edit   ↑/↓ navigate   q quit",
-		getValue: func(cfg config.Config) string {
+		getValue: func(cfg config.FileConfig) string {
 			kb := cfg.Shell.Keybinding
 			if kb == "" {
 				kb = "^T"
@@ -71,11 +71,11 @@ var editorSettings = []settingDef{
 	{
 		label: "Theme",
 		hint:  "enter edit   ↑/↓ navigate   q quit",
-		getValue: func(cfg config.Config) string {
-			return theme.Label(cfg.TUI.Theme)
+		getValue: func(cfg config.FileConfig) string {
+			return theme.Label(cfg.UI.Theme)
 		},
 		activate: func(m editorModel) (editorModel, tea.Cmd) {
-			tp := newThemePicker(m.cfg.TUI.Theme, m.r, m.styles)
+			tp := newThemePicker(m.cfg.UI.Theme, m.r, m.styles)
 			m.themePicker = &tp
 			return m, nil
 		},
@@ -83,14 +83,14 @@ var editorSettings = []settingDef{
 	{
 		label: "LLM judge",
 		hint:  "enter toggle   ↑/↓ navigate   q quit",
-		getValue: func(cfg config.Config) string {
-			if cfg.Tools.Bash.LLMJudge {
+		getValue: func(cfg config.FileConfig) string {
+			if cfg.Policies.Bash.LLMJudge {
 				return "on"
 			}
 			return "off"
 		},
 		activate: func(m editorModel) (editorModel, tea.Cmd) {
-			m.cfg.Tools.Bash.LLMJudge = !m.cfg.Tools.Bash.LLMJudge
+			m.cfg.Policies.Bash.LLMJudge = !m.cfg.Policies.Bash.LLMJudge
 			return m, nil
 		},
 	},
@@ -108,7 +108,7 @@ type editorModel struct {
 	spin   spinner.Model
 
 	cfgPath string
-	cfg     config.Config
+	cfg     config.FileConfig
 
 	rows   []editorRow
 	cursor int
@@ -128,11 +128,11 @@ type editorModel struct {
 	err error
 }
 
-func newEditorModel(cfgPath string, cfg config.Config, r *lipgloss.Renderer) editorModel {
+func newEditorModel(cfgPath string, cfg config.FileConfig, r *lipgloss.Renderer) editorModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	m := editorModel{
-		styles:  newStylesForTheme(r, cfg.TUI.Theme),
+		styles:  newStylesForTheme(r, cfg.UI.Theme),
 		r:       r,
 		spin:    sp,
 		cfgPath: cfgPath,
@@ -258,7 +258,7 @@ func (m editorModel) updateModelPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !mp.cancelled && mp.selected != "" {
 			pc := m.cfg.Providers[mp.provider]
 			pc.Model = mp.selected
-			m.cfg.SetProvider(mp.provider, pc)
+			config.SetProvider(&m.cfg,mp.provider, pc)
 		}
 	}
 	return m, cmd
@@ -273,7 +273,7 @@ func (m editorModel) updateAuthEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !ae.cancelled {
 			existing := m.cfg.Providers[ae.provider]
 			ae.result.Model = existing.Model
-			m.cfg.SetProvider(ae.provider, ae.result)
+			config.SetProvider(&m.cfg,ae.provider, ae.result)
 			m.resetConnectivity()
 			return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
 		}
@@ -302,7 +302,7 @@ func (m editorModel) updateThemePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if tp.done {
 		m.themePicker = nil
 		if !tp.cancelled {
-			m.cfg.TUI.Theme = theme.Normalize(tp.result)
+			m.cfg.UI.Theme = theme.Normalize(tp.result)
 			m.styles = newStylesForTheme(m.r, tp.result)
 		} else {
 			m.styles = newStylesForTheme(m.r, tp.prev)
@@ -319,7 +319,7 @@ func (m editorModel) updateAddWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.addWizard = &newWiz
 	if newWiz.Result != nil {
 		for name, pc := range newWiz.Result.Providers {
-			m.cfg.SetProvider(name, pc)
+			config.SetProvider(&m.cfg,name, pc)
 		}
 		m.addWizard = nil
 		m.buildRows()
@@ -357,8 +357,8 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 	row := m.rows[m.cursor]
 	switch row.kind {
 	case rowProvHeader:
-		if row.provider != m.cfg.ActiveProvider {
-			m.cfg.ActiveProvider = row.provider
+		if row.provider != m.cfg.SelectedProvider {
+			m.cfg.SelectedProvider = row.provider
 			m.resetConnectivity()
 			return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
 		}
@@ -373,7 +373,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		ae := newAuthEditor(
 			row.provider,
 			m.cfg.Providers[row.provider],
-			row.provider == m.cfg.ActiveProvider,
+			row.provider == m.cfg.SelectedProvider,
 			m.connOK,
 			m.styles,
 		)
@@ -385,7 +385,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		for name := range m.cfg.Providers {
 			exclude[name] = true
 		}
-		wiz := newWizardModel(m.r, theme.Normalize(m.cfg.TUI.Theme))
+		wiz := newWizardModel(m.r, theme.Normalize(m.cfg.UI.Theme))
 		wiz.exclude = exclude
 		m.addWizard = &wiz
 		return m, m.addWizard.Init()
@@ -415,7 +415,7 @@ func (m *editorModel) resetConnectivity() {
 }
 
 func (m editorModel) checkConnectivityCmd() tea.Cmd {
-	providerName := m.cfg.ActiveProvider
+	providerName := m.cfg.SelectedProvider
 	pc, ok := m.cfg.Providers[providerName]
 	if !ok {
 		return func() tea.Msg {
@@ -455,14 +455,14 @@ func (m editorModel) connIndicator() string {
 	return m.styles.Error.Render("●")
 }
 
-func describeAuth(provider string, pc config.ProviderConfig) string {
-	if provider == "ollama" {
+func describeAuth(providerName string, pc config.ProviderConfig) string {
+	if providerName == "ollama" {
 		if pc.BaseURL == "" {
 			return "base URL · (default)"
 		}
 		return "base URL · " + pc.BaseURL
 	}
-	method := pc.AuthMethod
+	method := pc.Auth
 	if method == "" {
 		method = "env"
 	}
@@ -537,7 +537,7 @@ func (m editorModel) renderNormal() string {
 		case rowProvHeader:
 			prefix := m.rowPrefix(focused)
 			indicator := ""
-			if row.provider == m.cfg.ActiveProvider {
+			if row.provider == m.cfg.SelectedProvider {
 				indicator = " " + m.connIndicator()
 			}
 			if focused {

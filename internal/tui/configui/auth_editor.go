@@ -53,7 +53,7 @@ func newAuthEditor(provider string, pc config.ProviderConfig, isActive bool, con
 	ti := textinput.New()
 	ti.CharLimit = 256
 
-	cur := pc.AuthMethod
+	cur := pc.Auth
 	if cur == "" {
 		cur = "env"
 	}
@@ -147,12 +147,12 @@ func (m authEditorModel) handlePickMethod(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", " ":
 		selected := authMethods[m.methodCursor].id
-		cur := m.existing.AuthMethod
-		if cur == "" {
-			cur = "env"
+		existingAuth := m.existing.Auth
+		if existingAuth == "" {
+			existingAuth = "env"
 		}
 		// Already on this method and provider is connected — nothing to do.
-		if selected == cur && m.isActive && m.connOK {
+		if selected == existingAuth && m.isActive && m.connOK {
 			m.cancelled = true
 			m.done = true
 			return m, nil
@@ -166,7 +166,7 @@ func (m authEditorModel) handlePickMethod(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.spin.Tick, m.verifyCmd())
 		}
 		// Same non-keychain method: skip entry, re-verify immediately.
-		if selected == cur && selected != "keychain" {
+		if selected == existingAuth && selected != "keychain" {
 			m.input.Blur()
 			m.step = authStepVerify
 			return m, tea.Batch(m.spin.Tick, m.verifyCmd())
@@ -234,7 +234,7 @@ func (m *authEditorModel) setupInput() {
 func (m authEditorModel) buildResult() config.ProviderConfig {
 	if m.method == "keychain" {
 		return config.ProviderConfig{
-			AuthMethod:    "keychain",
+			Auth:          "keychain",
 			KeychainEntry: config.DefaultKeychainEntry(m.provider),
 		}
 	}
@@ -254,7 +254,7 @@ func (m authEditorModel) verifyCmd() tea.Cmd {
 				return editorAuthMsg{providerName: provider, ok: false, err: fmt.Errorf("keychain write: %w", err)}
 			}
 			pc = config.ProviderConfig{
-				AuthMethod:    "keychain",
+				Auth:          "keychain",
 				KeychainEntry: config.DefaultKeychainEntry(provider),
 			}
 		} else {
@@ -284,7 +284,7 @@ func (m authEditorModel) View() string {
 func (m authEditorModel) viewPickMethod() string {
 	var b strings.Builder
 	b.WriteString("Auth method for " + m.styles.Title.Render(m.provider) + ":\n\n")
-	cur := m.existing.AuthMethod
+	cur := m.existing.Auth
 	if cur == "" {
 		cur = "env"
 	}

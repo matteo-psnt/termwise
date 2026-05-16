@@ -61,7 +61,7 @@ type wizardModel struct {
 	modelID   string
 
 	// final result — set when saved
-	Result *config.Config
+	Result *config.FileConfig
 
 	// done is set when the wizard exits (quit or completed) so that an
 	// embedding editor model can detect the exit without inspecting tea.Cmd.
@@ -318,7 +318,7 @@ func (m wizardModel) fetchModelsCmd() tea.Cmd {
 				return wizModelsMsg{err: fmt.Errorf("keychain write: %w", err)}
 			}
 			pc = config.ProviderConfig{
-				AuthMethod:    "keychain",
+				Auth:          "keychain",
 				KeychainEntry: config.DefaultKeychainEntry(provider),
 			}
 		}
@@ -348,15 +348,15 @@ func (m *wizardModel) saveConfig() error {
 	pc.Model = m.modelID
 	if m.authMethod == "keychain" {
 		pc = config.ProviderConfig{
-			AuthMethod:    "keychain",
+			Auth:          "keychain",
 			KeychainEntry: config.DefaultKeychainEntry(m.provider),
 			Model:         m.modelID,
 		}
 	}
 
-	cfg := config.Config{
-		ActiveProvider: m.provider,
-		Providers:      map[string]config.ProviderConfig{m.provider: pc},
+	cfg := config.FileConfig{
+		SelectedProvider: m.provider,
+		Providers:        map[string]config.ProviderConfig{m.provider: pc},
 	}
 	m.Result = &cfg
 	return nil

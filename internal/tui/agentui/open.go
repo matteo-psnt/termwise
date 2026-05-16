@@ -54,8 +54,8 @@ func Open(providerName string, provider provider.AgentClient, modelID string, cf
 	if cfgPath != "" {
 		cfg, exists, err := config.LoadConfig(cfgPath)
 		if err == nil && exists {
-			themeName = theme.Normalize(cfg.TUI.Theme)
-			llmJudge = cfg.Tools.Bash.LLMJudge
+			themeName = theme.Normalize(cfg.UI.Theme)
+			llmJudge = cfg.Policies.Bash.LLMJudge
 			closeKey = cfg.Shell.Keybinding
 		}
 	}

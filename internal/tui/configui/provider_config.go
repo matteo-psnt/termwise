@@ -10,10 +10,10 @@ func buildProviderConfigFromAuthInput(provider, method, inputVal, fallback strin
 		val = fallback
 	}
 
-	pc := config.ProviderConfig{AuthMethod: method}
+	pc := config.ProviderConfig{Auth: method}
 	switch {
 	case provider == "ollama":
-		pc.AuthMethod = "env"
+		pc.Auth = "env"
 		if val != "" && val != defaultOllamaBaseURL {
 			pc.BaseURL = val
 		}

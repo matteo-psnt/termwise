@@ -14,7 +14,7 @@ import (
 // Open launches the config TUI.
 // If no config exists it runs the first-run wizard and saves the result.
 // If a config exists it runs the editor.
-func Open(cfgPath string, cfg config.Config, exists bool) error {
+func Open(cfgPath string, cfg config.FileConfig, exists bool) error {
 	r := lipgloss.NewRenderer(os.Stdout)
 	r.SetHasDarkBackground(lipgloss.HasDarkBackground())
 
@@ -42,7 +42,7 @@ func runWizard(cfgPath string, r *lipgloss.Renderer) error {
 	return nil
 }
 
-func runEditor(cfgPath string, cfg config.Config, r *lipgloss.Renderer) error {
+func runEditor(cfgPath string, cfg config.FileConfig, r *lipgloss.Renderer) error {
 	m := newEditorModel(cfgPath, cfg, r)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	final, err := p.Run()
