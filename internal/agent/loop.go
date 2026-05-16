@@ -21,7 +21,7 @@ func ChatCmd(ctx context.Context, provider provider.AgentClient, req provider.Ch
 // one that requires user input (approval or ask). Auto-executed tools (read)
 // return immediately so the TUI can update the display and continue.
 // needsApproval is called for bash commands to determine if approval is required.
-func ProcessToolsCmd(toolCalls []provider.ToolCall, collected []provider.ToolResult, needsApproval func(string) bool) tea.Cmd {
+func ProcessToolsCmd(ctx context.Context, toolCalls []provider.ToolCall, collected []provider.ToolResult, needsApproval func(string) bool) tea.Cmd {
 	return func() tea.Msg {
 		for i, tc := range toolCalls {
 			remaining := make([]provider.ToolCall, len(toolCalls)-i-1)
@@ -62,7 +62,7 @@ func ProcessToolsCmd(toolCalls []provider.ToolCall, collected []provider.ToolRes
 						Collected: collected,
 					}
 				}
-				content, isErr := tools.Bash(tc.Input)
+				content, isErr := tools.Bash(ctx, tc.Input)
 				result := provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
 				return ToolExecutedMsg{
 					ToolCall:     tc,
@@ -107,9 +107,9 @@ func ProcessToolsCmd(toolCalls []provider.ToolCall, collected []provider.ToolRes
 }
 
 // ExecuteBashCmd executes a bash command after the user has approved it.
-func ExecuteBashCmd(tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) tea.Cmd {
+func ExecuteBashCmd(ctx context.Context, tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) tea.Cmd {
 	return func() tea.Msg {
-		content, isErr := tools.Bash(tc.Input)
+		content, isErr := tools.Bash(ctx, tc.Input)
 		result := provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
 		return ToolExecutedMsg{
 			ToolCall:     tc,

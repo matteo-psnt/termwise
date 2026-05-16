@@ -1,12 +1,14 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestBashMarksNonZeroExitAsError(t *testing.T) {
-	content, isError := Bash(map[string]any{"command": "exit 7"})
+	content, isError := Bash(context.Background(), map[string]any{"command": "exit 7"})
 	if !isError {
 		t.Fatalf("expected non-zero exit to be marked as an error")
 	}
@@ -21,7 +23,7 @@ func TestBashMarksNonZeroExitAsError(t *testing.T) {
 }
 
 func TestBashZeroExitIsNotError(t *testing.T) {
-	content, isError := Bash(map[string]any{"command": "printf ok"})
+	content, isError := Bash(context.Background(), map[string]any{"command": "printf ok"})
 	if isError {
 		t.Fatalf("expected zero exit to be treated as success")
 	}
@@ -35,5 +37,16 @@ func TestBashZeroExitIsNotError(t *testing.T) {
 	}
 	if result.ExitCode != 0 {
 		t.Fatalf("expected exit code 0, got %d", result.ExitCode)
+	}
+}
+
+func TestBashHonorsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, _ = Bash(ctx, map[string]any{"command": "sleep 5"})
+	if time.Since(start) > time.Second {
+		t.Fatal("expected canceled bash command to return quickly")
 	}
 }

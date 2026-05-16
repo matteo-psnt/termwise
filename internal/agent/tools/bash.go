@@ -2,6 +2,7 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,7 +20,7 @@ type BashResult struct {
 
 // Bash executes a shell command and returns the result as a JSON string.
 // Returns (content, isError).
-func Bash(input map[string]any) (string, bool) {
+func Bash(ctx context.Context, input map[string]any) (string, bool) {
 	command, _ := input["command"].(string)
 	if command == "" {
 		return "error: 'command' is required", true
@@ -31,7 +32,7 @@ func Bash(input map[string]any) (string, bool) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command(shell, "-c", command)
+	cmd := exec.CommandContext(ctx, shell, "-c", command)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 

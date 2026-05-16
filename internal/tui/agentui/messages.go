@@ -2,6 +2,7 @@ package agentui
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -12,14 +13,16 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
-type judgmentMsg struct{ safe bool }
+type judgmentMsg struct {
+	safe bool
+}
 
 func (m Model) judgeCmd(tc provider.ToolCall) tea.Cmd {
 	cmd, _ := tc.Input["command"].(string)
 	client := m.provider
 	modelID := m.modelID
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(m.ctx, 10*time.Second)
 		defer cancel()
 		resp, err := client.Chat(ctx, provider.ChatRequest{
 			Model:  modelID,
@@ -62,6 +65,10 @@ func (m Model) handleSpinnerTick(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
+		m.activeTurnID = 0
+		if errors.Is(msg.Err, context.Canceled) {
+			return m, nil
+		}
 		m.state = stateIdle
 		m.appendThreadEntries(ErrorEntry{Content: providerErrMsg(msg.Err)})
 		m.refreshViewport()
@@ -77,16 +84,19 @@ func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
 		ToolCalls: resp.ToolCalls,
 	})
 
+	if resp.Content != "" {
+		m.appendThreadEntries(AssistantEntry{Content: resp.Content})
+	}
+
 	if len(resp.ToolCalls) == 0 {
-		if resp.Content != "" {
-			m.appendThreadEntries(AssistantEntry{Content: resp.Content})
-		}
+		m.activeTurnID = 0
 		m.state = stateIdle
 		m.refreshViewport()
 		return m, nil
 	}
 
-	return m, agent.ProcessToolsCmd(resp.ToolCalls, nil, m.needsApproval)
+	m.refreshViewport()
+	return m, m.wrapActiveTurn(agent.ProcessToolsCmd(m.ctx, resp.ToolCalls, nil, m.needsApproval))
 }
 
 func (m Model) handleToolExecutedMsg(msg agent.ToolExecutedMsg) (tea.Model, tea.Cmd) {
@@ -95,7 +105,7 @@ func (m Model) handleToolExecutedMsg(msg agent.ToolExecutedMsg) (tea.Model, tea.
 		ToolResultEntry{Content: msg.Result.Content, IsError: msg.Result.IsError},
 	)
 	m.refreshViewport()
-	return m, agent.ProcessToolsCmd(msg.Remaining, msg.Collected, m.needsApproval)
+	return m, m.wrapActiveTurn(agent.ProcessToolsCmd(m.ctx, msg.Remaining, msg.Collected, m.needsApproval))
 }
 
 func (m Model) handleNeedsApprovalMsg(msg agent.NeedsApprovalMsg) (tea.Model, tea.Cmd) {
@@ -105,7 +115,7 @@ func (m Model) handleNeedsApprovalMsg(msg agent.NeedsApprovalMsg) (tea.Model, te
 
 	if m.llmJudge {
 		m.state = stateJudging
-		return m, tea.Batch(m.spin.Tick, m.judgeCmd(msg.ToolCall))
+		return m, tea.Batch(m.spin.Tick, m.wrapActiveTurn(m.judgeCmd(msg.ToolCall)))
 	}
 
 	m.state = stateApproval
@@ -139,6 +149,7 @@ func (m Model) handleRespondMsg(msg agent.RespondMsg) (tea.Model, tea.Cmd) {
 		m.appendThreadEntries(AssistantEntry{Content: msg.Content})
 	}
 	m.appendToolResultsMessage(msg.Collected)
+	m.activeTurnID = 0
 	m.state = stateIdle
 	m.refreshViewport()
 	return m, nil
@@ -147,10 +158,7 @@ func (m Model) handleRespondMsg(msg agent.RespondMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleAllToolsDoneMsg(msg agent.AllToolsDoneMsg) (tea.Model, tea.Cmd) {
 	m.appendToolResultsMessage(msg.Collected)
 	m.state = stateThinking
-	return m, tea.Batch(
-		m.spin.Tick,
-		agent.ChatCmd(m.ctx, m.provider, m.chatRequest()),
-	)
+	return m, m.startChat()
 }
 
 func (m Model) updateViewportOnly(msg tea.Msg) (tea.Model, tea.Cmd) {

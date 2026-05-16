@@ -67,9 +67,11 @@ type Model struct {
 	height int
 	ready  bool
 
-	// Cancellation (ctrl+c / esc during thinking)
-	ctx    context.Context
-	cancel context.CancelFunc
+	// Cancellation for the current in-flight turn.
+	ctx          context.Context
+	cancel       context.CancelFunc
+	nextTurnID   uint64
+	activeTurnID uint64
 
 	// Renderer (built once)
 	renderer Renderer
@@ -81,6 +83,28 @@ type Model struct {
 	// quitting is set before tea.Quit so View() returns "" on the final frame,
 	// causing bubbletea's inline renderer to clear all drawn lines on exit.
 	quitting bool
+}
+
+type turnMsg struct {
+	turnID uint64
+	msg    tea.Msg
+}
+
+func newTurnContext() (context.Context, context.CancelFunc) {
+	return context.WithCancel(context.Background())
+}
+
+func wrapTurnCmd(turnID uint64, cmd tea.Cmd) tea.Cmd {
+	if cmd == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		msg := cmd()
+		if msg == nil {
+			return nil
+		}
+		return turnMsg{turnID: turnID, msg: msg}
+	}
 }
 
 // newModel constructs the TUI model.
@@ -110,7 +134,7 @@ func newModel(
 		contextWindow = md.Context
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := newTurnContext()
 
 	m := Model{
 		providerName:  providerName,
@@ -152,20 +176,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleWindowSize(msg)
 	case spinner.TickMsg:
 		return m.handleSpinnerTick(msg)
-	case agent.ResponseMsg:
-		return m.handleResponseMsg(msg)
-	case agent.ToolExecutedMsg:
-		return m.handleToolExecutedMsg(msg)
-	case agent.NeedsApprovalMsg:
-		return m.handleNeedsApprovalMsg(msg)
-	case agent.AskMsg:
-		return m.handleAskMsg(msg)
-	case agent.RespondMsg:
-		return m.handleRespondMsg(msg)
-	case agent.AllToolsDoneMsg:
-		return m.handleAllToolsDoneMsg(msg)
-	case judgmentMsg:
-		return m.handleJudgmentMsg(msg)
+	case turnMsg:
+		return m.handleTurnMsg(msg)
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -192,11 +204,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case stateIdle:
 		return m.handleIdleKey(msg)
+	case stateThinking, stateJudging:
+		return m.handleThinkingKey(msg)
 	case stateApproval:
 		return m.handleApprovalKey(msg)
 	case stateAskPicker:
 		return m.handlePickerKey(msg)
 	}
+	return m, nil
+}
+
+func (m Model) handleThinkingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type != tea.KeyEsc && msg.String() != "esc" {
+		return m, nil
+	}
+	m.interruptThinking()
 	return m, nil
 }
 
@@ -271,13 +293,11 @@ func (m Model) submitMessage(text string) (tea.Model, tea.Cmd) {
 	m.thread = append(m.thread, UserEntry{Content: text})
 	m.messages = append(m.messages, provider.Message{Role: "user", Content: content})
 	m.messages = trimContext(m.messages, m.contextWindow)
+	m.beginTurn()
 	m.state = stateThinking
 	m.refreshViewport()
 
-	return m, tea.Batch(
-		m.spin.Tick,
-		agent.ChatCmd(m.ctx, m.provider, m.chatRequest()),
-	)
+	return m, m.startChat()
 }
 
 // chatRequest builds the ChatRequest from current state.
@@ -287,6 +307,62 @@ func (m Model) chatRequest() provider.ChatRequest {
 		System:   m.system,
 		Messages: m.messages,
 		Tools:    tools.Defs,
+	}
+}
+
+func (m *Model) beginTurn() {
+	m.resetTurnContext()
+	m.nextTurnID++
+	m.activeTurnID = m.nextTurnID
+}
+
+func (m *Model) resetTurnContext() {
+	m.cancel()
+	m.ctx, m.cancel = newTurnContext()
+}
+
+func (m *Model) startChat() tea.Cmd {
+	return tea.Batch(
+		m.spin.Tick,
+		m.wrapActiveTurn(agent.ChatCmd(m.ctx, m.provider, m.chatRequest())),
+	)
+}
+
+func (m *Model) interruptThinking() {
+	m.resetTurnContext()
+	m.activeTurnID = 0
+	m.clearPendingTool()
+	m.state = stateIdle
+	m.appendThreadEntries(ErrorEntry{Content: "Request interrupted."})
+	m.refreshViewport()
+}
+
+func (m Model) wrapActiveTurn(cmd tea.Cmd) tea.Cmd {
+	return wrapTurnCmd(m.activeTurnID, cmd)
+}
+
+func (m Model) handleTurnMsg(msg turnMsg) (tea.Model, tea.Cmd) {
+	if msg.turnID != m.activeTurnID {
+		return m, nil
+	}
+
+	switch inner := msg.msg.(type) {
+	case agent.ResponseMsg:
+		return m.handleResponseMsg(inner)
+	case agent.ToolExecutedMsg:
+		return m.handleToolExecutedMsg(inner)
+	case agent.NeedsApprovalMsg:
+		return m.handleNeedsApprovalMsg(inner)
+	case agent.AskMsg:
+		return m.handleAskMsg(inner)
+	case agent.RespondMsg:
+		return m.handleRespondMsg(inner)
+	case agent.AllToolsDoneMsg:
+		return m.handleAllToolsDoneMsg(inner)
+	case judgmentMsg:
+		return m.handleJudgmentMsg(inner)
+	default:
+		return m, nil
 	}
 }
 
