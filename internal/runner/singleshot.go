@@ -61,7 +61,7 @@ func writeOutput(content string, isTTY bool) error {
 		return nil // exit 0
 	}
 
-	text := content
+	var text string
 	if m := textRe.FindStringSubmatch(content); m != nil {
 		text = strings.TrimSpace(m[1])
 	} else {

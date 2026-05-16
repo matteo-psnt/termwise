@@ -17,10 +17,6 @@ type configStyles struct {
 	Spinner  lipgloss.Style
 }
 
-func newStyles(r *lipgloss.Renderer) configStyles {
-	return newStylesForTheme(r, theme.DefaultName)
-}
-
 func newStylesForTheme(r *lipgloss.Renderer, themeName string) configStyles {
 	palette := theme.Get(themeName)
 	accent := palette.Accent

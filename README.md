@@ -36,7 +36,3 @@ tw
 - **Terminal-native** — commands land in your shell buffer, ready to run
 - **Minimal** — no conversation in single-shot, no project scaffolding
 - **Zero friction** — single binary, brew installable, works with existing API keys
-
-## Status
-
-Planning complete. See `docs/` for design notes.

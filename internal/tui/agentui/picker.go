@@ -107,9 +107,9 @@ func (p picker) View(r Renderer) string {
 			if p.selected[i] {
 				check = "[x]"
 			}
-			b.WriteString(fmt.Sprintf("%s%s %s\n", cursor, check, opt))
+			fmt.Fprintf(&b, "%s%s %s\n", cursor, check, opt)
 		} else {
-			b.WriteString(fmt.Sprintf("%s%s\n", cursor, opt))
+			fmt.Fprintf(&b, "%s%s\n", cursor, opt)
 		}
 	}
 

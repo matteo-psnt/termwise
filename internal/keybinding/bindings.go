@@ -40,11 +40,12 @@ func ToBash(kb string) string {
 // zshLabelMap is built at init from keySeqTable + keyTypeLabel.
 var zshLabelMap map[string]string
 
+type key struct {
+	t   tea.KeyType
+	alt bool
+}
+
 func init() {
-	type key struct {
-		t   tea.KeyType
-		alt bool
-	}
 	zshLabelMap = make(map[string]string, len(keySeqTable)+8)
 	for k, seq := range keySeqTable {
 		base, ok := keyTypeLabel[k.t]
@@ -169,20 +170,13 @@ func KeyMsgToZsh(msg tea.KeyMsg) (string, bool) {
 	}
 
 	// Special / escape-sequence keys: look up canonical xterm sequence.
-	type key struct {
-		t   tea.KeyType
-		alt bool
-	}
 	seq, ok := keySeqTable[key{msg.Type, msg.Alt}]
 	return seq, ok
 }
 
 // keySeqTable maps (KeyType, alt) → canonical zsh bindkey string.
 // Sequences use \e for ESC, matching what zsh bindkey expects.
-var keySeqTable = map[struct {
-	t   tea.KeyType
-	alt bool
-}]string{
+var keySeqTable = map[key]string{
 	// ── Arrow keys ──────────────────────────────────────────────────────────
 	{tea.KeyUp, false}:    `\e[A`,
 	{tea.KeyDown, false}:  `\e[B`,

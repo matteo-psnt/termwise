@@ -258,7 +258,7 @@ func (m editorModel) updateModelPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !mp.cancelled && mp.selected != "" {
 			pc := m.cfg.Providers[mp.provider]
 			pc.Model = mp.selected
-			config.SetProvider(&m.cfg,mp.provider, pc)
+			config.SetProvider(&m.cfg, mp.provider, pc)
 		}
 	}
 	return m, cmd
@@ -273,7 +273,7 @@ func (m editorModel) updateAuthEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !ae.cancelled {
 			existing := m.cfg.Providers[ae.provider]
 			ae.result.Model = existing.Model
-			config.SetProvider(&m.cfg,ae.provider, ae.result)
+			config.SetProvider(&m.cfg, ae.provider, ae.result)
 			m.resetConnectivity()
 			return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
 		}
@@ -319,7 +319,7 @@ func (m editorModel) updateAddWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.addWizard = &newWiz
 	if newWiz.Result != nil {
 		for name, pc := range newWiz.Result.Providers {
-			config.SetProvider(&m.cfg,name, pc)
+			config.SetProvider(&m.cfg, name, pc)
 		}
 		m.addWizard = nil
 		m.buildRows()
