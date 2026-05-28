@@ -14,6 +14,7 @@ import (
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/allowlist"
+	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/keybinding"
 	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -23,12 +24,20 @@ import (
 type tuiState int
 
 const (
-	stateIdle      tuiState = iota
-	stateThinking           // waiting for model
-	stateApproval           // waiting for bash approval
-	stateJudging            // LLM judging a bash command
-	stateAskPicker          // waiting for ask answer
+	stateIdle       tuiState = iota
+	stateThinking            // waiting for model
+	stateApproval            // waiting for bash approval
+	stateJudging             // LLM judging a bash command
+	stateAskPicker           // waiting for ask answer
+	stateHistSearch          // Ctrl+R reverse search through prompt history
 )
+
+// histSearchState holds the state for Ctrl+R reverse search.
+type histSearchState struct {
+	query   string
+	matches []string
+	idx     int
+}
 
 // Model is the bubbletea model for the agent TUI.
 type Model struct {
@@ -82,6 +91,19 @@ type Model struct {
 	// quitting is set before tea.Quit so View() returns "" on the final frame,
 	// causing bubbletea's inline renderer to clear all drawn lines on exit.
 	quitting bool
+
+	// Prompt history navigation.
+	promptHistory *history.PromptHistory
+	histIdx       int    // index into history; -1 means not navigating
+	histDraft     string // saved draft before navigating
+
+	// Ctrl+R reverse search.
+	histSearch histSearchState
+
+	// Session persistence.
+	sessionStore *history.SessionStore
+	sessionID    string
+	providerName string
 }
 
 type generationMsg struct {
@@ -109,7 +131,7 @@ func wrapGenerationCmd(generation uint64, cmd tea.Cmd) tea.Cmd {
 // newModel constructs the TUI model.
 func newModel(
 	providerName string,
-	provider provider.AgentClient,
+	prov provider.AgentClient,
 	modelID string,
 	system string,
 	stdin string,
@@ -118,6 +140,10 @@ func newModel(
 	prefill string,
 	themeName string,
 	closeKey string,
+	promptHistory *history.PromptHistory,
+	sessionStore *history.SessionStore,
+	sessionID string,
+	initialSession *history.Session,
 ) Model {
 	ti := textinput.New()
 	ti.Prompt = ""
@@ -136,7 +162,7 @@ func newModel(
 	ctx, cancel := newGenerationContext()
 
 	m := Model{
-		provider:      provider,
+		provider:      prov,
 		modelID:       modelID,
 		system:        system,
 		stdin:         stdin,
@@ -148,9 +174,17 @@ func newModel(
 		cancel:        cancel,
 		renderer:      newRenderer(r, theme.Get(themeName), glamourStyle(r)),
 		closeKey:      closeKey,
+		promptHistory: promptHistory,
+		histIdx:       -1,
+		sessionStore:  sessionStore,
+		sessionID:     sessionID,
+		providerName:  providerName,
 	}
 
-	if stdin != "" {
+	if initialSession != nil && len(initialSession.Messages) > 0 {
+		m.messages = initialSession.Messages
+		m.thread = deserializeThread(initialSession.Thread)
+	} else if stdin != "" {
 		m.thread = append(m.thread, UserEntry{
 			Content: fmt.Sprintf("[stdin: %d lines]", strings.Count(stdin, "\n")+1),
 		})
@@ -181,8 +215,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) quit() (tea.Model, tea.Cmd) {
+	m.saveSession()
 	m.quitting = true
 	return m, tea.Quit
+}
+
+// saveSession persists the current conversation to disk if a session ID is set.
+func (m *Model) saveSession() {
+	if m.sessionStore == nil || m.sessionID == "" || len(m.messages) == 0 {
+		return
+	}
+	s := history.Session{
+		ID:           m.sessionID,
+		ProviderName: m.providerName,
+		ModelID:      m.modelID,
+		Messages:     m.messages,
+		Thread:       serializeThread(m.thread),
+	}
+	m.sessionStore.Save(s) //nolint:errcheck
 }
 
 // handleKey handles all keyboard input based on current state.
@@ -205,6 +255,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleApprovalKey(msg)
 	case stateAskPicker:
 		return m.handlePickerKey(msg)
+	case stateHistSearch:
+		return m.handleHistSearchKey(msg)
 	}
 	return m, nil
 }
@@ -225,17 +277,194 @@ func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.input.SetValue("")
+		m.histIdx = -1
+		m.histDraft = ""
+		if m.promptHistory != nil {
+			m.promptHistory.Push(text) //nolint:errcheck
+		}
 		return m.submitMessage(text)
+
+	case tea.KeyUp:
+		return m.historyBack(), nil
+
+	case tea.KeyDown:
+		return m.historyForward(), nil
 
 	case tea.KeyEsc:
 		// ESC while idle does nothing.
 		return m, nil
 
 	default:
+		if msg.String() == "ctrl+r" {
+			return m.enterHistSearch(), nil
+		}
+		// Any other typing cancels history navigation.
+		if m.histIdx >= 0 {
+			m.histIdx = -1
+			m.histDraft = ""
+		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
 	}
+}
+
+// historyBack moves one step older in prompt history.
+func (m Model) historyBack() Model {
+	if m.promptHistory == nil {
+		return m
+	}
+	entries := m.promptHistory.Entries()
+	if len(entries) == 0 {
+		return m
+	}
+	if m.histIdx < 0 {
+		// Save the current draft before navigating.
+		m.histDraft = m.input.Value()
+	}
+	next := m.histIdx + 1
+	if next >= len(entries) {
+		return m
+	}
+	m.histIdx = next
+	m.input.SetValue(entries[m.histIdx])
+	m.input.CursorEnd()
+	return m
+}
+
+// historyForward moves one step newer in prompt history, restoring the draft
+// when moving past the most recent entry.
+func (m Model) historyForward() Model {
+	if m.histIdx < 0 {
+		return m
+	}
+	m.histIdx--
+	if m.histIdx < 0 {
+		m.input.SetValue(m.histDraft)
+		m.histDraft = ""
+	} else if m.promptHistory != nil {
+		entries := m.promptHistory.Entries()
+		if m.histIdx < len(entries) {
+			m.input.SetValue(entries[m.histIdx])
+		}
+	}
+	m.input.CursorEnd()
+	return m
+}
+
+// enterHistSearch switches to stateHistSearch and seeds the initial match list.
+func (m Model) enterHistSearch() Model {
+	m.histDraft = m.input.Value()
+	m.histSearch = histSearchState{}
+	m.state = stateHistSearch
+	// Seed matches from current input value as query.
+	m.histSearch.query = m.histDraft
+	m.histSearch.matches = m.filterHistory(m.histSearch.query)
+	m.histSearch.idx = 0
+	if len(m.histSearch.matches) > 0 {
+		m.input.SetValue(m.histSearch.matches[0])
+		m.input.CursorEnd()
+	}
+	return m
+}
+
+// handleHistSearchKey handles keyboard input while in Ctrl+R search mode.
+func (m Model) handleHistSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		// Accept the current match and return to idle.
+		m.state = stateIdle
+		m.histSearch = histSearchState{}
+		m.input.CursorEnd()
+		return m, nil
+
+	case tea.KeyEsc:
+		// Cancel search: restore original draft.
+		m.state = stateIdle
+		m.input.SetValue(m.histDraft)
+		m.histSearch = histSearchState{}
+		m.histDraft = ""
+		m.input.CursorEnd()
+		return m, nil
+
+	case tea.KeyUp, tea.KeyDown:
+		// Cycle through matches.
+		if len(m.histSearch.matches) == 0 {
+			return m, nil
+		}
+		if msg.Type == tea.KeyUp {
+			m.histSearch.idx++
+			if m.histSearch.idx >= len(m.histSearch.matches) {
+				m.histSearch.idx = len(m.histSearch.matches) - 1
+			}
+		} else {
+			m.histSearch.idx--
+			if m.histSearch.idx < 0 {
+				m.histSearch.idx = 0
+			}
+		}
+		m.input.SetValue(m.histSearch.matches[m.histSearch.idx])
+		m.input.CursorEnd()
+		return m, nil
+
+	case tea.KeyBackspace, tea.KeyDelete:
+		if len(m.histSearch.query) > 0 {
+			m.histSearch.query = m.histSearch.query[:len(m.histSearch.query)-1]
+		}
+		m.histSearch.matches = m.filterHistory(m.histSearch.query)
+		m.histSearch.idx = 0
+		if len(m.histSearch.matches) > 0 {
+			m.input.SetValue(m.histSearch.matches[0])
+		} else {
+			m.input.SetValue(m.histSearch.query)
+		}
+		m.input.CursorEnd()
+		return m, nil
+
+	default:
+		if msg.String() == "ctrl+r" {
+			// Ctrl+R again: cycle to next match.
+			if len(m.histSearch.matches) > 0 {
+				m.histSearch.idx = (m.histSearch.idx + 1) % len(m.histSearch.matches)
+				m.input.SetValue(m.histSearch.matches[m.histSearch.idx])
+				m.input.CursorEnd()
+			}
+			return m, nil
+		}
+		// Printable character: extend the search query.
+		if len(msg.Runes) > 0 {
+			m.histSearch.query += string(msg.Runes)
+			m.histSearch.matches = m.filterHistory(m.histSearch.query)
+			m.histSearch.idx = 0
+			if len(m.histSearch.matches) > 0 {
+				m.input.SetValue(m.histSearch.matches[0])
+			} else {
+				m.input.SetValue(m.histSearch.query)
+			}
+			m.input.CursorEnd()
+		}
+		return m, nil
+	}
+}
+
+// filterHistory returns history entries that contain query as a substring,
+// in newest-first order.
+func (m Model) filterHistory(query string) []string {
+	if m.promptHistory == nil {
+		return nil
+	}
+	entries := m.promptHistory.Entries()
+	if query == "" {
+		return entries
+	}
+	var out []string
+	q := strings.ToLower(query)
+	for _, e := range entries {
+		if strings.Contains(strings.ToLower(e), q) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func (m Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

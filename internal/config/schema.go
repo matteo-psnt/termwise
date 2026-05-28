@@ -6,9 +6,7 @@ package config
 type FileConfig struct {
 	SelectedProvider string                    `toml:"selected_provider,omitempty"`
 	Providers        map[string]ProviderConfig `toml:"providers,omitempty"`
-	UI               UIConfig                  `toml:"ui,omitempty"`
-	Shell            ShellConfig               `toml:"shell,omitempty"`
-	Policies         PoliciesConfig            `toml:"policies,omitempty"`
+	Settings         SettingsConfig            `toml:"settings,omitempty"`
 }
 
 // ProviderConfig holds per-provider connection, auth, and model settings.
@@ -24,23 +22,11 @@ type ProviderConfig struct {
 	BaseURL string `toml:"base_url,omitempty"`
 }
 
-// UIConfig holds display preferences.
-type UIConfig struct {
+// SettingsConfig holds all user-facing preferences in a single flat block.
+type SettingsConfig struct {
 	Theme      string `toml:"theme,omitempty"`
 	ShowFooter *bool  `toml:"show_footer,omitempty"`
-}
-
-// ShellConfig holds shell integration preferences.
-type ShellConfig struct {
 	Keybinding string `toml:"keybinding,omitempty"`
-}
-
-// PoliciesConfig holds tool-behaviour policies.
-type PoliciesConfig struct {
-	Bash BashPolicyConfig `toml:"bash,omitempty"`
-}
-
-// BashPolicyConfig holds policies for the bash tool.
-type BashPolicyConfig struct {
-	LLMJudge bool `toml:"llm_judge,omitempty"`
+	LLMJudge   bool   `toml:"llm_judge,omitempty"`
+	AutoResume bool   `toml:"auto_resume,omitempty"`
 }

@@ -73,6 +73,12 @@ func (m Model) renderInputRow() string {
 		}
 		return ""
 
+	case stateHistSearch:
+		query := m.histSearch.query
+		count := len(m.histSearch.matches)
+		hint := fmt.Sprintf(" (%d)", count)
+		return m.renderer.styles.InputPrompt.Render(" / "+query+hint+" › ") + m.input.View()
+
 	default: // stateIdle
 		return m.renderer.styles.InputPrompt.Render(" › ") + m.input.View()
 	}

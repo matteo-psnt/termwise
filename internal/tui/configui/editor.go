@@ -52,14 +52,14 @@ var editorSettings = []settingDef{
 		label: "Keybinding",
 		hint:  "enter edit   ↑/↓ navigate   q quit",
 		getValue: func(cfg config.FileConfig) string {
-			kb := cfg.Shell.Keybinding
+			kb := cfg.Settings.Keybinding
 			if kb == "" {
 				kb = "^T"
 			}
 			return keybinding.Label(kb)
 		},
 		activate: func(m editorModel) (editorModel, tea.Cmd) {
-			kb := m.cfg.Shell.Keybinding
+			kb := m.cfg.Settings.Keybinding
 			if kb == "" {
 				kb = "^T"
 			}
@@ -72,10 +72,10 @@ var editorSettings = []settingDef{
 		label: "Theme",
 		hint:  "enter edit   ↑/↓ navigate   q quit",
 		getValue: func(cfg config.FileConfig) string {
-			return theme.Label(cfg.UI.Theme)
+			return theme.Label(cfg.Settings.Theme)
 		},
 		activate: func(m editorModel) (editorModel, tea.Cmd) {
-			tp := newThemePicker(m.cfg.UI.Theme, m.r, m.styles)
+			tp := newThemePicker(m.cfg.Settings.Theme, m.r, m.styles)
 			m.themePicker = &tp
 			return m, nil
 		},
@@ -84,13 +84,27 @@ var editorSettings = []settingDef{
 		label: "LLM judge",
 		hint:  "enter toggle   ↑/↓ navigate   q quit",
 		getValue: func(cfg config.FileConfig) string {
-			if cfg.Policies.Bash.LLMJudge {
+			if cfg.Settings.LLMJudge {
 				return "on"
 			}
 			return "off"
 		},
 		activate: func(m editorModel) (editorModel, tea.Cmd) {
-			m.cfg.Policies.Bash.LLMJudge = !m.cfg.Policies.Bash.LLMJudge
+			m.cfg.Settings.LLMJudge = !m.cfg.Settings.LLMJudge
+			return m, nil
+		},
+	},
+	{
+		label: "Auto resume",
+		hint:  "enter toggle   ↑/↓ navigate   q quit",
+		getValue: func(cfg config.FileConfig) string {
+			if cfg.Settings.AutoResume {
+				return "on"
+			}
+			return "off"
+		},
+		activate: func(m editorModel) (editorModel, tea.Cmd) {
+			m.cfg.Settings.AutoResume = !m.cfg.Settings.AutoResume
 			return m, nil
 		},
 	},
@@ -132,7 +146,7 @@ func newEditorModel(cfgPath string, cfg config.FileConfig, r *lipgloss.Renderer)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	m := editorModel{
-		styles:  newStylesForTheme(r, cfg.UI.Theme),
+		styles:  newStylesForTheme(r, cfg.Settings.Theme),
 		r:       r,
 		spin:    sp,
 		cfgPath: cfgPath,
@@ -288,7 +302,7 @@ func (m editorModel) updateKeybinding(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if kb.done {
 		m.keybinding = nil
 		if !kb.cancelled {
-			m.cfg.Shell.Keybinding = kb.result
+			m.cfg.Settings.Keybinding = kb.result
 		}
 	}
 	return m, cmd
@@ -302,7 +316,7 @@ func (m editorModel) updateThemePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if tp.done {
 		m.themePicker = nil
 		if !tp.cancelled {
-			m.cfg.UI.Theme = theme.Normalize(tp.result)
+			m.cfg.Settings.Theme = theme.Normalize(tp.result)
 			m.styles = newStylesForTheme(m.r, tp.result)
 		} else {
 			m.styles = newStylesForTheme(m.r, tp.prev)
@@ -385,7 +399,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		for name := range m.cfg.Providers {
 			exclude[name] = true
 		}
-		wiz := newWizardModel(m.r, theme.Normalize(m.cfg.UI.Theme))
+		wiz := newWizardModel(m.r, theme.Normalize(m.cfg.Settings.Theme))
 		wiz.exclude = exclude
 		m.addWizard = &wiz
 		return m, m.addWizard.Init()

@@ -20,15 +20,11 @@ auth     = "env"
 env_var  = "ANTHROPIC_API_KEY"
 model    = "claude-haiku-4-5-20251001"
 
-[ui]
+[settings]
 theme       = "ocean"
 show_footer = true
-
-[shell]
-keybinding = "^T"
-
-[policies.bash]
-llm_judge = true
+keybinding  = "^T"
+llm_judge   = true
 `)
 
 	cfg, exists, err := LoadConfig(path)
@@ -42,14 +38,14 @@ llm_judge = true
 	assertEqual(t, "selected_provider", "anthropic", cfg.SelectedProvider)
 	assertEqual(t, "providers.anthropic.auth", "env", cfg.Providers["anthropic"].Auth)
 	assertEqual(t, "providers.anthropic.model", "claude-haiku-4-5-20251001", cfg.Providers["anthropic"].Model)
-	assertEqual(t, "ui.theme", "ocean", cfg.UI.Theme)
-	assertEqual(t, "shell.keybinding", "^T", cfg.Shell.Keybinding)
+	assertEqual(t, "settings.theme", "ocean", cfg.Settings.Theme)
+	assertEqual(t, "settings.keybinding", "^T", cfg.Settings.Keybinding)
 
-	if cfg.UI.ShowFooter == nil || !*cfg.UI.ShowFooter {
-		t.Error("expected ui.show_footer to be true")
+	if cfg.Settings.ShowFooter == nil || !*cfg.Settings.ShowFooter {
+		t.Error("expected settings.show_footer to be true")
 	}
-	if !cfg.Policies.Bash.LLMJudge {
-		t.Error("expected policies.bash.llm_judge to be true")
+	if !cfg.Settings.LLMJudge {
+		t.Error("expected settings.llm_judge to be true")
 	}
 }
 
@@ -89,11 +85,7 @@ func TestSaveAndLoadRoundtrip(t *testing.T) {
 		Providers: map[string]ProviderConfig{
 			"openai": {Auth: "env", EnvVar: "OPENAI_API_KEY", Model: "gpt-4o"},
 		},
-		UI:    UIConfig{Theme: "ocean", ShowFooter: &showFooter},
-		Shell: ShellConfig{Keybinding: "^T"},
-		Policies: PoliciesConfig{
-			Bash: BashPolicyConfig{LLMJudge: true},
-		},
+		Settings: SettingsConfig{Theme: "ocean", ShowFooter: &showFooter, Keybinding: "^T", LLMJudge: true},
 	}
 
 	if err := SaveConfig(path, original); err != nil {
@@ -110,9 +102,9 @@ func TestSaveAndLoadRoundtrip(t *testing.T) {
 
 	assertEqual(t, "SelectedProvider", original.SelectedProvider, loaded.SelectedProvider)
 	assertEqual(t, "providers.openai.model", original.Providers["openai"].Model, loaded.Providers["openai"].Model)
-	assertEqual(t, "ui.theme", original.UI.Theme, loaded.UI.Theme)
-	if loaded.UI.ShowFooter == nil || *loaded.UI.ShowFooter != showFooter {
-		t.Errorf("ui.show_footer: want %v, got %v", showFooter, loaded.UI.ShowFooter)
+	assertEqual(t, "settings.theme", original.Settings.Theme, loaded.Settings.Theme)
+	if loaded.Settings.ShowFooter == nil || *loaded.Settings.ShowFooter != showFooter {
+		t.Errorf("settings.show_footer: want %v, got %v", showFooter, loaded.Settings.ShowFooter)
 	}
 }
 
@@ -154,13 +146,13 @@ func TestValidateRejectsUnknownTheme(t *testing.T) {
 	cfg := FileConfig{
 		SelectedProvider: "anthropic",
 		Providers:        map[string]ProviderConfig{"anthropic": {Model: "claude-haiku-4-5-20251001"}},
-		UI:               UIConfig{Theme: "neon"},
+		Settings:         SettingsConfig{Theme: "neon"},
 	}
 	errs := Validate(cfg)
 	if len(errs) == 0 {
 		t.Fatal("expected validation error for unknown theme")
 	}
-	if !strings.Contains(errs[0], "unknown ui.theme") {
+	if !strings.Contains(errs[0], "unknown settings.theme") {
 		t.Errorf("unexpected error: %q", errs[0])
 	}
 }

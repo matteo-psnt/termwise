@@ -93,6 +93,7 @@ func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
 		m.finishGeneration()
 		m.state = stateIdle
 		m.refreshViewport()
+		m.saveSession()
 		return m, nil
 	}
 
@@ -157,6 +158,7 @@ func (m Model) handleRespondMsg(msg agent.RespondMsg) (tea.Model, tea.Cmd) {
 	m.finishGeneration()
 	m.state = stateIdle
 	m.refreshViewport()
+	m.saveSession()
 	return m, nil
 }
 

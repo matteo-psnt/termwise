@@ -12,10 +12,10 @@ import (
 func Validate(cfg FileConfig) []string {
 	var errs []string
 
-	if cfg.UI.Theme != "" && !theme.IsValid(cfg.UI.Theme) {
+	if cfg.Settings.Theme != "" && !theme.IsValid(cfg.Settings.Theme) {
 		errs = append(errs, fmt.Sprintf(
-			"unknown ui.theme %q\n  Valid themes: %s",
-			cfg.UI.Theme, strings.Join(theme.Names(), ", "),
+			"unknown settings.theme %q\n  Valid themes: %s",
+			cfg.Settings.Theme, strings.Join(theme.Names(), ", "),
 		))
 	}
 

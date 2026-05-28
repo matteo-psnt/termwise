@@ -30,8 +30,10 @@ func main() {
 				return runner.ShellWidget(ctx, sw)
 			}
 			prefill, _ := cmd.Flags().GetString("prefill")
+			sessionID, _ := cmd.Flags().GetString("session-id")
+			resume, _ := cmd.Flags().GetBool("resume")
 			if len(args) == 0 {
-				return openTUI(prefill)
+				return openTUI(prefill, sessionID, resume)
 			}
 			return runner.SingleShot(context.Background(), strings.Join(args, " "))
 		},
@@ -43,6 +45,9 @@ func main() {
 	root.Flags().Lookup("shell-widget").Hidden = true
 	root.Flags().String("prefill", "", "")
 	root.Flags().Lookup("prefill").Hidden = true
+	root.Flags().String("session-id", "", "")
+	root.Flags().Lookup("session-id").Hidden = true
+	root.Flags().Bool("resume", false, "Resume the most recent session for this terminal")
 
 	root.AddCommand(initCmd)
 	root.AddCommand(configCmd)
@@ -61,7 +66,7 @@ func main() {
 	// (cobra swallows non-nil errors; RunE errors land in the Execute() return above.)
 }
 
-func openTUI(prefill string) error {
+func openTUI(prefill string, sessionID string, forceResume bool) error {
 	cfgPath, err := config.DefaultConfigPath()
 	if err != nil {
 		return err
@@ -74,5 +79,5 @@ func openTUI(prefill string) error {
 	if err != nil {
 		return err
 	}
-	return agentui.Open(rc.ProviderName, client, rc.Model, cfgPath, prefill)
+	return agentui.Open(rc.ProviderName, client, rc.Model, cfgPath, prefill, sessionID, forceResume)
 }

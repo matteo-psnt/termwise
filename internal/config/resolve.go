@@ -27,6 +27,7 @@ type ResolvedConfig struct {
 	ShowFooter      bool
 	LLMJudge        bool
 	ShellKeybinding string
+	AutoResume      bool
 }
 
 // ResolvedAuth holds the resolved API key and an optional base URL override.
@@ -62,13 +63,14 @@ func Resolve(cfg FileConfig) (ResolvedConfig, error) {
 		Model:           pc.Model,
 		APIKey:          auth.APIKey,
 		BaseURL:         auth.BaseURL,
-		Theme:           theme.Normalize(cfg.UI.Theme),
+		Theme:           theme.Normalize(cfg.Settings.Theme),
 		ShowFooter:      true,
-		LLMJudge:        cfg.Policies.Bash.LLMJudge,
-		ShellKeybinding: cfg.Shell.Keybinding,
+		LLMJudge:        cfg.Settings.LLMJudge,
+		ShellKeybinding: cfg.Settings.Keybinding,
+		AutoResume:      cfg.Settings.AutoResume,
 	}
-	if cfg.UI.ShowFooter != nil {
-		rc.ShowFooter = *cfg.UI.ShowFooter
+	if cfg.Settings.ShowFooter != nil {
+		rc.ShowFooter = *cfg.Settings.ShowFooter
 	}
 	if rc.Theme == "" {
 		rc.Theme = theme.DefaultName
