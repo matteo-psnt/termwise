@@ -65,7 +65,7 @@ func (m Model) handleSpinnerTick(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
-		m.activeTurnID = 0
+		m.finishGeneration()
 		if errors.Is(msg.Err, context.Canceled) {
 			return m, nil
 		}
@@ -89,14 +89,14 @@ func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if len(resp.ToolCalls) == 0 {
-		m.activeTurnID = 0
+		m.finishGeneration()
 		m.state = stateIdle
 		m.refreshViewport()
 		return m, nil
 	}
 
 	m.refreshViewport()
-	return m, m.wrapActiveTurn(agent.ProcessToolsCmd(m.ctx, resp.ToolCalls, nil, m.needsApproval))
+	return m, m.wrapActiveGeneration(agent.ProcessToolsCmd(m.ctx, resp.ToolCalls, nil, m.needsApproval))
 }
 
 func (m Model) handleToolExecutedMsg(msg agent.ToolExecutedMsg) (tea.Model, tea.Cmd) {
@@ -105,7 +105,7 @@ func (m Model) handleToolExecutedMsg(msg agent.ToolExecutedMsg) (tea.Model, tea.
 		ToolResultEntry{Content: msg.Result.Content, IsError: msg.Result.IsError},
 	)
 	m.refreshViewport()
-	return m, m.wrapActiveTurn(agent.ProcessToolsCmd(m.ctx, msg.Remaining, msg.Collected, m.needsApproval))
+	return m, m.wrapActiveGeneration(agent.ProcessToolsCmd(m.ctx, msg.Remaining, msg.Collected, m.needsApproval))
 }
 
 func (m Model) handleNeedsApprovalMsg(msg agent.NeedsApprovalMsg) (tea.Model, tea.Cmd) {
@@ -115,7 +115,7 @@ func (m Model) handleNeedsApprovalMsg(msg agent.NeedsApprovalMsg) (tea.Model, te
 
 	if m.llmJudge {
 		m.state = stateJudging
-		return m, tea.Batch(m.spin.Tick, m.wrapActiveTurn(m.judgeCmd(msg.ToolCall)))
+		return m, tea.Batch(m.spin.Tick, m.wrapActiveGeneration(m.judgeCmd(msg.ToolCall)))
 	}
 
 	m.state = stateApproval
@@ -149,7 +149,7 @@ func (m Model) handleRespondMsg(msg agent.RespondMsg) (tea.Model, tea.Cmd) {
 		m.appendThreadEntries(AssistantEntry{Content: msg.Content})
 	}
 	m.appendToolResultsMessage(msg.Collected)
-	m.activeTurnID = 0
+	m.finishGeneration()
 	m.state = stateIdle
 	m.refreshViewport()
 	return m, nil

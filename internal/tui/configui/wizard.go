@@ -93,13 +93,21 @@ func (m wizardModel) availableProviders() []config.ProviderInfo {
 	if len(m.exclude) == 0 {
 		return all
 	}
-	out := all[:0:0]
+	out := make([]config.ProviderInfo, 0, len(all))
 	for _, p := range all {
 		if !m.exclude[p.Name] {
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+func (m wizardModel) selectedProvider() (config.ProviderInfo, bool) {
+	providers := m.availableProviders()
+	if len(providers) == 0 || m.cursor < 0 || m.cursor >= len(providers) {
+		return config.ProviderInfo{}, false
+	}
+	return providers[m.cursor], true
 }
 
 // ---------------------------------------------------------------------------
@@ -171,7 +179,11 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cursor++
 			}
 		case "enter", " ":
-			m.provider = providers[m.cursor].Name
+			selected, ok := m.selectedProvider()
+			if !ok {
+				return m, nil
+			}
+			m.provider = selected.Name
 			m.cursor = 0
 			if m.provider == "ollama" {
 				m.authMethod = "env"
@@ -383,6 +395,11 @@ func (m wizardModel) renderInner() string {
 	case wizPickProvider:
 		providers := m.availableProviders()
 		b.WriteString("Choose a provider:\n\n")
+		if len(providers) == 0 {
+			b.WriteString("All built-in providers are already configured.\n\n")
+			b.WriteString(m.styles.Dim.Render("q quit"))
+			break
+		}
 		for i, p := range providers {
 			if i == m.cursor {
 				b.WriteString(m.styles.Selected.Render("▶ "+p.Label) + "\n")

@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
-	"github.com/matteo-psnt/termwise/internal/provider/anthropic"
-	"github.com/matteo-psnt/termwise/internal/provider/openaicompat"
 )
 
 // ListProviderModels returns the models available for the given provider config.
@@ -38,22 +36,12 @@ func newProviderClient(name string, pc ProviderConfig) (provider.AgentClient, er
 	if err != nil {
 		return nil, err
 	}
-	pcfg := provider.Config{
+	if name != "anthropic" && auth.BaseURL == "" && !isKnownProvider(name) {
+		return nil, fmt.Errorf("unknown provider %q — supported: %v", name, ProviderNames())
+	}
+	return newClient(name, provider.Config{
 		APIKey:  auth.APIKey,
 		Model:   pc.Model,
 		BaseURL: auth.BaseURL,
-	}
-	switch name {
-	case "anthropic":
-		return anthropic.New(pcfg)
-	default:
-		defaultURL, ok := openaicompat.DefaultBaseURL(name)
-		if !ok {
-			if auth.BaseURL == "" {
-				return nil, fmt.Errorf("unknown provider %q — supported: %v", name, ProviderNames())
-			}
-			defaultURL = auth.BaseURL
-		}
-		return openaicompat.New(name, defaultURL, pcfg)
-	}
+	})
 }

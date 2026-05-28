@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -104,17 +105,17 @@ func LoadRuntimeConfig(path string) (ResolvedConfig, error) {
 // provider whose env var is set, or (FileConfig{}, false) if none match.
 // Ollama is excluded — it needs no API key and cannot be auto-detected.
 func ZeroConfigDefaults() (FileConfig, bool) {
-	for _, entry := range zeroConfigOrder {
-		if os.Getenv(entry.envVar) == "" {
+	for _, info := range providerCatalog {
+		if info.DefaultEnvVar == "" || os.Getenv(info.DefaultEnvVar) == "" {
 			continue
 		}
 		return FileConfig{
-			SelectedProvider: entry.provider,
+			SelectedProvider: info.Name,
 			Providers: map[string]ProviderConfig{
-				entry.provider: {
+				info.Name: {
 					Auth:   "env",
-					EnvVar: entry.envVar,
-					Model:  models.DefaultModel(entry.provider),
+					EnvVar: info.DefaultEnvVar,
+					Model:  models.DefaultModel(info.Name),
 				},
 			},
 		}, true
@@ -122,42 +123,33 @@ func ZeroConfigDefaults() (FileConfig, bool) {
 	return FileConfig{}, false
 }
 
-// zeroConfigOrder defines the priority for auto-detecting a provider from
-// environment variables. The first provider with its env var set wins.
-var zeroConfigOrder = []struct {
-	provider string
-	envVar   string
-}{
-	{"anthropic", "ANTHROPIC_API_KEY"},
-	{"openai", "OPENAI_API_KEY"},
-	{"groq", "GROQ_API_KEY"},
-	{"deepseek", "DEEPSEEK_API_KEY"},
-	{"mistral", "MISTRAL_API_KEY"},
-}
-
 // NewClientFromResolved constructs a provider client from a ResolvedConfig.
 // Auth credentials must already be resolved in rc.
 func NewClientFromResolved(rc ResolvedConfig) (provider.AgentClient, error) {
-	pcfg := provider.Config{
+	return newClient(rc.ProviderName, provider.Config{
 		APIKey:  rc.APIKey,
 		Model:   rc.Model,
 		BaseURL: rc.BaseURL,
-	}
-	switch rc.ProviderName {
+	})
+}
+
+// newClient constructs a provider client from already-resolved config.
+func newClient(name string, cfg provider.Config) (provider.AgentClient, error) {
+	switch name {
 	case "anthropic":
-		return anthropic.New(pcfg)
+		return anthropic.New(cfg)
 	default:
-		defaultURL, ok := openaicompat.DefaultBaseURL(rc.ProviderName)
+		defaultURL, ok := openaicompat.DefaultBaseURL(name)
 		if !ok {
-			if rc.BaseURL == "" {
+			if cfg.BaseURL == "" {
 				return nil, fmt.Errorf(
 					"unknown provider %q — set base_url to use a custom OpenAI-compatible endpoint",
-					rc.ProviderName,
+					name,
 				)
 			}
-			defaultURL = rc.BaseURL
+			defaultURL = cfg.BaseURL
 		}
-		return openaicompat.New(rc.ProviderName, defaultURL, pcfg)
+		return openaicompat.New(name, defaultURL, cfg)
 	}
 }
 
@@ -205,7 +197,8 @@ func resolveKey(name string, pc ProviderConfig) (string, error) {
 		}
 		out, err := exec.Command("sh", "-c", pc.APIKeyCmd).Output()
 		if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
 				return "", fmt.Errorf("%s", strings.TrimSpace(string(exitErr.Stderr)))
 			}
 			return "", fmt.Errorf("api_key_cmd failed: %w", err)

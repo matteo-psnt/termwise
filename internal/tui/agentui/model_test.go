@@ -54,11 +54,11 @@ func TestTrimContextLeavesMessagesWithinLimitUntouched(t *testing.T) {
 func TestHandleThinkingKeyEscInterruptsRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := Model{
-		ctx:          ctx,
-		cancel:       cancel,
-		state:        stateThinking,
-		activeTurnID: 7,
-		vp:           viewport.New(80, 10),
+		ctx:              ctx,
+		cancel:           cancel,
+		state:            stateThinking,
+		activeGeneration: 7,
+		vp:               viewport.New(80, 10),
 	}
 
 	gotModel, _ := m.handleThinkingKey(tea.KeyMsg{Type: tea.KeyEsc})
@@ -67,8 +67,8 @@ func TestHandleThinkingKeyEscInterruptsRequest(t *testing.T) {
 	if got.state != stateIdle {
 		t.Fatalf("expected stateIdle after interrupt, got %v", got.state)
 	}
-	if got.activeTurnID != 0 {
-		t.Fatalf("expected active turn to be cleared, got %d", got.activeTurnID)
+	if got.activeGeneration != 0 {
+		t.Fatalf("expected active generation to be cleared, got %d", got.activeGeneration)
 	}
 	if len(got.thread) != 1 {
 		t.Fatalf("expected one thread entry, got %d", len(got.thread))
@@ -86,54 +86,54 @@ func TestHandleThinkingKeyEscInterruptsRequest(t *testing.T) {
 
 func TestHandleResponseMsgIgnoresStaleResponse(t *testing.T) {
 	m := Model{
-		state:        stateIdle,
-		activeTurnID: 2,
-		vp:           viewport.New(80, 10),
+		state:            stateIdle,
+		activeGeneration: 2,
+		vp:               viewport.New(80, 10),
 	}
 
-	gotModel, _ := m.handleTurnMsg(turnMsg{
-		turnID: 1,
-		msg:    agent.ResponseMsg{Resp: &provider.ChatResponse{Content: "stale"}},
+	gotModel, _ := m.handleGenerationMsg(generationMsg{
+		generation: 1,
+		msg:        agent.ResponseMsg{Resp: &provider.ChatResponse{Content: "stale"}},
 	})
 	got := gotModel.(Model)
 
 	if len(got.thread) != 0 {
 		t.Fatalf("expected no error thread entry, got %#v", got.thread)
 	}
-	if got.activeTurnID != 2 {
-		t.Fatalf("expected active turn to remain unchanged, got %d", got.activeTurnID)
+	if got.activeGeneration != 2 {
+		t.Fatalf("expected active generation to remain unchanged, got %d", got.activeGeneration)
 	}
 }
 
 func TestHandleResponseMsgIgnoresCanceledActiveRequest(t *testing.T) {
 	m := Model{
-		state:        stateThinking,
-		activeTurnID: 3,
-		vp:           viewport.New(80, 10),
+		state:            stateThinking,
+		activeGeneration: 3,
+		vp:               viewport.New(80, 10),
 	}
 
-	gotModel, _ := m.handleTurnMsg(turnMsg{
-		turnID: 3,
-		msg:    agent.ResponseMsg{Err: context.Canceled},
+	gotModel, _ := m.handleGenerationMsg(generationMsg{
+		generation: 3,
+		msg:        agent.ResponseMsg{Err: context.Canceled},
 	})
 	got := gotModel.(Model)
 
-	if got.activeTurnID != 0 {
-		t.Fatalf("expected active turn to be cleared, got %d", got.activeTurnID)
+	if got.activeGeneration != 0 {
+		t.Fatalf("expected active generation to be cleared, got %d", got.activeGeneration)
 	}
 	if len(got.thread) != 0 {
 		t.Fatalf("expected no thread entry, got %#v", got.thread)
 	}
 }
 
-func TestHandleToolExecutedMsgIgnoresStaleTurn(t *testing.T) {
+func TestHandleToolExecutedMsgIgnoresStaleGeneration(t *testing.T) {
 	m := Model{
-		activeTurnID: 2,
-		vp:           viewport.New(80, 10),
+		activeGeneration: 2,
+		vp:               viewport.New(80, 10),
 	}
 
-	gotModel, _ := m.handleTurnMsg(turnMsg{
-		turnID: 1,
+	gotModel, _ := m.handleGenerationMsg(generationMsg{
+		generation: 1,
 		msg: agent.ToolExecutedMsg{
 			ToolCall: provider.ToolCall{Name: "bash", Input: map[string]any{"command": "echo stale"}},
 			Result:   provider.ToolResult{ToolCallID: "1", Content: "stale"},

@@ -116,6 +116,36 @@ func TestSaveAndLoadRoundtrip(t *testing.T) {
 	}
 }
 
+func TestSaveConfigWritesPrivateFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "config.toml")
+	cfg := FileConfig{
+		SelectedProvider: "openai",
+		Providers: map[string]ProviderConfig{
+			"openai": {Auth: "env", EnvVar: "OPENAI_API_KEY", Model: "gpt-4o"},
+		},
+	}
+
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat config: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("config mode: want 0600, got %o", got)
+	}
+
+	dirInfo, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		t.Fatalf("Stat config dir: %v", err)
+	}
+	if got := dirInfo.Mode().Perm(); got != 0o700 {
+		t.Fatalf("config dir mode: want 0700, got %o", got)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Validate
 // ---------------------------------------------------------------------------
@@ -216,8 +246,6 @@ func TestResolveAuthEnv(t *testing.T) {
 }
 
 func TestResolveAuthEnvMissingVarReturnsError(t *testing.T) {
-	// Use groq — it has no fallback env var, so a missing configured var
-	// cannot be rescued and must produce an error.
 	os.Unsetenv("TERMWISE_TEST_MISSING_VAR")
 	os.Unsetenv("GROQ_API_KEY")
 	pc := ProviderConfig{Auth: "env", EnvVar: "TERMWISE_TEST_MISSING_VAR"}
@@ -225,6 +253,18 @@ func TestResolveAuthEnvMissingVarReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unset env var")
 	}
+}
+
+func TestResolveAuthEnvFallsBackToCanonicalProviderVar(t *testing.T) {
+	t.Setenv("GROQ_API_KEY", "sk-groq")
+	os.Unsetenv("TERMWISE_TEST_MISSING_VAR")
+
+	pc := ProviderConfig{Auth: "env", EnvVar: "TERMWISE_TEST_MISSING_VAR"}
+	auth, err := ResolveAuth("groq", pc)
+	if err != nil {
+		t.Fatalf("ResolveAuth fallback: %v", err)
+	}
+	assertEqual(t, "APIKey", "sk-groq", auth.APIKey)
 }
 
 func TestResolveAuthCmd(t *testing.T) {
@@ -237,7 +277,6 @@ func TestResolveAuthCmd(t *testing.T) {
 }
 
 func TestResolveAuthCmdFailureReturnsError(t *testing.T) {
-	// Use groq — no fallback env var, so a failing cmd cannot be rescued.
 	os.Unsetenv("GROQ_API_KEY")
 	pc := ProviderConfig{Auth: "cmd", APIKeyCmd: "exit 1"}
 	_, err := ResolveAuth("groq", pc)
@@ -269,6 +308,24 @@ func TestZeroConfigDefaultsPrefersAnthropic(t *testing.T) {
 		t.Fatal("expected ZeroConfigDefaults to find a provider")
 	}
 	assertEqual(t, "SelectedProvider", "anthropic", cfg.SelectedProvider)
+}
+
+func TestZeroConfigDefaultsFindsLaterProvider(t *testing.T) {
+	for _, envVar := range []string{
+		"ANTHROPIC_API_KEY",
+		"OPENAI_API_KEY",
+		"DEEPSEEK_API_KEY",
+		"MISTRAL_API_KEY",
+	} {
+		os.Unsetenv(envVar)
+	}
+	t.Setenv("GROQ_API_KEY", "sk-groq")
+	cfg, ok := ZeroConfigDefaults()
+	if !ok {
+		t.Fatal("expected ZeroConfigDefaults to find a provider")
+	}
+	assertEqual(t, "SelectedProvider", "groq", cfg.SelectedProvider)
+	assertEqual(t, "providers.groq.env_var", "GROQ_API_KEY", cfg.Providers["groq"].EnvVar)
 }
 
 func TestZeroConfigDefaultsNoneSetReturnsFalse(t *testing.T) {

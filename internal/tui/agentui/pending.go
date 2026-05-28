@@ -61,7 +61,7 @@ func (m Model) approvePendingBash() (tea.Model, tea.Cmd) {
 	m.state = stateThinking
 	return m, tea.Batch(
 		m.spin.Tick,
-		m.wrapActiveTurn(agent.ExecuteBashCmd(m.ctx, tc, remaining, collected)),
+		m.wrapActiveGeneration(agent.ExecuteBashCmd(m.ctx, tc, remaining, collected)),
 	)
 }
 
@@ -72,6 +72,6 @@ func (m Model) resumePendingToolLoop(result provider.ToolResult) (tea.Model, tea
 	m.state = stateThinking
 	return m, tea.Batch(
 		m.spin.Tick,
-		m.wrapActiveTurn(agent.ProcessToolsCmd(m.ctx, remaining, collected, m.needsApproval)),
+		m.wrapActiveGeneration(agent.ProcessToolsCmd(m.ctx, remaining, collected, m.needsApproval)),
 	)
 }

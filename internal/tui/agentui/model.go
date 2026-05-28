@@ -33,7 +33,6 @@ const (
 // Model is the bubbletea model for the agent TUI.
 type Model struct {
 	// Session config
-	providerName  string
 	provider      provider.AgentClient
 	modelID       string
 	system        string
@@ -67,11 +66,11 @@ type Model struct {
 	height int
 	ready  bool
 
-	// Cancellation for the current in-flight turn.
-	ctx          context.Context
-	cancel       context.CancelFunc
-	nextTurnID   uint64
-	activeTurnID uint64
+	// Cancellation for the current in-flight async generation.
+	ctx              context.Context
+	cancel           context.CancelFunc
+	nextGeneration   uint64
+	activeGeneration uint64
 
 	// Renderer (built once)
 	renderer Renderer
@@ -85,16 +84,16 @@ type Model struct {
 	quitting bool
 }
 
-type turnMsg struct {
-	turnID uint64
-	msg    tea.Msg
+type generationMsg struct {
+	generation uint64
+	msg        tea.Msg
 }
 
-func newTurnContext() (context.Context, context.CancelFunc) {
+func newGenerationContext() (context.Context, context.CancelFunc) {
 	return context.WithCancel(context.Background())
 }
 
-func wrapTurnCmd(turnID uint64, cmd tea.Cmd) tea.Cmd {
+func wrapGenerationCmd(generation uint64, cmd tea.Cmd) tea.Cmd {
 	if cmd == nil {
 		return nil
 	}
@@ -103,7 +102,7 @@ func wrapTurnCmd(turnID uint64, cmd tea.Cmd) tea.Cmd {
 		if msg == nil {
 			return nil
 		}
-		return turnMsg{turnID: turnID, msg: msg}
+		return generationMsg{generation: generation, msg: msg}
 	}
 }
 
@@ -134,10 +133,9 @@ func newModel(
 		contextWindow = md.Context
 	}
 
-	ctx, cancel := newTurnContext()
+	ctx, cancel := newGenerationContext()
 
 	m := Model{
-		providerName:  providerName,
 		provider:      provider,
 		modelID:       modelID,
 		system:        system,
@@ -176,8 +174,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleWindowSize(msg)
 	case spinner.TickMsg:
 		return m.handleSpinnerTick(msg)
-	case turnMsg:
-		return m.handleTurnMsg(msg)
+	case generationMsg:
+		return m.handleGenerationMsg(msg)
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -218,7 +216,7 @@ func (m Model) handleThinkingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type != tea.KeyEsc && msg.String() != "esc" {
 		return m, nil
 	}
-	m.interruptThinking()
+	m.interruptActiveTurn()
 	return m, nil
 }
 
@@ -293,7 +291,7 @@ func (m Model) submitMessage(text string) (tea.Model, tea.Cmd) {
 	m.thread = append(m.thread, UserEntry{Content: text})
 	m.messages = append(m.messages, provider.Message{Role: "user", Content: content})
 	m.messages = trimContext(m.messages, m.contextWindow)
-	m.beginTurn()
+	m.beginGeneration()
 	m.state = stateThinking
 	m.refreshViewport()
 
@@ -310,39 +308,43 @@ func (m Model) chatRequest() provider.ChatRequest {
 	}
 }
 
-func (m *Model) beginTurn() {
-	m.resetTurnContext()
-	m.nextTurnID++
-	m.activeTurnID = m.nextTurnID
+func (m *Model) beginGeneration() {
+	m.resetGenerationContext()
+	m.nextGeneration++
+	m.activeGeneration = m.nextGeneration
 }
 
-func (m *Model) resetTurnContext() {
+func (m *Model) resetGenerationContext() {
 	m.cancel()
-	m.ctx, m.cancel = newTurnContext()
+	m.ctx, m.cancel = newGenerationContext()
 }
 
 func (m *Model) startChat() tea.Cmd {
 	return tea.Batch(
 		m.spin.Tick,
-		m.wrapActiveTurn(agent.ChatCmd(m.ctx, m.provider, m.chatRequest())),
+		m.wrapActiveGeneration(agent.ChatCmd(m.ctx, m.provider, m.chatRequest())),
 	)
 }
 
-func (m *Model) interruptThinking() {
-	m.resetTurnContext()
-	m.activeTurnID = 0
+func (m *Model) interruptActiveTurn() {
+	m.resetGenerationContext()
+	m.finishGeneration()
 	m.clearPendingTool()
 	m.state = stateIdle
 	m.appendThreadEntries(ErrorEntry{Content: "Request interrupted."})
 	m.refreshViewport()
 }
 
-func (m Model) wrapActiveTurn(cmd tea.Cmd) tea.Cmd {
-	return wrapTurnCmd(m.activeTurnID, cmd)
+func (m *Model) finishGeneration() {
+	m.activeGeneration = 0
 }
 
-func (m Model) handleTurnMsg(msg turnMsg) (tea.Model, tea.Cmd) {
-	if msg.turnID != m.activeTurnID {
+func (m Model) wrapActiveGeneration(cmd tea.Cmd) tea.Cmd {
+	return wrapGenerationCmd(m.activeGeneration, cmd)
+}
+
+func (m Model) handleGenerationMsg(msg generationMsg) (tea.Model, tea.Cmd) {
+	if msg.generation != m.activeGeneration {
 		return m, nil
 	}
 

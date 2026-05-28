@@ -45,7 +45,7 @@ func LoadConfig(path string) (FileConfig, bool, error) {
 // SaveConfig writes cfg to path atomically.
 // The config directory is created (mode 0700) if it does not exist, and the
 // config file is written with mode 0600 before being renamed into place.
-func SaveConfig(path string, cfg FileConfig) error {
+func SaveConfig(path string, cfg FileConfig) (err error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
@@ -61,22 +61,27 @@ func SaveConfig(path string, cfg FileConfig) error {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
 	tmpPath := tmp.Name()
+	defer func() {
+		if err == nil {
+			return
+		}
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}()
 
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
+	if _, err = tmp.Write(data); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
+	if err = tmp.Sync(); err != nil {
+		return fmt.Errorf("syncing config: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
 		return fmt.Errorf("closing temp file: %w", err)
 	}
-	if err := os.Chmod(tmpPath, 0o600); err != nil {
-		os.Remove(tmpPath)
+	if err = os.Chmod(tmpPath, 0o600); err != nil {
 		return fmt.Errorf("setting config permissions: %w", err)
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
+	if err = os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 	return nil

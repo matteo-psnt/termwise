@@ -2,17 +2,16 @@ package config
 
 // ProviderInfo describes a built-in provider.
 type ProviderInfo struct {
-	Name           string
-	Label          string
-	DefaultEnvVar  string
-	fallbackEnvVar string
+	Name          string
+	Label         string
+	DefaultEnvVar string
 }
 
 // providerCatalog is the authoritative list of built-in providers.
 // Order determines display order in the UI and zero-config detection priority.
 var providerCatalog = []ProviderInfo{
-	{Name: "anthropic", Label: "Anthropic", DefaultEnvVar: "ANTHROPIC_API_KEY", fallbackEnvVar: "ANTHROPIC_API_KEY"},
-	{Name: "openai", Label: "OpenAI", DefaultEnvVar: "OPENAI_API_KEY", fallbackEnvVar: "OPENAI_API_KEY"},
+	{Name: "anthropic", Label: "Anthropic", DefaultEnvVar: "ANTHROPIC_API_KEY"},
+	{Name: "openai", Label: "OpenAI", DefaultEnvVar: "OPENAI_API_KEY"},
 	{Name: "groq", Label: "Groq", DefaultEnvVar: "GROQ_API_KEY"},
 	{Name: "deepseek", Label: "DeepSeek", DefaultEnvVar: "DEEPSEEK_API_KEY"},
 	{Name: "mistral", Label: "Mistral", DefaultEnvVar: "MISTRAL_API_KEY"},
@@ -48,11 +47,7 @@ func DefaultEnvVar(name string) string {
 // fallbackEnvVar returns the env var to try as a last-resort fallback when
 // configured auth fails. Only set for providers that have a canonical env var.
 func fallbackEnvVar(name string) string {
-	info, ok := lookupProvider(name)
-	if !ok {
-		return ""
-	}
-	return info.fallbackEnvVar
+	return DefaultEnvVar(name)
 }
 
 func isKnownProvider(name string) bool {
