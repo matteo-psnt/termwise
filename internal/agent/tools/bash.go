@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 const maxBashOutputBytes = 64 * 1024 // 64KB per stream
@@ -53,6 +54,23 @@ func Bash(ctx context.Context, input map[string]any) (string, bool) {
 	}
 	data, _ := json.Marshal(result)
 	return string(data), exitCode != 0
+}
+
+// FormatDisplay formats a bash tool result JSON string for human display,
+// returning just stdout and stderr without the JSON wrapper or exit code.
+func FormatDisplay(jsonContent string) string {
+	var result BashResult
+	if err := json.Unmarshal([]byte(jsonContent), &result); err != nil {
+		return jsonContent
+	}
+	var parts []string
+	if s := strings.TrimRight(result.Stdout, "\n"); s != "" {
+		parts = append(parts, s)
+	}
+	if s := strings.TrimRight(result.Stderr, "\n"); s != "" {
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, "\n")
 }
 
 func truncateBashOutput(s string) string {

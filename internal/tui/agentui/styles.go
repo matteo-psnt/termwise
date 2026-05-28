@@ -50,7 +50,7 @@ func newStyles(r *lipgloss.Renderer, palette theme.Palette) Styles {
 		TWSymbol:     r.NewStyle().Foreground(accent),
 		ToolCall:     r.NewStyle().Faint(true),
 		ToolOutput:   r.NewStyle().Faint(true),
-		ApprovalHint: r.NewStyle().Faint(true),
+		ApprovalHint: r.NewStyle(),
 		Footer:       r.NewStyle().Faint(true),
 		Spinner:      r.NewStyle().Foreground(accent),
 		Error:        r.NewStyle().Foreground(errCol),

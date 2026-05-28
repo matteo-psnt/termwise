@@ -146,11 +146,8 @@ func newModel(
 		spin:          sp,
 		ctx:           ctx,
 		cancel:        cancel,
-		renderer: Renderer{
-			styles:  newStyles(r, theme.Get(themeName)),
-			glamour: glamourStyle(r),
-		},
-		closeKey: closeKey,
+		renderer:      newRenderer(r, theme.Get(themeName), glamourStyle(r)),
+		closeKey:      closeKey,
 	}
 
 	if stdin != "" {

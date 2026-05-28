@@ -5,6 +5,10 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/ansi"
+	"github.com/charmbracelet/glamour/styles"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
 // Renderer holds the config needed to render thread entries.
@@ -12,7 +16,24 @@ import (
 // with all presentation config in one place.
 type Renderer struct {
 	styles  Styles
-	glamour string // "dark" or "light"
+	glamour *glamour.TermRenderer
+}
+
+func newRenderer(r *lipgloss.Renderer, palette theme.Palette, glamourStyle string) Renderer {
+	var cfg ansi.StyleConfig
+	if glamourStyle == "dark" {
+		cfg = styles.DarkStyleConfig
+	} else {
+		cfg = styles.LightStyleConfig
+	}
+	var zero uint
+	cfg.Document.Margin = &zero
+
+	gr, _ := glamour.NewTermRenderer(glamour.WithStyles(cfg), glamour.WithWordWrap(0))
+	return Renderer{
+		styles:  newStyles(r, palette),
+		glamour: gr,
+	}
 }
 
 // RenderThread renders all thread entries joined by newlines.
@@ -118,8 +139,11 @@ func capitalizeFirst(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-func renderMarkdown(content, style string) string {
-	rendered, err := glamour.Render(content, style)
+func renderMarkdown(content string, gr *glamour.TermRenderer) string {
+	if gr == nil {
+		return content
+	}
+	rendered, err := gr.Render(content)
 	if err != nil {
 		return content
 	}

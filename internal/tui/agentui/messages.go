@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/matteo-psnt/termwise/internal/agent"
+	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
@@ -100,9 +101,13 @@ func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleToolExecutedMsg(msg agent.ToolExecutedMsg) (tea.Model, tea.Cmd) {
+	display := msg.Result.Content
+	if msg.ToolCall.Name == "bash" {
+		display = tools.FormatDisplay(msg.Result.Content)
+	}
 	m.appendThreadEntries(
 		ToolCallEntry{Name: msg.ToolCall.Name, Detail: toolDetail(msg.ToolCall)},
-		ToolResultEntry{Content: msg.Result.Content, IsError: msg.Result.IsError},
+		ToolResultEntry{Content: display, IsError: msg.Result.IsError},
 	)
 	m.refreshViewport()
 	return m, m.wrapActiveGeneration(agent.ProcessToolsCmd(m.ctx, msg.Remaining, msg.Collected, m.needsApproval))
