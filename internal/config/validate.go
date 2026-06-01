@@ -3,8 +3,6 @@ package config
 import (
 	"fmt"
 	"strings"
-
-	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
 // Validate checks a FileConfig for structural correctness without making any
@@ -12,11 +10,14 @@ import (
 func Validate(cfg FileConfig) []string {
 	var errs []string
 
-	if cfg.Settings.Theme != "" && !theme.IsValid(cfg.Settings.Theme) {
-		errs = append(errs, fmt.Sprintf(
-			"unknown settings.theme %q\n  Valid themes: %s",
-			cfg.Settings.Theme, strings.Join(theme.Names(), ", "),
-		))
+	// Validate all settings through the registry so each SettingDef owns its own rules.
+	for _, def := range Settings {
+		if def.Validate == nil {
+			continue
+		}
+		if err := def.Validate(def.Get(cfg)); err != nil {
+			errs = append(errs, err.Error())
+		}
 	}
 
 	if cfg.SelectedProvider == "" {

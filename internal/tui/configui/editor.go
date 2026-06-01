@@ -38,76 +38,65 @@ type editorRow struct {
 	settingIdx int // only meaningful when kind == rowSetting
 }
 
-// settingDef describes a single settings row declaratively.
-// Adding a new setting requires only a new entry here — nothing else changes.
-type settingDef struct {
-	label    string
-	hint     string
-	getValue func(cfg config.FileConfig) string
-	activate func(m editorModel) (editorModel, tea.Cmd)
+// hintForKind returns the keyboard hint line for a setting row.
+func hintForKind(kind config.SettingKind) string {
+	switch kind {
+	case config.KindToggle:
+		return "enter toggle   ↑/↓ navigate   q quit"
+	case config.KindEnum, config.KindTheme:
+		return "enter pick   ↑/↓ navigate   q quit"
+	case config.KindKeybinding:
+		return "enter edit   ↑/↓ navigate   q quit"
+	default:
+		return "enter edit   ↑/↓ navigate   q quit"
+	}
 }
 
-var editorSettings = []settingDef{
-	{
-		label: "Keybinding",
-		hint:  "enter edit   ↑/↓ navigate   q quit",
-		getValue: func(cfg config.FileConfig) string {
-			kb := cfg.Settings.Keybinding
-			if kb == "" {
-				kb = "^T"
+// displayValue formats a setting's value for display in the TUI list.
+// Kind-specific formatting (e.g. keybinding label) is applied here so the
+// registry stays free of TUI-layer concerns.
+func displayValue(def config.SettingDef, cfg config.FileConfig) string {
+	val := def.Get(cfg)
+	switch def.Kind {
+	case config.KindKeybinding:
+		return keybinding.Label(def.Resolve(cfg))
+	case config.KindTheme:
+		return theme.Label(val)
+	default:
+		if val == "" {
+			resolved := def.Resolve(cfg)
+			if resolved != "" && resolved != val {
+				return resolved + " (default)"
 			}
-			return keybinding.Label(kb)
-		},
-		activate: func(m editorModel) (editorModel, tea.Cmd) {
-			kb := m.cfg.Settings.Keybinding
-			if kb == "" {
-				kb = "^T"
-			}
-			kbm := newKeybindingCapture(kb, m.styles)
-			m.keybinding = &kbm
-			return m, nil
-		},
-	},
-	{
-		label: "Theme",
-		hint:  "enter edit   ↑/↓ navigate   q quit",
-		getValue: func(cfg config.FileConfig) string {
-			return theme.Label(cfg.Settings.Theme)
-		},
-		activate: func(m editorModel) (editorModel, tea.Cmd) {
-			tp := newThemePicker(m.cfg.Settings.Theme, m.r, m.styles)
-			m.themePicker = &tp
-			return m, nil
-		},
-	},
-	{
-		label: "LLM judge",
-		hint:  "enter toggle   ↑/↓ navigate   q quit",
-		getValue: func(cfg config.FileConfig) string {
-			if cfg.Settings.LLMJudge {
-				return "on"
-			}
-			return "off"
-		},
-		activate: func(m editorModel) (editorModel, tea.Cmd) {
-			m.cfg.Settings.LLMJudge = !m.cfg.Settings.LLMJudge
-			return m, nil
-		},
-	},
-	{
-		label: "Auto resume",
-		hint:  "enter toggle   ↑/↓ navigate   q quit",
-		getValue: func(cfg config.FileConfig) string {
-			if cfg.Settings.AutoResume {
-				return "on"
-			}
-			return "off"
-		},
-		activate: func(m editorModel) (editorModel, tea.Cmd) {
-			m.cfg.Settings.AutoResume = !m.cfg.Settings.AutoResume
-			return m, nil
-		},
-	},
+		}
+		return val
+	}
+}
+
+// activateSetting handles Enter on a setting row: toggles booleans inline,
+// opens the appropriate sub-model for all other kinds.
+func activateSetting(m editorModel, settingIdx int) (editorModel, tea.Cmd) {
+	def := config.Settings[settingIdx]
+	switch def.Kind {
+	case config.KindToggle:
+		if def.Get(m.cfg) == "on" {
+			def.Set(&m.cfg, "off")
+		} else {
+			def.Set(&m.cfg, "on")
+		}
+	case config.KindTheme:
+		tp := newThemePicker(def.Get(m.cfg), m.r, m.styles)
+		m.themePicker = &tp
+		m.activeSettingIdx = settingIdx
+	case config.KindKeybinding:
+		kb := def.Resolve(m.cfg)
+		kbm := newKeybindingCapture(kb, m.styles)
+		m.keybinding = &kbm
+		m.activeSettingIdx = settingIdx
+	case config.KindEnum:
+		// future: open an enum picker
+	}
+	return m, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +127,9 @@ type editorModel struct {
 	keybinding  *keybindingModel
 	themePicker *themePickerModel
 	addWizard   *wizardModel
+
+	// Index into config.Settings for the currently active sub-model.
+	activeSettingIdx int
 
 	err error
 }
@@ -173,7 +165,7 @@ func (m *editorModel) buildRows() {
 		m.rows = append(m.rows, editorRow{kind: rowAddProvider})
 	}
 	m.rows = append(m.rows, editorRow{kind: rowSectionHeader, label: "Settings"})
-	for i := range editorSettings {
+	for i := range config.Settings {
 		m.rows = append(m.rows, editorRow{kind: rowSetting, settingIdx: i})
 	}
 	m.snapCursor()
@@ -302,7 +294,7 @@ func (m editorModel) updateKeybinding(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if kb.done {
 		m.keybinding = nil
 		if !kb.cancelled {
-			m.cfg.Settings.Keybinding = kb.result
+			config.Settings[m.activeSettingIdx].Set(&m.cfg, kb.result)
 		}
 	}
 	return m, cmd
@@ -316,7 +308,7 @@ func (m editorModel) updateThemePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if tp.done {
 		m.themePicker = nil
 		if !tp.cancelled {
-			m.cfg.Settings.Theme = theme.Normalize(tp.result)
+			config.Settings[m.activeSettingIdx].Set(&m.cfg, tp.result)
 			m.styles = newStylesForTheme(m.r, tp.result)
 		} else {
 			m.styles = newStylesForTheme(m.r, tp.prev)
@@ -405,7 +397,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		return m, m.addWizard.Init()
 
 	case rowSetting:
-		updated, cmd := editorSettings[row.settingIdx].activate(m)
+		updated, cmd := activateSetting(m, row.settingIdx)
 		return updated, cmd
 	}
 	return m, nil
@@ -579,8 +571,8 @@ func (m editorModel) renderNormal() string {
 			}
 
 		case rowSetting:
-			def := editorSettings[row.settingIdx]
-			m.renderRow(&b, focused, fmt.Sprintf("%-13s", def.label), def.getValue(m.cfg))
+			def := config.Settings[row.settingIdx]
+			m.renderRow(&b, focused, fmt.Sprintf("%-13s", def.Label), displayValue(def, m.cfg))
 		}
 	}
 
@@ -596,7 +588,7 @@ func (m editorModel) renderNormal() string {
 		case rowAddProvider:
 			b.WriteString(m.styles.Dim.Render("enter add provider   ↑/↓ navigate   q quit"))
 		case rowSetting:
-			b.WriteString(m.styles.Dim.Render(editorSettings[m.rows[m.cursor].settingIdx].hint))
+			b.WriteString(m.styles.Dim.Render(hintForKind(config.Settings[m.rows[m.cursor].settingIdx].Kind)))
 		default:
 			b.WriteString(m.styles.Dim.Render("enter edit   ↑/↓ navigate   q quit"))
 		}

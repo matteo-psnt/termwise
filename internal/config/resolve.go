@@ -11,23 +11,18 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/provider/anthropic"
 	"github.com/matteo-psnt/termwise/internal/provider/openaicompat"
-	"github.com/matteo-psnt/termwise/internal/theme"
 	"github.com/zalando/go-keyring"
 )
 
-// ResolvedConfig is the fully-resolved configuration the runtime operates with.
-// It is derived from FileConfig and contains concrete values only — no optional
-// pointers, no auth method selectors, no env var names.
+// ResolvedConfig is the fully-resolved provider configuration the runtime operates with.
+// It contains auth credentials and provider identity — concrete values only, no optional
+// pointers or env var names. User preferences (theme, keybinding, etc.) are read directly
+// from FileConfig via the Settings registry; they do not belong here.
 type ResolvedConfig struct {
-	ProviderName    string
-	Model           string
-	APIKey          string
-	BaseURL         string
-	Theme           string
-	ShowFooter      bool
-	LLMJudge        bool
-	ShellKeybinding string
-	AutoResume      bool
+	ProviderName string
+	Model        string
+	APIKey       string
+	BaseURL      string
 }
 
 // ResolvedAuth holds the resolved API key and an optional base URL override.
@@ -58,27 +53,12 @@ func Resolve(cfg FileConfig) (ResolvedConfig, error) {
 		return ResolvedConfig{}, fmt.Errorf("resolving auth for %q: %w", name, err)
 	}
 
-	rc := ResolvedConfig{
-		ProviderName:    name,
-		Model:           pc.Model,
-		APIKey:          auth.APIKey,
-		BaseURL:         auth.BaseURL,
-		Theme:           theme.Normalize(cfg.Settings.Theme),
-		ShowFooter:      true,
-		LLMJudge:        cfg.Settings.LLMJudge,
-		ShellKeybinding: cfg.Settings.Keybinding,
-		AutoResume:      cfg.Settings.AutoResume,
-	}
-	if cfg.Settings.ShowFooter != nil {
-		rc.ShowFooter = *cfg.Settings.ShowFooter
-	}
-	if rc.Theme == "" {
-		rc.Theme = theme.DefaultName
-	}
-	if rc.ShellKeybinding == "" {
-		rc.ShellKeybinding = "^T"
-	}
-	return rc, nil
+	return ResolvedConfig{
+		ProviderName: name,
+		Model:        pc.Model,
+		APIKey:       auth.APIKey,
+		BaseURL:      auth.BaseURL,
+	}, nil
 }
 
 // LoadRuntimeConfig loads the config file, falls back to zero-config defaults

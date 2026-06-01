@@ -25,7 +25,6 @@ type ProviderConfig struct {
 // SettingsConfig holds all user-facing preferences in a single flat block.
 type SettingsConfig struct {
 	Theme      string `toml:"theme,omitempty"`
-	ShowFooter *bool  `toml:"show_footer,omitempty"`
 	Keybinding string `toml:"keybinding,omitempty"`
 	LLMJudge   bool   `toml:"llm_judge,omitempty"`
 	AutoResume bool   `toml:"auto_resume,omitempty"`

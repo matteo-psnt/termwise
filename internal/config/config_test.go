@@ -21,10 +21,9 @@ env_var  = "ANTHROPIC_API_KEY"
 model    = "claude-haiku-4-5-20251001"
 
 [settings]
-theme       = "ocean"
-show_footer = true
-keybinding  = "^T"
-llm_judge   = true
+theme      = "ocean"
+keybinding = "^T"
+llm_judge  = true
 `)
 
 	cfg, exists, err := LoadConfig(path)
@@ -41,9 +40,6 @@ llm_judge   = true
 	assertEqual(t, "settings.theme", "ocean", cfg.Settings.Theme)
 	assertEqual(t, "settings.keybinding", "^T", cfg.Settings.Keybinding)
 
-	if cfg.Settings.ShowFooter == nil || !*cfg.Settings.ShowFooter {
-		t.Error("expected settings.show_footer to be true")
-	}
 	if !cfg.Settings.LLMJudge {
 		t.Error("expected settings.llm_judge to be true")
 	}
@@ -79,13 +75,12 @@ func TestLoadConfigRejectsOldKeys(t *testing.T) {
 
 func TestSaveAndLoadRoundtrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
-	showFooter := true
 	original := FileConfig{
 		SelectedProvider: "openai",
 		Providers: map[string]ProviderConfig{
 			"openai": {Auth: "env", EnvVar: "OPENAI_API_KEY", Model: "gpt-4o"},
 		},
-		Settings: SettingsConfig{Theme: "ocean", ShowFooter: &showFooter, Keybinding: "^T", LLMJudge: true},
+		Settings: SettingsConfig{Theme: "ocean", Keybinding: "^T", LLMJudge: true},
 	}
 
 	if err := SaveConfig(path, original); err != nil {
@@ -103,9 +98,6 @@ func TestSaveAndLoadRoundtrip(t *testing.T) {
 	assertEqual(t, "SelectedProvider", original.SelectedProvider, loaded.SelectedProvider)
 	assertEqual(t, "providers.openai.model", original.Providers["openai"].Model, loaded.Providers["openai"].Model)
 	assertEqual(t, "settings.theme", original.Settings.Theme, loaded.Settings.Theme)
-	if loaded.Settings.ShowFooter == nil || *loaded.Settings.ShowFooter != showFooter {
-		t.Errorf("settings.show_footer: want %v, got %v", showFooter, loaded.Settings.ShowFooter)
-	}
 }
 
 func TestSaveConfigWritesPrivateFile(t *testing.T) {

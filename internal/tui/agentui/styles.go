@@ -24,7 +24,6 @@ type Styles struct {
 	ToolCall     lipgloss.Style
 	ToolOutput   lipgloss.Style
 	ApprovalHint lipgloss.Style
-	Footer       lipgloss.Style
 	Spinner      lipgloss.Style
 	Error        lipgloss.Style
 	Command      lipgloss.Style
@@ -51,7 +50,6 @@ func newStyles(r *lipgloss.Renderer, palette theme.Palette) Styles {
 		ToolCall:     r.NewStyle().Faint(true),
 		ToolOutput:   r.NewStyle().Faint(true),
 		ApprovalHint: r.NewStyle(),
-		Footer:       r.NewStyle().Faint(true),
 		Spinner:      r.NewStyle().Foreground(accent),
 		Error:        r.NewStyle().Foreground(errCol),
 		Command:      r.NewStyle().Bold(true),
