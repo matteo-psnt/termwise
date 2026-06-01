@@ -11,7 +11,7 @@ import (
 type SettingKind int
 
 const (
-	KindToggle     SettingKind = iota // boolean on/off
+	KindToggle     SettingKind = iota // boolean On/Off
 	KindEnum                          // one of a fixed set of strings (future)
 	KindKeybinding                    // captured interactively from a keypress
 	KindTheme                         // selected from the theme picker
@@ -121,13 +121,13 @@ func keybindingSetting() SettingDef {
 }
 
 // boolSetting constructs a SettingDef for a boolean field.
-// Validation is implicit (Get always returns "on" or "off").
+// Validation is implicit (Get always returns "On" or "Off").
 func boolSetting(key, label string, get func(FileConfig) bool, set func(*FileConfig, bool)) SettingDef {
 	getString := func(cfg FileConfig) string {
 		if get(cfg) {
-			return "on"
+			return "On"
 		}
-		return "off"
+		return "Off"
 	}
 	return SettingDef{
 		Key:     key,
@@ -135,8 +135,10 @@ func boolSetting(key, label string, get func(FileConfig) bool, set func(*FileCon
 		Kind:    KindToggle,
 		Get:     getString,
 		Resolve: getString, // booleans have no empty state; Resolve == Get
-		Set:     func(cfg *FileConfig, val string) { set(cfg, val == "on" || val == "true") },
-		GetAny:  func(cfg FileConfig) any { return get(cfg) },
+		Set: func(cfg *FileConfig, val string) {
+			set(cfg, strings.EqualFold(val, "on") || strings.EqualFold(val, "true"))
+		},
+		GetAny: func(cfg FileConfig) any { return get(cfg) },
 	}
 }
 

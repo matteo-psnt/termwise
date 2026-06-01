@@ -167,7 +167,7 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case wizPickProvider:
 		providers := m.availableProviders()
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "q", "ctrl+c", "esc":
 			m.done = true
 			return m, tea.Quit
 		case "up", "k":

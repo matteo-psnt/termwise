@@ -58,6 +58,8 @@ func hintForKind(kind config.SettingKind) string {
 func displayValue(def config.SettingDef, cfg config.FileConfig) string {
 	val := def.Get(cfg)
 	switch def.Kind {
+	case config.KindToggle:
+		return def.Resolve(cfg)
 	case config.KindKeybinding:
 		return keybinding.Label(def.Resolve(cfg))
 	case config.KindTheme:
@@ -79,10 +81,11 @@ func activateSetting(m editorModel, settingIdx int) (editorModel, tea.Cmd) {
 	def := config.Settings[settingIdx]
 	switch def.Kind {
 	case config.KindToggle:
-		if def.Get(m.cfg) == "on" {
-			def.Set(&m.cfg, "off")
+		current, _ := def.GetAny(m.cfg).(bool)
+		if current {
+			def.Set(&m.cfg, "Off")
 		} else {
-			def.Set(&m.cfg, "on")
+			def.Set(&m.cfg, "On")
 		}
 	case config.KindTheme:
 		tp := newThemePicker(def.Get(m.cfg), m.r, m.styles)
@@ -334,6 +337,7 @@ func (m editorModel) updateAddWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if newWiz.done {
 		m.addWizard = nil
+		return m, nil
 	}
 	return m, cmd
 }
