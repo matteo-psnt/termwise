@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matteo-psnt/termwise/internal/provider"
 	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 const requestTimeout = 30 * time.Second

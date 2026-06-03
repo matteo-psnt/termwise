@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/matteo-psnt/termwise/internal/provider"
 	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
+
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 // toParams builds ChatCompletionNewParams for both Complete and Chat calls.

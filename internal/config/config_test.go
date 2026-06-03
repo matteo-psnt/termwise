@@ -230,8 +230,8 @@ func TestResolveAuthEnv(t *testing.T) {
 }
 
 func TestResolveAuthEnvMissingVarReturnsError(t *testing.T) {
-	os.Unsetenv("TERMWISE_TEST_MISSING_VAR")
-	os.Unsetenv("GROQ_API_KEY")
+	mustUnsetenv(t, "TERMWISE_TEST_MISSING_VAR")
+	mustUnsetenv(t, "GROQ_API_KEY")
 	pc := ProviderConfig{Auth: "env", EnvVar: "TERMWISE_TEST_MISSING_VAR"}
 	_, err := ResolveAuth("groq", pc)
 	if err == nil {
@@ -241,7 +241,7 @@ func TestResolveAuthEnvMissingVarReturnsError(t *testing.T) {
 
 func TestResolveAuthEnvFallsBackToCanonicalProviderVar(t *testing.T) {
 	t.Setenv("GROQ_API_KEY", "sk-groq")
-	os.Unsetenv("TERMWISE_TEST_MISSING_VAR")
+	mustUnsetenv(t, "TERMWISE_TEST_MISSING_VAR")
 
 	pc := ProviderConfig{Auth: "env", EnvVar: "TERMWISE_TEST_MISSING_VAR"}
 	auth, err := ResolveAuth("groq", pc)
@@ -261,7 +261,7 @@ func TestResolveAuthCmd(t *testing.T) {
 }
 
 func TestResolveAuthCmdFailureReturnsError(t *testing.T) {
-	os.Unsetenv("GROQ_API_KEY")
+	mustUnsetenv(t, "GROQ_API_KEY")
 	pc := ProviderConfig{Auth: "cmd", APIKeyCmd: "exit 1"}
 	_, err := ResolveAuth("groq", pc)
 	if err == nil {
@@ -301,7 +301,7 @@ func TestZeroConfigDefaultsFindsLaterProvider(t *testing.T) {
 		"DEEPSEEK_API_KEY",
 		"MISTRAL_API_KEY",
 	} {
-		os.Unsetenv(envVar)
+		mustUnsetenv(t, envVar)
 	}
 	t.Setenv("GROQ_API_KEY", "sk-groq")
 	cfg, ok := ZeroConfigDefaults()
@@ -317,7 +317,7 @@ func TestZeroConfigDefaultsNoneSetReturnsFalse(t *testing.T) {
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GROQ_API_KEY",
 		"DEEPSEEK_API_KEY", "MISTRAL_API_KEY",
 	} {
-		os.Unsetenv(v)
+		mustUnsetenv(t, v)
 	}
 	_, ok := ZeroConfigDefaults()
 	if ok {
@@ -426,6 +426,13 @@ func writeConfig(t *testing.T, content string) string {
 		t.Fatalf("writeConfig: %v", err)
 	}
 	return path
+}
+
+func mustUnsetenv(t *testing.T, key string) {
+	t.Helper()
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("Unsetenv(%q): %v", key, err)
+	}
 }
 
 func assertEqual(t *testing.T, label, want, got string) {

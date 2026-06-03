@@ -48,7 +48,6 @@ func (h *PromptHistory) Load() error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
 	var entries []string
 	sc := bufio.NewScanner(f)
@@ -65,7 +64,11 @@ func (h *PromptHistory) Load() error {
 		entries[i], entries[j] = entries[j], entries[i]
 	}
 	h.entries = entries
-	return sc.Err()
+	if err := sc.Err(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // Push adds a prompt to the history. Consecutive duplicate entries are
@@ -96,14 +99,17 @@ func (h *PromptHistory) Push(text string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
 	line, err := json.Marshal(promptEntry{Text: text, Ts: time.Now()})
 	if err != nil {
+		_ = f.Close()
 		return err
 	}
-	_, err = f.Write(append(line, '\n'))
-	return err
+	if _, err = f.Write(append(line, '\n')); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // Entries returns all prompts in newest-first order.

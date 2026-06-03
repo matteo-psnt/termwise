@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
 

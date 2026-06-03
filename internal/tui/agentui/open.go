@@ -9,6 +9,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	agenttools "github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -18,7 +20,16 @@ import (
 )
 
 // Open launches the agent TUI. It handles stdin pre-loading and TTY setup.
-func Open(providerName string, provider provider.AgentClient, modelID string, cfgPath string, prefill string, sessionID string, forceResume bool) error {
+func Open(
+	providerName string,
+	provider provider.AgentClient,
+	modelID string,
+	cfgPath string,
+	initialDraft string,
+	initialPrompt string,
+	sessionID string,
+	forceResume bool,
+) error {
 	// Read stdin if piped.
 	stdinPiped := !tty.IsTerminal(os.Stdin)
 	var stdin string
@@ -39,7 +50,7 @@ func Open(providerName string, provider provider.AgentClient, modelID string, cf
 		if err != nil {
 			return fmt.Errorf("opening /dev/tty for keyboard input: %w", err)
 		}
-		defer ttyFile.Close()
+		defer func() { _ = ttyFile.Close() }()
 		programOpts = append(programOpts, tea.WithInput(ttyFile))
 	}
 
@@ -71,7 +82,7 @@ func Open(providerName string, provider provider.AgentClient, modelID string, cf
 	var sessionStore *history.SessionStore
 	if configDir != "" {
 		promptHistory = history.NewPromptHistory(configDir)
-		promptHistory.Load() //nolint:errcheck
+		promptHistory.Load() //nolint:errcheck // Empty or unreadable history should not block the TUI.
 
 		sessionStore = history.NewSessionStore(configDir)
 		sessionStore.PruneOld()
@@ -85,10 +96,11 @@ func Open(providerName string, provider provider.AgentClient, modelID string, cf
 		}
 	}
 
-	system := systemprompt.Agent()
-	m := newModel(providerName, provider, modelID, system, stdin, r, llmJudge, prefill, themeName, closeKey,
+	system := systemprompt.Agent(agenttools.Defs)
+	m := newModel(providerName, provider, modelID, system, stdin, r, llmJudge, initialDraft, initialPrompt, themeName, closeKey,
 		promptHistory, sessionStore, sessionID, initialSession)
 
+	programOpts = append(programOpts, tea.WithMouseCellMotion())
 	p := tea.NewProgram(m, programOpts...)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("TUI error: %w", err)

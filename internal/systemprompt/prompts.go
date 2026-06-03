@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
+
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 const singleShotTemplate = `You are a terminal assistant. You help with command generation and quick questions about CLI tools, terminal workflows, and project-related topics.
@@ -36,11 +39,11 @@ Rules:
 - Prefer read-only commands. Only suggest writes when the user asks for changes.
 - Be concise in your responses
 - When showing results, use markdown formatting when it improves readability
-- Use the ask tool when there are multiple valid paths and the user's preference matters
+- %s
 - Prefer using tools to find answers over asking the user
 - You MUST use the respond tool to deliver your final answer. Never return bare text.
 
-Available tools: read, bash, ask, respond
+Available tools: %s
 
 Environment:
 - OS: %s
@@ -57,10 +60,24 @@ func SingleShot(isTTY bool) string {
 	return fmt.Sprintf(singleShotTemplate, osName(), shellPath(), output)
 }
 
-// Agent returns the agent mode system prompt with environment context injected.
-func Agent() string {
+// Agent returns the agent-mode system prompt with environment context injected.
+// The available tool list is derived from the provided tool definitions.
+func Agent(toolDefs []provider.ToolDef) string {
+	return agentWithTools(provider.ToolNames(toolDefs))
+}
+
+func agentWithTools(toolNames []string) string {
 	cwd, _ := os.Getwd()
-	return fmt.Sprintf(agentTemplate, osName(), shellPath(), cwd)
+	return fmt.Sprintf(agentTemplate, askToolGuidance(toolNames), strings.Join(toolNames, ", "), osName(), shellPath(), cwd)
+}
+
+func askToolGuidance(toolNames []string) string {
+	for _, name := range toolNames {
+		if name == "ask" {
+			return "Use the ask tool when there are multiple valid paths and the user's preference matters"
+		}
+	}
+	return "If user clarification would help, explain the ambiguity in your final response instead of asking follow-up questions"
 }
 
 func osName() string {

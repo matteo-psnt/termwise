@@ -65,6 +65,15 @@ type ToolDef struct {
 	InputSchema map[string]any // JSON Schema object
 }
 
+// ToolNames returns the tool names in order.
+func ToolNames(defs []ToolDef) []string {
+	names := make([]string, 0, len(defs))
+	for _, def := range defs {
+		names = append(names, def.Name)
+	}
+	return names
+}
+
 // ChatRequest is the input to AgentClient.Chat.
 type ChatRequest struct {
 	Model    string

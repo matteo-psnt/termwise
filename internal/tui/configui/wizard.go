@@ -163,135 +163,162 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.step {
-
 	case wizPickProvider:
-		providers := m.availableProviders()
-		switch msg.String() {
-		case "q", "ctrl+c", "esc":
-			m.done = true
-			return m, tea.Quit
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-		case "down", "j":
-			if m.cursor < len(providers)-1 {
-				m.cursor++
-			}
-		case "enter", " ":
-			selected, ok := m.selectedProvider()
-			if !ok {
-				return m, nil
-			}
-			m.provider = selected.Name
-			m.cursor = 0
-			if m.provider == "ollama" {
-				m.authMethod = "env"
-				m.setupEnterValue()
-				m.step = wizEnterValue
-			} else {
-				m.step = wizPickAuth
-			}
-		}
-
+		return m.handlePickProviderKey(msg)
 	case wizPickAuth:
-		switch msg.String() {
-		case "q", "ctrl+c":
-			m.done = true
-			return m, tea.Quit
-		case "b", "esc":
-			m.cursor = 0
-			m.step = wizPickProvider
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-		case "down", "j":
-			if m.cursor < len(authMethods)-1 {
-				m.cursor++
-			}
-		case "enter", " ":
-			m.authMethod = authMethods[m.cursor].id
-			m.cursor = 0
-			m.setupEnterValue()
-			if m.authMethod == "env" && envVarDetected(m.provider) {
-				m.input.Blur()
-				m.step = wizWorking
-				return m, tea.Batch(m.spin.Tick, m.fetchModelsCmd())
-			}
-			m.step = wizEnterValue
-		}
-
+		return m.handlePickAuthKey(msg)
 	case wizEnterValue:
-		switch msg.String() {
-		case "ctrl+c":
-			m.done = true
-			return m, tea.Quit
-		case "esc":
-			m.input.Blur()
-			m.cursor = 0
-			if m.provider == "ollama" {
-				m.step = wizPickProvider
-			} else {
-				m.step = wizPickAuth
-			}
-		case "enter":
-			if strings.TrimSpace(m.input.Value()) == "" && m.enterFallback == "" {
-				// Don't submit — leave cursor in the field.
-				return m, nil
-			}
-			m.input.Blur()
-			m.step = wizWorking
-			return m, tea.Batch(m.spin.Tick, m.fetchModelsCmd())
-		default:
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-			return m, cmd
-		}
-
+		return m.handleEnterValueKey(msg)
 	case wizPickModel:
-		switch msg.String() {
-		case "q", "ctrl+c":
-			m.done = true
-			return m, tea.Quit
-		case "b", "esc":
-			m.cursor = 0
-			m.step = wizEnterValue
-			m.input.Focus()
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-		case "down", "j":
-			if m.cursor < len(m.apiModels)-1 {
-				m.cursor++
-			}
-		case "enter", " ":
-			m.modelID = m.apiModels[m.cursor].ID
-			if err := m.saveConfig(); err != nil {
-				m.errMsg = err.Error()
-				m.errBack = wizPickModel
-				m.step = wizErr
-			} else {
-				m.step = wizDone
-			}
-		}
-
+		return m.handlePickModelKey(msg)
 	case wizDone:
 		m.done = true
 		return m, tea.Quit
-
 	case wizErr:
-		switch msg.String() {
-		case "q", "ctrl+c":
-			m.done = true
-			return m, tea.Quit
-		case "b", "esc":
-			m.cursor = 0
-			m.step = m.errBack
-			if m.step == wizEnterValue {
-				m.input.Focus()
-			}
+		return m.handleErrKey(msg)
+	}
+
+	return m, nil
+}
+
+func (m wizardModel) handlePickProviderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	providers := m.availableProviders()
+
+	switch msg.String() {
+	case "q", "ctrl+c", "esc":
+		m.done = true
+		return m, tea.Quit
+	case "up", "k":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "down", "j":
+		if m.cursor < len(providers)-1 {
+			m.cursor++
+		}
+	case "enter", " ":
+		selected, ok := m.selectedProvider()
+		if !ok {
+			return m, nil
+		}
+
+		m.provider = selected.Name
+		m.cursor = 0
+		if m.provider == "ollama" {
+			m.authMethod = "env"
+			m.setupEnterValue()
+			m.step = wizEnterValue
+			return m, nil
+		}
+
+		m.step = wizPickAuth
+	}
+
+	return m, nil
+}
+
+func (m wizardModel) handlePickAuthKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		m.done = true
+		return m, tea.Quit
+	case "b", "esc":
+		m.cursor = 0
+		m.step = wizPickProvider
+	case "up", "k":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "down", "j":
+		if m.cursor < len(authMethods)-1 {
+			m.cursor++
+		}
+	case "enter", " ":
+		m.authMethod = authMethods[m.cursor].id
+		m.cursor = 0
+		m.setupEnterValue()
+		if m.authMethod == "env" && envVarDetected(m.provider) {
+			m.input.Blur()
+			m.step = wizWorking
+			return m, tea.Batch(m.spin.Tick, m.fetchModelsCmd())
+		}
+		m.step = wizEnterValue
+	}
+
+	return m, nil
+}
+
+func (m wizardModel) handleEnterValueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		m.done = true
+		return m, tea.Quit
+	case "esc":
+		m.input.Blur()
+		m.cursor = 0
+		if m.provider == "ollama" {
+			m.step = wizPickProvider
+		} else {
+			m.step = wizPickAuth
+		}
+	case "enter":
+		if strings.TrimSpace(m.input.Value()) == "" && m.enterFallback == "" {
+			// Don't submit; leave cursor in the field.
+			return m, nil
+		}
+		m.input.Blur()
+		m.step = wizWorking
+		return m, tea.Batch(m.spin.Tick, m.fetchModelsCmd())
+	default:
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m wizardModel) handlePickModelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		m.done = true
+		return m, tea.Quit
+	case "b", "esc":
+		m.cursor = 0
+		m.step = wizEnterValue
+		m.input.Focus()
+	case "up", "k":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "down", "j":
+		if m.cursor < len(m.apiModels)-1 {
+			m.cursor++
+		}
+	case "enter", " ":
+		m.modelID = m.apiModels[m.cursor].ID
+		if err := m.saveConfig(); err != nil {
+			m.errMsg = err.Error()
+			m.errBack = wizPickModel
+			m.step = wizErr
+			return m, nil
+		}
+		m.step = wizDone
+	}
+
+	return m, nil
+}
+
+func (m wizardModel) handleErrKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		m.done = true
+		return m, tea.Quit
+	case "b", "esc":
+		m.cursor = 0
+		m.step = m.errBack
+		if m.step == wizEnterValue {
+			m.input.Focus()
 		}
 	}
 

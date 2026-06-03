@@ -6,6 +6,7 @@ import (
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 

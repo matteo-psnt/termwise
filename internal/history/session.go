@@ -80,7 +80,7 @@ func (s *SessionStore) PruneOld() {
 			continue
 		}
 		if info.ModTime().Before(cutoff) {
-			os.Remove(filepath.Join(s.dir, e.Name()))
+			_ = os.Remove(filepath.Join(s.dir, e.Name())) // Best-effort cleanup of stale session files.
 		}
 	}
 }

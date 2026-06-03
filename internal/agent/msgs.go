@@ -2,6 +2,33 @@ package agent
 
 import "github.com/matteo-psnt/termwise/internal/provider"
 
+// ToolStepKind describes the outcome of processing the next tool call.
+type ToolStepKind int
+
+const (
+	ToolStepRespond ToolStepKind = iota
+	ToolStepExecuted
+	ToolStepNeedsApproval
+	ToolStepAsk
+	ToolStepDone
+)
+
+// ToolStep is the reusable, non-UI representation of the next tool-processing step.
+type ToolStep struct {
+	Kind         ToolStepKind
+	ToolCall     provider.ToolCall
+	Result       provider.ToolResult
+	Remaining    []provider.ToolCall
+	Collected    []provider.ToolResult
+	Command      string
+	Question     string
+	Options      []string
+	MultiSelect  bool
+	RespondType  string
+	Content      string
+	AutoAccepted bool
+}
+
 // ResponseMsg is sent when the model returns a chat response.
 type ResponseMsg struct {
 	Resp *provider.ChatResponse

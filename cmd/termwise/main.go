@@ -1,12 +1,10 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -19,36 +17,28 @@ func main() {
 	root := &cobra.Command{
 		Use:   "tw [prompt]",
 		Short: "Terminal AI assistant",
-		Long:  "tw — pass a prompt for single-shot mode, or run without arguments to open the agent TUI.",
+		Long:  "tw — open the agent TUI, optionally with an initial prompt. Use `tw ask` for a headless one-shot response.",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// --shell-widget is the legacy Ctrl+T text-transform path (kept for compatibility).
-			if cmd.Flags().Changed("shell-widget") {
-				sw, _ := cmd.Flags().GetString("shell-widget")
-				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-				defer cancel()
-				return runner.ShellWidget(ctx, sw)
-			}
 			prefill, _ := cmd.Flags().GetString("prefill")
 			sessionID, _ := cmd.Flags().GetString("session-id")
 			resume, _ := cmd.Flags().GetBool("resume")
 			if len(args) == 0 {
-				return openTUI(prefill, sessionID, resume)
+				return openTUI(prefill, "", sessionID, resume)
 			}
-			return runner.SingleShot(context.Background(), strings.Join(args, " "))
+			return openTUI("", strings.Join(args, " "), sessionID, resume)
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 
-	root.Flags().String("shell-widget", "", "")
-	root.Flags().Lookup("shell-widget").Hidden = true
 	root.Flags().String("prefill", "", "")
 	root.Flags().Lookup("prefill").Hidden = true
 	root.Flags().String("session-id", "", "")
 	root.Flags().Lookup("session-id").Hidden = true
 	root.Flags().Bool("resume", false, "Resume the most recent session for this terminal")
 
+	root.AddCommand(askCmd)
 	root.AddCommand(initCmd)
 	root.AddCommand(configCmd)
 
@@ -66,7 +56,7 @@ func main() {
 	// (cobra swallows non-nil errors; RunE errors land in the Execute() return above.)
 }
 
-func openTUI(prefill string, sessionID string, forceResume bool) error {
+func openTUI(initialDraft string, initialPrompt string, sessionID string, forceResume bool) error {
 	cfgPath, err := config.DefaultConfigPath()
 	if err != nil {
 		return err
@@ -79,5 +69,5 @@ func openTUI(prefill string, sessionID string, forceResume bool) error {
 	if err != nil {
 		return err
 	}
-	return agentui.Open(rc.ProviderName, client, rc.Model, cfgPath, prefill, sessionID, forceResume)
+	return agentui.Open(rc.ProviderName, client, rc.Model, cfgPath, initialDraft, initialPrompt, sessionID, forceResume)
 }

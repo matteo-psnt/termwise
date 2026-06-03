@@ -2,6 +2,7 @@ package agentui
 
 import (
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
 

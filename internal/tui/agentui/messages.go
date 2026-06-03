@@ -3,12 +3,12 @@ package agentui
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -25,17 +25,11 @@ func (m Model) judgeCmd(tc provider.ToolCall) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(m.ctx, 10*time.Second)
 		defer cancel()
-		resp, err := client.Chat(ctx, provider.ChatRequest{
-			Model:  modelID,
-			System: "You are a safety classifier for bash commands. Respond with exactly one word: safe or unsafe.",
-			Messages: []provider.Message{
-				{Role: "user", Content: "Should this bash command auto-execute without user confirmation?\n\n" + cmd},
-			},
-		})
+		safe, err := agent.JudgeBashCommand(ctx, client, modelID, cmd)
 		if err != nil {
 			return judgmentMsg{safe: false}
 		}
-		return judgmentMsg{safe: strings.ToLower(strings.TrimSpace(resp.Content)) == "safe"}
+		return judgmentMsg{safe: safe}
 	}
 }
 

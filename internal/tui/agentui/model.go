@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/allowlist"
@@ -49,6 +50,8 @@ type Model struct {
 
 	// Config
 	llmJudge bool
+	// initialPrompt is auto-submitted when the TUI starts.
+	initialPrompt string
 
 	// Conversation
 	messages []provider.Message
@@ -71,9 +74,10 @@ type Model struct {
 	spin  spinner.Model
 
 	// Layout
-	width  int
-	height int
-	ready  bool
+	width        int
+	height       int
+	ready        bool
+	userScrolled bool // true when user has manually scrolled up
 
 	// Cancellation for the current in-flight async generation.
 	ctx              context.Context
@@ -111,6 +115,10 @@ type generationMsg struct {
 	msg        tea.Msg
 }
 
+type initialPromptMsg struct {
+	prompt string
+}
+
 func newGenerationContext() (context.Context, context.CancelFunc) {
 	return context.WithCancel(context.Background())
 }
@@ -137,7 +145,8 @@ func newModel(
 	stdin string,
 	r *lipgloss.Renderer,
 	llmJudge bool,
-	prefill string,
+	initialDraft string,
+	initialPrompt string,
 	themeName string,
 	closeKey string,
 	promptHistory *history.PromptHistory,
@@ -148,7 +157,7 @@ func newModel(
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.Placeholder = ""
-	ti.SetValue(prefill)
+	ti.SetValue(initialDraft)
 	ti.Focus()
 
 	sp := spinner.New()
@@ -168,6 +177,7 @@ func newModel(
 		stdin:         stdin,
 		contextWindow: contextWindow,
 		llmJudge:      llmJudge,
+		initialPrompt: initialPrompt,
 		input:         ti,
 		spin:          sp,
 		ctx:           ctx,
@@ -195,7 +205,11 @@ func newModel(
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spin.Tick, textinput.Blink)
+	cmds := []tea.Cmd{m.spin.Tick, textinput.Blink}
+	if prompt := strings.TrimSpace(m.initialPrompt); prompt != "" {
+		cmds = append(cmds, func() tea.Msg { return initialPromptMsg{prompt: prompt} })
+	}
+	return tea.Batch(cmds...)
 }
 
 // Update implements tea.Model.
@@ -207,6 +221,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleSpinnerTick(msg)
 	case generationMsg:
 		return m.handleGenerationMsg(msg)
+	case initialPromptMsg:
+		return m.handleInitialPrompt(msg.prompt)
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -232,7 +250,7 @@ func (m *Model) saveSession() {
 		Messages:     m.messages,
 		Thread:       serializeThread(m.thread),
 	}
-	m.sessionStore.Save(s) //nolint:errcheck
+	m.sessionStore.Save(s) //nolint:errcheck // Session persistence is best-effort during UI updates.
 }
 
 // handleKey handles all keyboard input based on current state.
@@ -262,33 +280,62 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleThinkingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.Type != tea.KeyEsc && msg.String() != "esc" {
+	switch msg.Type {
+	case tea.KeyPgUp:
+		m.vp.PageUp()
+		if m.vp.ScrollPercent() < 1.0 {
+			m.userScrolled = true
+		}
+		return m, nil
+	case tea.KeyPgDown:
+		m.vp.PageDown()
+		if m.vp.ScrollPercent() >= 1.0 {
+			m.userScrolled = false
+		}
+		return m, nil
+	case tea.KeyEnd:
+		m.userScrolled = false
+		m.vp.GotoBottom()
+		return m, nil
+	case tea.KeyEsc:
+		m.interruptActiveTurn()
 		return m, nil
 	}
-	m.interruptActiveTurn()
+	if msg.String() == "esc" {
+		m.interruptActiveTurn()
+	}
 	return m, nil
 }
 
 func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
-		text := strings.TrimSpace(m.input.Value())
-		if text == "" {
-			return m, nil
-		}
-		m.input.SetValue("")
-		m.histIdx = -1
-		m.histDraft = ""
-		if m.promptHistory != nil {
-			m.promptHistory.Push(text) //nolint:errcheck
-		}
-		return m.submitMessage(text)
+		return m.submitCurrentInput()
 
 	case tea.KeyUp:
 		return m.historyBack(), nil
 
 	case tea.KeyDown:
 		return m.historyForward(), nil
+
+	case tea.KeyPgUp:
+		m.vp.PageUp()
+		if m.vp.ScrollPercent() < 1.0 {
+			m.userScrolled = true
+		}
+		return m, nil
+
+	case tea.KeyPgDown:
+		m.vp.PageDown()
+		if m.vp.ScrollPercent() >= 1.0 {
+			m.userScrolled = false
+		}
+		return m, nil
+
+	case tea.KeyEnd:
+		m.userScrolled = false
+		m.vp.GotoBottom()
+		return m, nil
 
 	case tea.KeyEsc:
 		// ESC while idle does nothing.
@@ -307,6 +354,35 @@ func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
 	}
+}
+
+func (m Model) handleInitialPrompt(prompt string) (tea.Model, tea.Cmd) {
+	if m.state != stateIdle {
+		return m, nil
+	}
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return m, nil
+	}
+	m.initialPrompt = ""
+	if m.promptHistory != nil {
+		m.promptHistory.Push(prompt) //nolint:errcheck // Prompt history should not block sending a message.
+	}
+	return m.submitMessage(prompt)
+}
+
+func (m Model) submitCurrentInput() (tea.Model, tea.Cmd) {
+	text := strings.TrimSpace(m.input.Value())
+	if text == "" {
+		return m, nil
+	}
+	m.input.SetValue("")
+	m.histIdx = -1
+	m.histDraft = ""
+	if m.promptHistory != nil {
+		m.promptHistory.Push(text) //nolint:errcheck // Prompt history should not block sending a message.
+	}
+	return m.submitMessage(text)
 }
 
 // historyBack moves one step older in prompt history.
@@ -598,7 +674,35 @@ func (m Model) handleGenerationMsg(msg generationMsg) (tea.Model, tea.Cmd) {
 func (m *Model) refreshViewport() {
 	content := m.renderer.RenderThread(m.thread)
 	m.vp.SetContent(content)
-	m.vp.GotoBottom()
+	if !m.userScrolled {
+		m.vp.GotoBottom()
+	}
+}
+
+// handleMouse handles mouse events: wheel scrolling and title-bar clicks to go to bottom.
+func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	// Left-click on the title bar releases the scroll lock and snaps to bottom.
+	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == 0 && m.userScrolled {
+		m.userScrolled = false
+		m.vp.GotoBottom()
+		return m, nil
+	}
+
+	var vpCmd tea.Cmd
+	m.vp, vpCmd = m.vp.Update(msg)
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if m.vp.ScrollPercent() < 1.0 {
+			m.userScrolled = true
+		}
+	case tea.MouseButtonWheelDown:
+		if m.vp.ScrollPercent() >= 1.0 {
+			m.userScrolled = false
+		}
+	}
+
+	return m, vpCmd
 }
 
 // popupHeight is the maximum number of terminal lines the TUI occupies.

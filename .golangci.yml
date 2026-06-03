@@ -1,6 +1,30 @@
 version: "2"
 
 linters:
-  default: standard
-  disable:
+  default: none
+  enable:
     - errcheck
+    - gocyclo
+    - govet
+    - ineffassign
+    - nolintlint
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    gocyclo:
+      min-complexity: 30
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      rules:
+        - name: unused-parameter
+
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/matteo-psnt/termwise

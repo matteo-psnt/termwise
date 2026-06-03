@@ -2,6 +2,7 @@ package agentui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )

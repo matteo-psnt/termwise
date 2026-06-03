@@ -7,11 +7,12 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/zalando/go-keyring"
+
 	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/provider/anthropic"
 	"github.com/matteo-psnt/termwise/internal/provider/openaicompat"
-	"github.com/zalando/go-keyring"
 )
 
 // ResolvedConfig is the fully-resolved provider configuration the runtime operates with.

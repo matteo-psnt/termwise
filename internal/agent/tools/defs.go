@@ -2,9 +2,8 @@ package tools
 
 import "github.com/matteo-psnt/termwise/internal/provider"
 
-// Defs are the tool definitions sent to the model in every agent request.
-var Defs = []provider.ToolDef{
-	{
+var (
+	ReadDef = provider.ToolDef{
 		Name:        "read",
 		Description: "Read a file's contents. Supports offset and limit for large files.",
 		InputSchema: map[string]any{
@@ -25,8 +24,8 @@ var Defs = []provider.ToolDef{
 			},
 			"required": []string{"path"},
 		},
-	},
-	{
+	}
+	BashDef = provider.ToolDef{
 		Name:        "bash",
 		Description: "Execute a shell command. Returns stdout, stderr, and exit code as JSON.",
 		InputSchema: map[string]any{
@@ -39,8 +38,8 @@ var Defs = []provider.ToolDef{
 			},
 			"required": []string{"command"},
 		},
-	},
-	{
+	}
+	AskDef = provider.ToolDef{
 		Name:        "ask",
 		Description: "Ask the user a structured question with a list of options.",
 		InputSchema: map[string]any{
@@ -62,8 +61,8 @@ var Defs = []provider.ToolDef{
 			},
 			"required": []string{"question", "options"},
 		},
-	},
-	{
+	}
+	RespondDef = provider.ToolDef{
 		Name:        "respond",
 		Description: "Deliver the final response to the user. Use 'command' for runnable shell commands, 'text' for explanations.",
 		InputSchema: map[string]any{
@@ -81,5 +80,11 @@ var Defs = []provider.ToolDef{
 			},
 			"required": []string{"type", "content"},
 		},
-	},
-}
+	}
+)
+
+// Defs are the tool definitions sent to the model in the interactive agent TUI.
+var Defs = []provider.ToolDef{ReadDef, BashDef, AskDef, RespondDef}
+
+// HeadlessDefs are the tool definitions available to non-interactive agent runs.
+var HeadlessDefs = []provider.ToolDef{ReadDef, BashDef, RespondDef}

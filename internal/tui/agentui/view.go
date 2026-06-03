@@ -37,10 +37,18 @@ func (m Model) View() string {
 // renderBoxTop renders the top border of the box with model and token info:
 //
 //	╭─ termwise ──────────────── claude-haiku · 1,243 tok ─╮
+//	╭─ termwise ──── ↓ 40% · claude-haiku · 1,243 tok ─╮  (when scrolled up)
 func (m Model) renderBoxTop(w int) string {
 	left := "─ termwise "
 	tokens := formatTokens(m.inputTokens + m.outputTokens)
-	right := " " + m.modelID + " · " + tokens + " tok ─"
+	modelInfo := m.modelID + " · " + tokens + " tok ─"
+	var right string
+	if m.userScrolled {
+		pct := int(m.vp.ScrollPercent() * 100)
+		right = fmt.Sprintf(" ↓ %d%% · %s", pct, modelInfo)
+	} else {
+		right = " " + modelInfo
+	}
 
 	inner := w - 2 // space for ╭ and ╮
 	leftW := lipgloss.Width(left)

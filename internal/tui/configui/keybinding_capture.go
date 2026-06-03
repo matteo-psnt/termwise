@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/matteo-psnt/termwise/internal/keybinding"
 )
 

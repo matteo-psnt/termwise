@@ -11,16 +11,18 @@ Full AI agents (Claude Code, Cursor, etc.) are powerful but heavy. Spinning one 
 ## How It Works
 
 ```bash
-# Describe what you want → get the command, ready to run
+# Start the TUI with an initial prompt already sent
 tw "undo last commit but keep changes"
-# → git reset --soft HEAD~1  (lands in your shell buffer, hit enter to run)
 
-# Ask a quick question
-tw "what port is my dev server using"
+# Run the headless one-shot path
+tw ask "undo last commit but keep changes"
+# → git reset --soft HEAD~1
 
-# Ctrl+T in your shell — type a description, get the command inline
+# Ask a quick question without opening the TUI
+tw ask "what port is my dev server using"
+
+# Ctrl+T in your shell — open the TUI with the current buffer prefilled
 $ restart the docker containers<Ctrl+T>
-$ docker compose restart
 ```
 
 Open the TUI for back-and-forth when you need to figure something out:
@@ -34,5 +36,5 @@ tw
 
 - **Fast** — sub-second responses, small model, minimal prompt
 - **Terminal-native** — commands land in your shell buffer, ready to run
-- **Minimal** — no conversation in single-shot, no project scaffolding
+- **Minimal** — no TUI for one-shot runs, no project scaffolding
 - **Zero friction** — single binary, brew installable, works with existing API keys

@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
@@ -143,5 +144,38 @@ func TestHandleToolExecutedMsgIgnoresStaleGeneration(t *testing.T) {
 
 	if len(got.thread) != 0 {
 		t.Fatalf("expected stale tool result to be ignored, got %#v", got.thread)
+	}
+}
+
+func TestHandleInitialPromptSubmitsPrompt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	m := Model{
+		ctx:           ctx,
+		cancel:        cancel,
+		state:         stateIdle,
+		vp:            viewport.New(80, 10),
+		initialPrompt: "inspect the repo",
+		contextWindow: 32_000,
+	}
+
+	gotModel, _ := m.handleInitialPrompt("inspect the repo")
+	got := gotModel.(Model)
+
+	if got.state != stateThinking {
+		t.Fatalf("expected stateThinking after initial prompt, got %v", got.state)
+	}
+	if got.initialPrompt != "" {
+		t.Fatalf("expected initialPrompt to be cleared, got %q", got.initialPrompt)
+	}
+	if len(got.thread) != 1 {
+		t.Fatalf("expected one thread entry, got %d", len(got.thread))
+	}
+	if entry, ok := got.thread[0].(UserEntry); !ok || entry.Content != "inspect the repo" {
+		t.Fatalf("expected user entry with prefill, got %#v", got.thread[0])
+	}
+	if len(got.messages) != 1 || got.messages[0].Content != "inspect the repo" {
+		t.Fatalf("expected one user message, got %#v", got.messages)
 	}
 }
