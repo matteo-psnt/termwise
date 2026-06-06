@@ -36,7 +36,8 @@ const agentTemplate = `You are a terminal assistant with access to tools. Help t
 
 Rules:
 - Use tools to gather information before answering when helpful
-- Prefer read-only commands. Only suggest writes when the user asks for changes.
+- bash is for READ-ONLY commands only (ls, cat, grep, git status, git log, etc.). Never use bash to run commands that modify files, git state, or system state.
+- If the user asks you to perform an action, use the respond tool with type "command" so they can run it themselves — do not execute it.
 - Be concise in your responses
 - When showing results, use markdown formatting when it improves readability
 - %s
