@@ -17,7 +17,7 @@ func main() {
 	root := &cobra.Command{
 		Use:   "tw [prompt]",
 		Short: "Terminal AI assistant",
-		Long:  "tw — open the agent TUI, optionally with an initial prompt. Use `tw ask` for a headless one-shot response.",
+		Long:  "tw — open the agent TUI, optionally with an initial prompt. Use `tw ask` for a headless agent response.",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			prefill, _ := cmd.Flags().GetString("prefill")

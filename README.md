@@ -1,6 +1,6 @@
 # termwise
 
-A fast terminal assistant for command generation and quick answers. Describe what you want, get the command or the answer.
+A fast terminal assistant for command generation, quick answers, and lightweight agent work. Describe what you want, get the command or the answer.
 
 Binary: `termwise` | Alias: `tw`
 
@@ -14,7 +14,7 @@ Full AI agents (Claude Code, Cursor, etc.) are powerful but heavy. Spinning one 
 # Start the TUI with an initial prompt already sent
 tw "undo last commit but keep changes"
 
-# Run the headless one-shot path
+# Run the headless agent path
 tw ask "undo last commit but keep changes"
 # → git reset --soft HEAD~1
 
@@ -35,6 +35,6 @@ tw
 ## Principles
 
 - **Fast** — sub-second responses, small model, minimal prompt
-- **Terminal-native** — commands land in your shell buffer, ready to run
-- **Minimal** — no TUI for one-shot runs, no project scaffolding
+- **Terminal-native** — TUI command responses can be pushed into your shell buffer; headless runs print to stdout
+- **Minimal** — open the TUI when you need context, use `tw ask` when you just want the final response
 - **Zero friction** — single binary, brew installable, works with existing API keys
