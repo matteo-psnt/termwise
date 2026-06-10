@@ -2,6 +2,8 @@ package allowlist
 
 import (
 	_ "embed"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -104,22 +106,34 @@ func Parse(s string) (Rule, bool) {
 
 // Matches reports whether rule allows the given shell command.
 func Matches(rule Rule, command string) bool {
-	tokens := strings.Fields(command)
+	parsed, err := parseCommand(command)
+	if err != nil || len(parsed) != 1 {
+		return false
+	}
+	return matchesTokens(rule, parsed[0])
+}
+
+func matchesTokens(rule Rule, tokens []string) bool {
 	if len(tokens) == 0 {
 		return false
 	}
-
 	if filepath.Base(tokens[0]) != rule.Cmd {
 		return false
 	}
 
-	// Check AllowSubs: find the first non-flag positional arg.
+	// Check AllowSubs: accept either the first arg token (for flag-style
+	// subcommands like `brew --version`) or the first non-flag positional
+	// token (for commands like `git status` or `git --no-pager status`).
 	if len(rule.AllowSubs) > 0 {
-		sub := firstPositional(tokens[1:])
 		found := false
-		for _, s := range rule.AllowSubs {
-			if s == sub {
-				found = true
+		for _, candidate := range subcommandCandidates(tokens[1:]) {
+			for _, s := range rule.AllowSubs {
+				if s == candidate {
+					found = true
+					break
+				}
+			}
+			if found {
 				break
 			}
 		}
@@ -141,123 +155,42 @@ func Matches(rule Rule, command string) bool {
 }
 
 // NeedsApproval returns true if the command must be confirmed by the user.
-// Returns false (auto-approved) if any built-in or user rule matches AND
-// the command contains no shell metacharacters.
+// Returns false (auto-approved) if every parsed command segment matches a
+// built-in or user rule and any redirections stay within approved safe paths.
 func NeedsApproval(userRules []string, command string) bool {
 	command = strings.TrimSpace(command)
 	if command == "" {
 		return true
 	}
 
-	// Pure pipelines (| only — no ||, ;, &, etc.) are approved when every
-	// segment individually passes the allowlist.
-	if segs, ok := splitPipeline(command); ok {
-		for _, seg := range segs {
-			if NeedsApproval(userRules, seg) {
-				return true
-			}
-		}
-		return false
-	}
-
-	// All other shell metacharacters allow chaining or redirection that
-	// bypasses flag-level checks — always require approval.
-	if containsShellMetachar(command) {
+	segments, err := parseCommand(command)
+	if err != nil {
 		return true
 	}
 
 	loadBuiltin()
 
-	for _, rule := range builtinRules {
-		if Matches(rule, command) {
-			return false
+	for _, seg := range segments {
+		if !matchesAny(userRules, seg) {
+			return true
 		}
 	}
+	return false
+}
 
+func matchesAny(userRules []string, tokens []string) bool {
+	for _, rule := range builtinRules {
+		if matchesTokens(rule, tokens) {
+			return true
+		}
+	}
 	for _, s := range userRules {
 		rule, ok := Parse(s)
 		if !ok {
 			continue
 		}
-		if Matches(rule, command) {
-			return false
-		}
-	}
-
-	return true
-}
-
-// splitPipeline splits command on | if and only if it is a pure pipeline —
-// single pipes only, no || (logical OR) or any other metacharacter.
-// Returns (nil, false) if the command cannot be safely treated as a pipeline.
-func splitPipeline(command string) ([]string, bool) {
-	stripped := stripNullRedirects(command)
-	if !strings.Contains(stripped, "|") {
-		return nil, false
-	}
-	if strings.Contains(stripped, "||") {
-		return nil, false
-	}
-	// Reject any other hard metacharacters.
-	for i, ch := range stripped {
-		switch ch {
-		case ';', '<', '>':
-			return nil, false
-		case '&':
-			return nil, false
-		case '`':
-			return nil, false
-		case '\n', '\r':
-			return nil, false
-		case '$':
-			if i+1 < len(stripped) && stripped[i+1] == '(' {
-				return nil, false
-			}
-		}
-	}
-	var segs []string
-	for _, p := range strings.Split(stripped, "|") {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			segs = append(segs, p)
-		}
-	}
-	if len(segs) == 0 {
-		return nil, false
-	}
-	return segs, true
-}
-
-// stripNullRedirects removes harmless >/dev/null redirections before metachar
-// scanning. Patterns like 2>/dev/null, 1>/dev/null, and >/dev/null discard
-// output and pose no risk, so stripping them avoids a false positive on '>'.
-func stripNullRedirects(command string) string {
-	for _, pat := range []string{"2>/dev/null", "1>/dev/null", ">/dev/null"} {
-		command = strings.ReplaceAll(command, pat, "")
-	}
-	return command
-}
-
-// containsShellMetachar reports whether command contains shell control
-// characters that could chain or redirect execution.
-// We intentionally do not attempt to parse quoting — any occurrence of
-// these characters triggers approval regardless of context.
-func containsShellMetachar(command string) bool {
-	command = stripNullRedirects(command)
-	for i, ch := range command {
-		switch ch {
-		case '|', ';', '<', '>':
+		if matchesTokens(rule, tokens) {
 			return true
-		case '&':
-			return true
-		case '`':
-			return true
-		case '\n', '\r':
-			return true
-		case '$':
-			if i+1 < len(command) && command[i+1] == '(' {
-				return true
-			}
 		}
 	}
 	return false
@@ -268,16 +201,37 @@ func containsShellMetachar(command string) bool {
 // Otherwise returns just "cmd".
 // Used by the TUI when the user presses 'a' at an approval prompt.
 func BuildRuleFromCommand(command string) string {
-	tokens := strings.Fields(command)
-	if len(tokens) == 0 {
+	parsed, err := parseCommand(command)
+	if err != nil || len(parsed) != 1 {
 		return ""
 	}
+	tokens := parsed[0]
 	cmd := filepath.Base(tokens[0])
-	sub := firstPositional(tokens[1:])
-	if sub != "" {
+	if sub := preferredRuleSubcommand(tokens[1:]); sub != "" {
 		return cmd + ":" + sub
 	}
 	return cmd
+}
+
+func subcommandCandidates(args []string) []string {
+	var out []string
+	if len(args) > 0 && args[0] != "" {
+		out = append(out, args[0])
+	}
+	if sub := firstPositional(args); sub != "" && (len(out) == 0 || out[0] != sub) {
+		out = append(out, sub)
+	}
+	return out
+}
+
+func preferredRuleSubcommand(args []string) string {
+	if sub := firstPositional(args); sub != "" {
+		return sub
+	}
+	if len(args) > 0 {
+		return args[0]
+	}
+	return ""
 }
 
 // firstPositional returns the first token in args that does not start with '-'.
@@ -288,4 +242,328 @@ func firstPositional(args []string) string {
 		}
 	}
 	return ""
+}
+
+type shellParser struct {
+	command  string
+	buf      strings.Builder
+	tokens   []string
+	segments [][]string
+	state    shellState
+	i        int
+}
+
+func (p *shellParser) flushToken() {
+	if p.buf.Len() == 0 {
+		return
+	}
+	p.tokens = append(p.tokens, p.buf.String())
+	p.buf.Reset()
+}
+
+func (p *shellParser) flushSegment() error {
+	p.flushToken()
+	if len(p.tokens) == 0 {
+		return fmt.Errorf("empty pipeline segment")
+	}
+	p.segments = append(p.segments, p.tokens)
+	p.tokens = nil
+	return nil
+}
+
+func (p *shellParser) handleSingle(ch byte) {
+	if ch == '\'' {
+		p.state = shellStateNormal
+		return
+	}
+	p.buf.WriteByte(ch)
+}
+
+func (p *shellParser) handleDouble() error {
+	ch := p.command[p.i]
+	switch ch {
+	case '"':
+		p.state = shellStateNormal
+	case '\\':
+		if p.i+1 >= len(p.command) {
+			return fmt.Errorf("dangling escape")
+		}
+		p.i++
+		p.buf.WriteByte(p.command[p.i])
+	case '`':
+		return fmt.Errorf("backticks require approval")
+	case '$':
+		if p.i+1 < len(p.command) && p.command[p.i+1] == '(' {
+			return fmt.Errorf("command substitution requires approval")
+		}
+		p.buf.WriteByte(ch)
+	default:
+		p.buf.WriteByte(ch)
+	}
+	return nil
+}
+
+func (p *shellParser) handleRedirect() error {
+	fd := ""
+	if p.buf.Len() > 0 {
+		word := p.buf.String()
+		p.buf.Reset()
+		if isDigits(word) {
+			fd = word
+		} else {
+			p.tokens = append(p.tokens, word)
+		}
+	}
+	appendMode := false
+	if p.i+1 < len(p.command) && p.command[p.i+1] == '>' {
+		appendMode = true
+		p.i++
+	}
+	if fd != "" && fd != "1" && fd != "2" {
+		return fmt.Errorf("unsupported redirect fd")
+	}
+	target, next, err := parseWord(p.command, p.i+1)
+	if err != nil {
+		return err
+	}
+	if !isSafeRedirectTarget(target, appendMode) {
+		return fmt.Errorf("output redirection requires approval")
+	}
+	p.i = next - 1
+	return nil
+}
+
+func (p *shellParser) handleNormal() error {
+	ch := p.command[p.i]
+	switch ch {
+	case ' ', '\t':
+		p.flushToken()
+	case '\\':
+		if p.i+1 >= len(p.command) {
+			return fmt.Errorf("dangling escape")
+		}
+		p.i++
+		p.buf.WriteByte(p.command[p.i])
+	case '\'':
+		p.state = shellStateSingle
+	case '"':
+		p.state = shellStateDouble
+	case '|':
+		if p.i+1 < len(p.command) && p.command[p.i+1] == '|' {
+			return fmt.Errorf("logical OR requires approval")
+		}
+		return p.flushSegment()
+	case '&':
+		return fmt.Errorf("backgrounding or logical AND requires approval")
+	case ';', '\n', '\r':
+		return fmt.Errorf("command chaining requires approval")
+	case '`':
+		return fmt.Errorf("backticks require approval")
+	case '$':
+		if p.i+1 < len(p.command) && p.command[p.i+1] == '(' {
+			return fmt.Errorf("command substitution requires approval")
+		}
+		p.buf.WriteByte(ch)
+	case '<':
+		return fmt.Errorf("input redirection requires approval")
+	case '>':
+		return p.handleRedirect()
+	case '(', ')':
+		if p.buf.Len() == 0 {
+			return fmt.Errorf("subshell syntax requires approval")
+		}
+		p.buf.WriteByte(ch)
+	default:
+		p.buf.WriteByte(ch)
+	}
+	return nil
+}
+
+func parseCommand(command string) ([][]string, error) {
+	p := &shellParser{command: command}
+	for p.i = 0; p.i < len(command); p.i++ {
+		var err error
+		switch p.state {
+		case shellStateSingle:
+			p.handleSingle(command[p.i])
+		case shellStateDouble:
+			err = p.handleDouble()
+		default:
+			err = p.handleNormal()
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	if p.state != shellStateNormal {
+		return nil, fmt.Errorf("unterminated quote")
+	}
+	if err := p.flushSegment(); err != nil {
+		return nil, err
+	}
+	return p.segments, nil
+}
+
+type shellState uint8
+
+const (
+	shellStateNormal shellState = iota
+	shellStateSingle
+	shellStateDouble
+)
+
+func parseWord(s string, start int) (string, int, error) {
+	var (
+		buf   strings.Builder
+		state = shellStateNormal
+		i     = start
+	)
+
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	if i >= len(s) {
+		return "", i, fmt.Errorf("missing redirect target")
+	}
+
+	for ; i < len(s); i++ {
+		ch := s[i]
+		switch state {
+		case shellStateSingle:
+			if ch == '\'' {
+				state = shellStateNormal
+				continue
+			}
+			buf.WriteByte(ch)
+
+		case shellStateDouble:
+			switch ch {
+			case '"':
+				state = shellStateNormal
+			case '\\':
+				if i+1 >= len(s) {
+					return "", i, fmt.Errorf("dangling escape")
+				}
+				i++
+				buf.WriteByte(s[i])
+			case '`':
+				return "", i, fmt.Errorf("backticks require approval")
+			case '$':
+				if i+1 < len(s) && s[i+1] == '(' {
+					return "", i, fmt.Errorf("command substitution requires approval")
+				}
+				buf.WriteByte(ch)
+			default:
+				buf.WriteByte(ch)
+			}
+
+		default:
+			switch ch {
+			case ' ', '\t':
+				if buf.Len() == 0 {
+					continue
+				}
+				return buf.String(), i, nil
+			case '\\':
+				if i+1 >= len(s) {
+					return "", i, fmt.Errorf("dangling escape")
+				}
+				i++
+				buf.WriteByte(s[i])
+			case '\'':
+				state = shellStateSingle
+			case '"':
+				state = shellStateDouble
+			case '|', '&', ';', '<', '>', '\n', '\r', '`':
+				return "", i, fmt.Errorf("invalid redirect target")
+			case '$':
+				if i+1 < len(s) && s[i+1] == '(' {
+					return "", i, fmt.Errorf("command substitution requires approval")
+				}
+				buf.WriteByte(ch)
+			default:
+				buf.WriteByte(ch)
+			}
+		}
+	}
+
+	if state != shellStateNormal {
+		return "", i, fmt.Errorf("unterminated quote")
+	}
+	if buf.Len() == 0 {
+		return "", i, fmt.Errorf("missing redirect target")
+	}
+	return buf.String(), i, nil
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, ch := range s {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func isSafeRedirectTarget(target string, _ bool) bool {
+	if target == "/dev/null" {
+		return true
+	}
+	if !filepath.IsAbs(target) {
+		return false
+	}
+
+	cleaned := filepath.Clean(target)
+	resolved, err := resolveExistingRedirectPath(cleaned)
+	if err != nil {
+		return false
+	}
+	for _, root := range allowedRedirectRoots() {
+		if resolved == root || strings.HasPrefix(resolved, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+func allowedRedirectRoots() []string {
+	seen := map[string]struct{}{}
+	var roots []string
+	for _, root := range []string{"/tmp", "/private/tmp", os.TempDir()} {
+		root = filepath.Clean(root)
+		if root == "" || root == "." {
+			continue
+		}
+		if _, ok := seen[root]; ok {
+			continue
+		}
+		seen[root] = struct{}{}
+		roots = append(roots, root)
+	}
+	return roots
+}
+
+func resolveExistingRedirectPath(target string) (string, error) {
+	current := target
+	for {
+		info, err := os.Lstat(current)
+		if err == nil {
+			if info.Mode()&os.ModeSymlink != 0 {
+				return filepath.EvalSymlinks(current)
+			}
+			return current, nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", fmt.Errorf("no existing path component")
+		}
+		current = parent
+	}
 }
