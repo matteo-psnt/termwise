@@ -34,6 +34,12 @@ func TestMatchesSupportsFlagStyleAndPositionalSubcommands(t *testing.T) {
 			want:    true,
 		},
 		{
+			name:    "literal env assignment before command",
+			rule:    Rule{Cmd: "rg"},
+			command: "LC_ALL=C rg termwise README.md",
+			want:    true,
+		},
+		{
 			name:    "blocked flag still denies",
 			rule:    Rule{Cmd: "sed", BlockFlags: []string{"-i"}},
 			command: "sed -i s/a/b/ file.txt",
@@ -63,6 +69,11 @@ func TestNeedsApprovalStructuredShellParsing(t *testing.T) {
 		{
 			name:    "quoted pipe stays safe",
 			command: `rg "foo|bar" README.md`,
+			want:    false,
+		},
+		{
+			name:    "literal env assignment stays safe",
+			command: `LC_ALL=C rg termwise README.md`,
 			want:    false,
 		},
 		{
@@ -101,9 +112,24 @@ func TestNeedsApprovalStructuredShellParsing(t *testing.T) {
 			want:    false,
 		},
 		{
-			name:    "escaped command substitution stays safe",
+			name:    "escaped command substitution requires approval",
 			command: `printf \$(whoami)`,
-			want:    false,
+			want:    true,
+		},
+		{
+			name:    "dynamic env assignment needs approval",
+			command: `FOO=$(whoami) rg termwise README.md`,
+			want:    true,
+		},
+		{
+			name:    "process substitution needs approval",
+			command: `cat <(pwd)`,
+			want:    true,
+		},
+		{
+			name:    "multiple statements need approval",
+			command: "pwd\nwhoami",
+			want:    true,
 		},
 		{
 			name:    "logical and needs approval",
@@ -162,6 +188,7 @@ func TestBuildRuleFromCommandUsesStructuredTokens(t *testing.T) {
 	}{
 		{command: `brew --version`, want: `brew:--version`},
 		{command: `git --no-pager status`, want: `git:status`},
+		{command: `LC_ALL=C git --no-pager status`, want: `git:status`},
 		{command: `printf ';'`, want: `printf:;`},
 		{command: `printf "ok" | wc -c`, want: ``},
 	}

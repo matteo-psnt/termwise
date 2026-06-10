@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"gopkg.in/yaml.v3"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // Rule describes one entry in the allow-list.
@@ -110,7 +111,7 @@ func Matches(rule Rule, command string) bool {
 	if err != nil || len(parsed) != 1 {
 		return false
 	}
-	return matchesTokens(rule, parsed[0])
+	return matchesTokens(rule, parsed[0].tokens)
 }
 
 func matchesTokens(rule Rule, tokens []string) bool {
@@ -171,7 +172,7 @@ func NeedsApproval(userRules []string, command string) bool {
 	loadBuiltin()
 
 	for _, seg := range segments {
-		if !matchesAny(userRules, seg) {
+		if !matchesAny(userRules, seg.tokens) {
 			return true
 		}
 	}
@@ -205,7 +206,7 @@ func BuildRuleFromCommand(command string) string {
 	if err != nil || len(parsed) != 1 {
 		return ""
 	}
-	tokens := parsed[0]
+	tokens := parsed[0].tokens
 	cmd := filepath.Base(tokens[0])
 	if sub := preferredRuleSubcommand(tokens[1:]); sub != "" {
 		return cmd + ":" + sub
@@ -244,268 +245,156 @@ func firstPositional(args []string) string {
 	return ""
 }
 
-type shellParser struct {
-	command  string
-	buf      strings.Builder
-	tokens   []string
-	segments [][]string
-	state    shellState
-	i        int
+type parsedCommand struct {
+	tokens []string
 }
 
-func (p *shellParser) flushToken() {
-	if p.buf.Len() == 0 {
-		return
-	}
-	p.tokens = append(p.tokens, p.buf.String())
-	p.buf.Reset()
-}
-
-func (p *shellParser) flushSegment() error {
-	p.flushToken()
-	if len(p.tokens) == 0 {
-		return fmt.Errorf("empty pipeline segment")
-	}
-	p.segments = append(p.segments, p.tokens)
-	p.tokens = nil
-	return nil
-}
-
-func (p *shellParser) handleSingle(ch byte) {
-	if ch == '\'' {
-		p.state = shellStateNormal
-		return
-	}
-	p.buf.WriteByte(ch)
-}
-
-func (p *shellParser) handleDouble() error {
-	ch := p.command[p.i]
-	switch ch {
-	case '"':
-		p.state = shellStateNormal
-	case '\\':
-		if p.i+1 >= len(p.command) {
-			return fmt.Errorf("dangling escape")
-		}
-		p.i++
-		p.buf.WriteByte(p.command[p.i])
-	case '`':
-		return fmt.Errorf("backticks require approval")
-	case '$':
-		if p.i+1 < len(p.command) && p.command[p.i+1] == '(' {
-			return fmt.Errorf("command substitution requires approval")
-		}
-		p.buf.WriteByte(ch)
-	default:
-		p.buf.WriteByte(ch)
-	}
-	return nil
-}
-
-func (p *shellParser) handleRedirect() error {
-	fd := ""
-	if p.buf.Len() > 0 {
-		word := p.buf.String()
-		p.buf.Reset()
-		if isDigits(word) {
-			fd = word
-		} else {
-			p.tokens = append(p.tokens, word)
-		}
-	}
-	appendMode := false
-	if p.i+1 < len(p.command) && p.command[p.i+1] == '>' {
-		appendMode = true
-		p.i++
-	}
-	if fd != "" && fd != "1" && fd != "2" {
-		return fmt.Errorf("unsupported redirect fd")
-	}
-	target, next, err := parseWord(p.command, p.i+1)
+func parseCommand(command string) ([]parsedCommand, error) {
+	file, err := syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(strings.NewReader(command), "")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if !isSafeRedirectTarget(target, appendMode) {
-		return fmt.Errorf("output redirection requires approval")
+	if len(file.Stmts) != 1 {
+		return nil, fmt.Errorf("multiple statements require approval")
 	}
-	p.i = next - 1
-	return nil
+	return parseStmt(file.Stmts[0])
 }
 
-func (p *shellParser) handleNormal() error {
-	ch := p.command[p.i]
-	switch ch {
-	case ' ', '\t':
-		p.flushToken()
-	case '\\':
-		if p.i+1 >= len(p.command) {
-			return fmt.Errorf("dangling escape")
-		}
-		p.i++
-		p.buf.WriteByte(p.command[p.i])
-	case '\'':
-		p.state = shellStateSingle
-	case '"':
-		p.state = shellStateDouble
-	case '|':
-		if p.i+1 < len(p.command) && p.command[p.i+1] == '|' {
-			return fmt.Errorf("logical OR requires approval")
-		}
-		return p.flushSegment()
-	case '&':
-		return fmt.Errorf("backgrounding or logical AND requires approval")
-	case ';', '\n', '\r':
-		return fmt.Errorf("command chaining requires approval")
-	case '`':
-		return fmt.Errorf("backticks require approval")
-	case '$':
-		if p.i+1 < len(p.command) && p.command[p.i+1] == '(' {
-			return fmt.Errorf("command substitution requires approval")
-		}
-		p.buf.WriteByte(ch)
-	case '<':
-		return fmt.Errorf("input redirection requires approval")
-	case '>':
-		return p.handleRedirect()
-	case '(', ')':
-		if p.buf.Len() == 0 {
-			return fmt.Errorf("subshell syntax requires approval")
-		}
-		p.buf.WriteByte(ch)
-	default:
-		p.buf.WriteByte(ch)
+func parseStmt(stmt *syntax.Stmt) ([]parsedCommand, error) {
+	if stmt == nil || stmt.Cmd == nil {
+		return nil, fmt.Errorf("empty statement")
 	}
-	return nil
-}
+	if stmt.Negated || stmt.Background || stmt.Coprocess || stmt.Disown {
+		return nil, fmt.Errorf("compound statement requires approval")
+	}
+	if err := validateRedirects(stmt.Redirs); err != nil {
+		return nil, err
+	}
 
-func parseCommand(command string) ([][]string, error) {
-	p := &shellParser{command: command}
-	for p.i = 0; p.i < len(command); p.i++ {
-		var err error
-		switch p.state {
-		case shellStateSingle:
-			p.handleSingle(command[p.i])
-		case shellStateDouble:
-			err = p.handleDouble()
-		default:
-			err = p.handleNormal()
-		}
+	switch cmd := stmt.Cmd.(type) {
+	case *syntax.CallExpr:
+		parsed, err := parseCallExpr(cmd)
 		if err != nil {
 			return nil, err
 		}
+		return []parsedCommand{parsed}, nil
+	case *syntax.BinaryCmd:
+		if cmd.Op != syntax.Pipe {
+			return nil, fmt.Errorf("non-pipeline binary operator requires approval")
+		}
+		left, err := parseStmt(cmd.X)
+		if err != nil {
+			return nil, err
+		}
+		right, err := parseStmt(cmd.Y)
+		if err != nil {
+			return nil, err
+		}
+		return append(left, right...), nil
+	default:
+		return nil, fmt.Errorf("compound command requires approval")
 	}
-	if p.state != shellStateNormal {
-		return nil, fmt.Errorf("unterminated quote")
-	}
-	if err := p.flushSegment(); err != nil {
-		return nil, err
-	}
-	return p.segments, nil
 }
 
-type shellState uint8
-
-const (
-	shellStateNormal shellState = iota
-	shellStateSingle
-	shellStateDouble
-)
-
-func parseWord(s string, start int) (string, int, error) {
-	var (
-		buf   strings.Builder
-		state = shellStateNormal
-		i     = start
-	)
-
-	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
-		i++
+func parseCallExpr(cmd *syntax.CallExpr) (parsedCommand, error) {
+	if len(cmd.Args) == 0 {
+		return parsedCommand{}, fmt.Errorf("assignment-only command requires approval")
 	}
-	if i >= len(s) {
-		return "", i, fmt.Errorf("missing redirect target")
+	if err := validateAssignments(cmd.Assigns); err != nil {
+		return parsedCommand{}, err
 	}
 
-	for ; i < len(s); i++ {
-		ch := s[i]
-		switch state {
-		case shellStateSingle:
-			if ch == '\'' {
-				state = shellStateNormal
-				continue
-			}
-			buf.WriteByte(ch)
+	tokens := make([]string, 0, len(cmd.Args))
+	for _, word := range cmd.Args {
+		lit, ok := literalWord(word)
+		if !ok {
+			return parsedCommand{}, fmt.Errorf("dynamic word requires approval")
+		}
+		tokens = append(tokens, lit)
+	}
+	return parsedCommand{tokens: tokens}, nil
+}
 
-		case shellStateDouble:
-			switch ch {
-			case '"':
-				state = shellStateNormal
-			case '\\':
-				if i+1 >= len(s) {
-					return "", i, fmt.Errorf("dangling escape")
-				}
-				i++
-				buf.WriteByte(s[i])
-			case '`':
-				return "", i, fmt.Errorf("backticks require approval")
-			case '$':
-				if i+1 < len(s) && s[i+1] == '(' {
-					return "", i, fmt.Errorf("command substitution requires approval")
-				}
-				buf.WriteByte(ch)
-			default:
-				buf.WriteByte(ch)
-			}
+func validateAssignments(assigns []*syntax.Assign) error {
+	for _, assign := range assigns {
+		if assign == nil || assign.Append || assign.Naked || assign.Index != nil || assign.Array != nil || assign.Name == nil {
+			return fmt.Errorf("dynamic assignment requires approval")
+		}
+		if assign.Value == nil {
+			continue
+		}
+		if _, ok := literalWord(assign.Value); !ok {
+			return fmt.Errorf("dynamic assignment requires approval")
+		}
+	}
+	return nil
+}
 
+func validateRedirects(redirs []*syntax.Redirect) error {
+	for _, redir := range redirs {
+		if err := validateRedirect(redir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateRedirect(redir *syntax.Redirect) error {
+	if redir == nil || redir.Word == nil || redir.Hdoc != nil {
+		return fmt.Errorf("unsupported redirect requires approval")
+	}
+
+	switch redir.Op {
+	case syntax.RdrOut, syntax.AppOut:
+		fd := ""
+		if redir.N != nil {
+			fd = redir.N.Value
+		}
+		if fd != "" && fd != "1" && fd != "2" {
+			return fmt.Errorf("unsupported redirect fd")
+		}
+		target, ok := literalWord(redir.Word)
+		if !ok || !isSafeRedirectTarget(target, redir.Op == syntax.AppOut) {
+			return fmt.Errorf("output redirection requires approval")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported redirect requires approval")
+	}
+}
+
+func literalWord(word *syntax.Word) (string, bool) {
+	if word == nil {
+		return "", false
+	}
+	return literalWordParts(word.Parts)
+}
+
+func literalWordParts(parts []syntax.WordPart) (string, bool) {
+	var b strings.Builder
+	for _, part := range parts {
+		switch part := part.(type) {
+		case *syntax.Lit:
+			b.WriteString(part.Value)
+		case *syntax.SglQuoted:
+			if part.Dollar {
+				return "", false
+			}
+			b.WriteString(part.Value)
+		case *syntax.DblQuoted:
+			if part.Dollar {
+				return "", false
+			}
+			s, ok := literalWordParts(part.Parts)
+			if !ok {
+				return "", false
+			}
+			b.WriteString(s)
 		default:
-			switch ch {
-			case ' ', '\t':
-				if buf.Len() == 0 {
-					continue
-				}
-				return buf.String(), i, nil
-			case '\\':
-				if i+1 >= len(s) {
-					return "", i, fmt.Errorf("dangling escape")
-				}
-				i++
-				buf.WriteByte(s[i])
-			case '\'':
-				state = shellStateSingle
-			case '"':
-				state = shellStateDouble
-			case '|', '&', ';', '<', '>', '\n', '\r', '`':
-				return "", i, fmt.Errorf("invalid redirect target")
-			case '$':
-				if i+1 < len(s) && s[i+1] == '(' {
-					return "", i, fmt.Errorf("command substitution requires approval")
-				}
-				buf.WriteByte(ch)
-			default:
-				buf.WriteByte(ch)
-			}
+			return "", false
 		}
 	}
-
-	if state != shellStateNormal {
-		return "", i, fmt.Errorf("unterminated quote")
-	}
-	if buf.Len() == 0 {
-		return "", i, fmt.Errorf("missing redirect target")
-	}
-	return buf.String(), i, nil
-}
-
-func isDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, ch := range s {
-		if ch < '0' || ch > '9' {
-			return false
-		}
-	}
-	return true
+	return b.String(), true
 }
 
 func isSafeRedirectTarget(target string, _ bool) bool {
