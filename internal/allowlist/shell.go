@@ -79,7 +79,11 @@ func parseCallExpr(cmd *syntax.CallExpr) (parsedCommand, error) {
 		}
 		tokens = append(tokens, lit)
 	}
-	return parsedCommand{Name: filepath.Base(tokens[0]), Args: tokens[1:]}, nil
+	parsed, ok := parsedCommandFromTokens(tokens)
+	if !ok {
+		return parsedCommand{}, fmt.Errorf("assignment-only command requires approval")
+	}
+	return parsed, nil
 }
 
 func validateAssignments(assigns []*syntax.Assign) error {
@@ -129,4 +133,14 @@ func literalWordParts(parts []syntax.WordPart) (string, bool) {
 		}
 	}
 	return b.String(), true
+}
+
+func parsedCommandFromTokens(tokens []string) (parsedCommand, bool) {
+	if len(tokens) == 0 {
+		return parsedCommand{}, false
+	}
+	return parsedCommand{
+		Name: filepath.Base(tokens[0]),
+		Args: append([]string(nil), tokens[1:]...),
+	}, true
 }

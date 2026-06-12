@@ -3,6 +3,7 @@ package anthropic
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
@@ -185,13 +186,13 @@ func fromChatResponse(msg *sdk.Message) (*provider.ChatResponse, error) {
 
 // extractText concatenates all text blocks in a content slice.
 func extractText(blocks []sdk.ContentBlockUnion) string {
-	var out string
-	for _, b := range blocks {
-		if b.Type == "text" {
-			out += b.Text
+	var b strings.Builder
+	for _, block := range blocks {
+		if block.Type == "text" {
+			b.WriteString(block.Text)
 		}
 	}
-	return out
+	return b.String()
 }
 
 // parseToolInput unmarshals the raw JSON input into a map.

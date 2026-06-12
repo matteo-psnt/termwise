@@ -17,20 +17,32 @@ func TestMatchesSupportsFlagStyleAndPositionalSubcommands(t *testing.T) {
 	}{
 		{
 			name:    "flag style subcommand",
-			rule:    Rule{Cmd: "brew", AllowSubs: []string{"--version"}},
+			rule:    Rule{Cmd: "brew", Allow: AllowRule{Subcommands: []string{"--version"}}},
 			command: "brew --version",
 			want:    true,
 		},
 		{
 			name:    "short flag subcommand",
-			rule:    Rule{Cmd: "dpkg", AllowSubs: []string{"-l"}},
+			rule:    Rule{Cmd: "dpkg", Allow: AllowRule{Subcommands: []string{"-l"}}},
 			command: "dpkg -l",
 			want:    true,
 		},
 		{
 			name:    "positional subcommand after option",
-			rule:    Rule{Cmd: "git", AllowSubs: []string{"status"}},
+			rule:    Rule{Cmd: "git", Allow: AllowRule{Subcommands: []string{"status"}}},
 			command: "git --no-pager status",
+			want:    true,
+		},
+		{
+			name:    "positional subcommand after option with value",
+			rule:    Rule{Cmd: "git", Allow: AllowRule{Subcommands: []string{"status"}}},
+			command: "git -C /tmp status",
+			want:    true,
+		},
+		{
+			name:    "docker context before subcommand",
+			rule:    Rule{Cmd: "docker", Allow: AllowRule{Subcommands: []string{"ps"}}},
+			command: "docker --context prod ps",
 			want:    true,
 		},
 		{
@@ -53,25 +65,25 @@ func TestMatchesSupportsFlagStyleAndPositionalSubcommands(t *testing.T) {
 		},
 		{
 			name:    "blocked flag still denies",
-			rule:    Rule{Cmd: "sed", BlockFlags: []string{"-i"}},
+			rule:    Rule{Cmd: "sed", Deny: DenyRule{Flags: []string{"-i"}}},
 			command: "sed -i s/a/b/ file.txt",
 			want:    false,
 		},
 		{
 			name:    "blocked short flag with attached value denies",
-			rule:    Rule{Cmd: "poetry", BlockFlags: []string{"-o"}},
+			rule:    Rule{Cmd: "poetry", Deny: DenyRule{Flags: []string{"-o"}}},
 			command: "poetry export -orequirements.txt",
 			want:    false,
 		},
 		{
 			name:    "blocked long flag with equals denies",
-			rule:    Rule{Cmd: "poetry", BlockFlags: []string{"--output"}},
+			rule:    Rule{Cmd: "poetry", Deny: DenyRule{Flags: []string{"--output"}}},
 			command: "poetry export --output=requirements.txt",
 			want:    false,
 		},
 		{
 			name:    "blocked exec short flag denies",
-			rule:    Rule{Cmd: "fd", BlockFlags: []string{"-x"}},
+			rule:    Rule{Cmd: "fd", Deny: DenyRule{Flags: []string{"-x"}}},
 			command: "fd -x echo {}",
 			want:    false,
 		},
@@ -90,6 +102,25 @@ func TestMatchesSupportsFlagStyleAndPositionalSubcommands(t *testing.T) {
 				t.Fatalf("Matches(%q) = %v, want %v", tc.command, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestNewRuleEngineClonesRules(t *testing.T) {
+	t.Parallel()
+
+	rules := []Rule{{
+		Cmd:   "echo",
+		Parse: ParseRule{SubcommandValueFlags: []string{"--context"}},
+		Deny:  DenyRule{Flags: []string{"-f"}},
+	}}
+	engine := newRuleEngine(rules)
+	rules[0].Cmd = "rm"
+	rules[0].Deny.Flags[0] = "-x"
+	rules[0].Parse.SubcommandValueFlags[0] = "--project"
+
+	cloned := engine.ruleMetadata("echo")
+	if cloned.Cmd != "echo" || cloned.Deny.Flags[0] != "-f" || cloned.Parse.SubcommandValueFlags[0] != "--context" {
+		t.Fatalf("expected deep-cloned rule metadata, got %#v", cloned)
 	}
 }
 
@@ -212,6 +243,41 @@ func TestNeedsApprovalStructuredShellParsing(t *testing.T) {
 			want:    false,
 		},
 		{
+			name:    "git option value before subcommand stays safe",
+			command: `git -C /tmp status`,
+			want:    false,
+		},
+		{
+			name:    "git option value matching subcommand still needs approval",
+			command: `git -C status branch`,
+			want:    true,
+		},
+		{
+			name:    "go option value before env subcommand stays safe",
+			command: `go -C . env GOMOD`,
+			want:    false,
+		},
+		{
+			name:    "kubectl context option before subcommand stays safe",
+			command: `kubectl --context prod get pods`,
+			want:    false,
+		},
+		{
+			name:    "docker context option before subcommand stays safe",
+			command: `docker --context prod ps`,
+			want:    false,
+		},
+		{
+			name:    "npm prefix option before subcommand stays safe",
+			command: `npm --prefix /tmp ls`,
+			want:    false,
+		},
+		{
+			name:    "cargo toolchain prefix before subcommand stays safe",
+			command: `cargo +nightly tree`,
+			want:    true,
+		},
+		{
 			name:    "file redirect needs approval",
 			command: `echo ok > out.txt`,
 			want:    true,
@@ -229,6 +295,88 @@ func TestNeedsApprovalStructuredShellParsing(t *testing.T) {
 		{
 			name:    "find execdir still needs approval",
 			command: `find . -type f -execdir ls -la {} \;`,
+			want:    true,
+		},
+		// xargs: safe patterns
+		{
+			name:    "xargs grep stays safe",
+			command: `find . -name "*.go" -type f | xargs grep -l "pattern"`,
+			want:    false,
+		},
+		{
+			name:    "xargs grep original failing command stays safe",
+			command: `find /Users/matteopesenti/Projects/termwise -name "*.go" -type f | xargs grep -l "WriteFile||os.Create" 2>/dev/null | head -5`,
+			want:    false,
+		},
+		{
+			name:    "xargs with no command stays safe",
+			command: `find . -name "*.log" | xargs`,
+			want:    false,
+		},
+		{
+			name:    "xargs -0 stays safe",
+			command: `find . -name "*.go" -print0 | xargs -0 grep pattern`,
+			want:    false,
+		},
+		{
+			name:    "xargs -n stays safe",
+			command: `find . -type f | xargs -n 10 wc -l`,
+			want:    false,
+		},
+		{
+			name:    "xargs -n inline stays safe",
+			command: `find . -type f | xargs -n10 wc -l`,
+			want:    false,
+		},
+		{
+			name:    "xargs -P stays safe",
+			command: `find . -name "*.go" | xargs -P 4 grep pattern`,
+			want:    false,
+		},
+		{
+			name:    "xargs -I stays safe",
+			command: `find . -name "*.go" | xargs -I {} grep pattern {}`,
+			want:    false,
+		},
+		{
+			name:    "xargs -I inline stays safe",
+			command: `find . -name "*.go" | xargs -I{} grep pattern {}`,
+			want:    false,
+		},
+		{
+			name:    "xargs -r stays safe",
+			command: `find . -name "*.go" | xargs -r grep pattern`,
+			want:    false,
+		},
+		{
+			name:    "xargs --null stays safe",
+			command: `find . -name "*.go" -print0 | xargs --null grep pattern`,
+			want:    false,
+		},
+		// xargs: unsafe patterns
+		{
+			name:    "xargs rm needs approval",
+			command: `find . -name "*.tmp" | xargs rm -rf`,
+			want:    true,
+		},
+		{
+			name:    "xargs sh needs approval",
+			command: `find . -type f | xargs sh -c 'echo hi'`,
+			want:    true,
+		},
+		{
+			name:    "xargs -a needs approval",
+			command: `xargs -a /etc/passwd grep root`,
+			want:    true,
+		},
+		{
+			name:    "xargs unknown flag needs approval",
+			command: `find . | xargs -z grep pattern`,
+			want:    true,
+		},
+		{
+			name:    "xargs combined flags needs approval",
+			command: `find . | xargs -rn10 grep pattern`,
 			want:    true,
 		},
 		{
@@ -482,6 +630,9 @@ func TestBuildRuleFromCommandUsesStructuredTokens(t *testing.T) {
 	}{
 		{command: `brew --version`, want: `brew:--version`},
 		{command: `git --no-pager status`, want: `git:status`},
+		{command: `git -C /tmp status`, want: `git:status`},
+		{command: `go -C . env GOMOD`, want: `go:env`},
+		{command: `docker --context prod ps`, want: `docker:ps`},
 		{command: `LC_ALL=C git --no-pager status`, want: `git:status`},
 		{command: `printf ';'`, want: `printf:;`},
 		{command: `printf "ok" | wc -c`, want: ``},

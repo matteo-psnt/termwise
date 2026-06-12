@@ -113,7 +113,7 @@ func resolveRuntime() (runtimeContext, error) {
 	if err != nil {
 		return runtimeContext{}, err
 	}
-	rc, err := config.LoadRuntimeConfig(cfgPath)
+	cfg, rc, err := config.LoadAndResolve(cfgPath)
 	if err != nil {
 		return runtimeContext{}, err
 	}
@@ -121,15 +121,10 @@ func resolveRuntime() (runtimeContext, error) {
 	if err != nil {
 		return runtimeContext{}, err
 	}
-
-	llmJudge := false
-	if cfg, exists, err := config.LoadConfig(cfgPath); err == nil && exists {
-		llmJudge = cfg.Settings.LLMJudge
-	}
 	return runtimeContext{
 		client:   client,
 		modelID:  rc.Model,
-		llmJudge: llmJudge,
+		llmJudge: cfg.Settings.LLMJudge,
 		isTTY:    tty.IsTerminal(os.Stdout),
 	}, nil
 }

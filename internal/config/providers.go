@@ -44,12 +44,6 @@ func DefaultEnvVar(name string) string {
 	return info.DefaultEnvVar
 }
 
-// fallbackEnvVar returns the env var to try as a last-resort fallback when
-// configured auth fails. Only set for providers that have a canonical env var.
-func fallbackEnvVar(name string) string {
-	return DefaultEnvVar(name)
-}
-
 func isKnownProvider(name string) bool {
 	_, ok := lookupProvider(name)
 	return ok

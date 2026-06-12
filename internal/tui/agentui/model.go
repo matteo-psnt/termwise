@@ -301,9 +301,6 @@ func (m Model) handleThinkingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.interruptActiveTurn()
 		return m, nil
 	}
-	if msg.String() == "esc" {
-		m.interruptActiveTurn()
-	}
 	return m, nil
 }
 

@@ -80,42 +80,47 @@ func RunHeadless(ctx context.Context, cfg HeadlessConfig) (FinalResponse, error)
 			ToolCalls: resp.ToolCalls,
 		})
 
-		collected := []provider.ToolResult{}
-		remaining := resp.ToolCalls
-		for {
-			step := NextToolStep(ctx, remaining, collected, needsApproval)
-
-			switch step.Kind {
-			case ToolStepRespond:
-				return FinalResponse{
-					Type:    step.RespondType,
-					Content: strings.TrimSpace(step.Content),
-				}, nil
-
-			case ToolStepExecuted:
-				collected = step.Collected
-				remaining = step.Remaining
-
-			case ToolStepNeedsApproval:
-				collected = append(step.Collected, onNeedsApproval(ctx, step))
-				remaining = step.Remaining
-
-			case ToolStepAsk:
-				collected = append(step.Collected, onAsk(step))
-				remaining = step.Remaining
-
-			case ToolStepDone:
-				messages = append(messages, provider.Message{
-					Role:        "user",
-					ToolResults: step.Collected,
-				})
-				goto nextTurn
-
-			default:
-				return FinalResponse{}, fmt.Errorf("unknown tool step kind %d", step.Kind)
-			}
+		final, toolResults, err := runToolLoop(ctx, resp.ToolCalls, needsApproval, onNeedsApproval, onAsk)
+		if err != nil {
+			return FinalResponse{}, err
 		}
+		if final != nil {
+			return *final, nil
+		}
+		messages = append(messages, provider.Message{Role: "user", ToolResults: toolResults})
+	}
+}
 
-	nextTurn:
+// runToolLoop processes all tool calls for one turn, returning either a final
+// response (from a respond tool call) or the accumulated tool results to send back.
+func runToolLoop(
+	ctx context.Context,
+	toolCalls []provider.ToolCall,
+	needsApproval func(string) bool,
+	onNeedsApproval func(context.Context, ToolStep) provider.ToolResult,
+	onAsk func(ToolStep) provider.ToolResult,
+) (*FinalResponse, []provider.ToolResult, error) {
+	var collected []provider.ToolResult
+	remaining := toolCalls
+	for {
+		step := NextToolStep(ctx, remaining, collected, needsApproval)
+		switch step.Kind {
+		case ToolStepRespond:
+			final := FinalResponse{Type: step.RespondType, Content: strings.TrimSpace(step.Content)}
+			return &final, nil, nil
+		case ToolStepExecuted:
+			collected = step.Collected
+			remaining = step.Remaining
+		case ToolStepNeedsApproval:
+			collected = append(step.Collected, onNeedsApproval(ctx, step))
+			remaining = step.Remaining
+		case ToolStepAsk:
+			collected = append(step.Collected, onAsk(step))
+			remaining = step.Remaining
+		case ToolStepDone:
+			return nil, step.Collected, nil
+		default:
+			return nil, nil, fmt.Errorf("unknown tool step kind %d", step.Kind)
+		}
 	}
 }

@@ -4,8 +4,9 @@
 #
 # Format per entry:
 #   cmd: <executable basename>              (required)
-#   allow_subs: [sub1, sub2, ...]          (optional — first positional arg must be in list)
-#   block_flags: [-f1, --flag2, ...]       (optional — denied if any of these appear)
+#   parse.subcommand_value_flags: [...]     (optional — flags whose value precedes the real subcommand)
+#   allow.subcommands: [sub1, sub2, ...]    (optional — first effective subcommand must be in list)
+#   deny.flags: [-f1, --flag2, ...]         (optional — denied if any of these appear)
 
 rules:
 
@@ -16,7 +17,8 @@ rules:
   - cmd: lsd
   - cmd: eza
   - cmd: tree
-    block_flags: [-o]
+    deny:
+      flags: [-o]
   - cmd: stat
   - cmd: file
   - cmd: du
@@ -24,45 +26,57 @@ rules:
   - cmd: cd
   - cmd: lsof
   - cmd: find
-    block_flags: [-execdir, -ok, -okdir, -delete, -fprint, -fprint0, -fprintf, -fls]
+    deny:
+      flags: [-execdir, -ok, -okdir, -delete, -fprint, -fprint0, -fprintf, -fls]
+  - cmd: xargs
 
   # ── File reading ────────────────────────────────────────────────────────────
   - cmd: cat
   - cmd: bat
-    block_flags: [--pager]
+    deny:
+      flags: [--pager]
   - cmd: head
   - cmd: tail
   - cmd: less
-    block_flags: [-o, -O]
+    deny:
+      flags: [-o, -O]
   - cmd: more
   - cmd: wc
   - cmd: strings
   - cmd: xxd
-    block_flags: [-r]
+    deny:
+      flags: [-r]
   - cmd: od
 
   # ── Text search ─────────────────────────────────────────────────────────────
   - cmd: grep
   - cmd: rg
-    block_flags: [--pre]
+    deny:
+      flags: [--pre]
   - cmd: ag
-    block_flags: [--pager]
+    deny:
+      flags: [--pager]
   - cmd: ack
-    block_flags: [--pager]
+    deny:
+      flags: [--pager]
   - cmd: fd
-    block_flags: [-x, --exec, -X, --exec-batch]
+    deny:
+      flags: [-x, --exec, -X, --exec-batch]
 
   # ── Text processing ──────────────────────────────────────────────────────────
   - cmd: sort
-    block_flags: [-o, --output]
+    deny:
+      flags: [-o, --output]
   - cmd: uniq
   - cmd: cut
   - cmd: tr
   - cmd: diff
-    block_flags: [--output]
+    deny:
+      flags: [--output]
   - cmd: colordiff
   - cmd: delta
-    block_flags: [--pager]
+    deny:
+      flags: [--pager]
   - cmd: comm
   - cmd: join
   - cmd: paste
@@ -74,7 +88,8 @@ rules:
   # ── Data / serialisation tools ───────────────────────────────────────────────
   - cmd: jq
   - cmd: yq
-    block_flags: [-i, --inplace]
+    deny:
+      flags: [-i, --inplace]
   - cmd: tomlq
   - cmd: dasel
   - cmd: fx
@@ -96,7 +111,8 @@ rules:
   - cmd: locale
   - cmd: ulimit
   - cmd: sysctl
-    block_flags: [-w, -p, --load, --system]
+    deny:
+      flags: [-w, -p, --load, --system]
   - cmd: ps
   - cmd: pgrep
   - cmd: top
@@ -109,120 +125,168 @@ rules:
   - cmd: nslookup
   - cmd: host
   - cmd: ping
-    block_flags: [-f, --flood]
+    deny:
+      flags: [-f, --flood]
   - cmd: traceroute
   - cmd: netstat
   - cmd: ss
 
   # ── Git ─────────────────────────────────────────────────────────────────────
   - cmd: git
-    block_flags: [-c, --config-env]
-    allow_subs:
-      - status
-      - log
-      - diff
-      - show
-      - blame
-      - describe
-      - shortlog
-      - rev-parse
-      - ls-files
-      - ls-tree
-      - cat-file
-      - help
-      - version
+    parse:
+      subcommand_value_flags: [-C, -c, --git-dir, --work-tree, --namespace, --super-prefix, --exec-path, --config-env]
+    allow:
+      subcommands:
+        - status
+        - log
+        - diff
+        - show
+        - blame
+        - describe
+        - shortlog
+        - rev-parse
+        - ls-files
+        - ls-tree
+        - cat-file
+        - help
+        - version
+    deny:
+      flags: [-c, --config-env]
 
   # ── Go ──────────────────────────────────────────────────────────────────────
   - cmd: go
-    allow_subs:
-      - list
-      - env
-      - version
-      - doc
-      - vet
+    parse:
+      subcommand_value_flags: [-C, -modfile, -overlay, -toolexec]
+    allow:
+      subcommands:
+        - list
+        - env
+        - version
+        - doc
+        - vet
 
   # ── Rust / Cargo ────────────────────────────────────────────────────────────
   - cmd: cargo
-    allow_subs:
-      - metadata
-      - tree
-      - version
-      - help
+    allow:
+      subcommands:
+        - metadata
+        - tree
+        - version
+        - help
 
   # ── Node ecosystem ───────────────────────────────────────────────────────────
   - cmd: npm
-    allow_subs: [list, ls, info, show, outdated, view]
+    parse:
+      subcommand_value_flags: [-C, --prefix, --userconfig, --workspace]
+    allow:
+      subcommands: [list, ls, info, show, outdated, view]
   - cmd: pnpm
-    allow_subs: [list, ls, info, outdated, audit, why]
-    block_flags: [--fix]
+    parse:
+      subcommand_value_flags: [-C, --dir, --prefix, --store-dir, --workspace-dir]
+    allow:
+      subcommands: [list, ls, info, outdated, audit, why]
+    deny:
+      flags: [--fix]
   - cmd: yarn
-    allow_subs: [list, info, outdated, why, check, licenses]
+    parse:
+      subcommand_value_flags: [--cwd]
+    allow:
+      subcommands: [list, info, outdated, why, check, licenses]
 
   # ── Python package tools ─────────────────────────────────────────────────────
   - cmd: pip
-    allow_subs: [list, show, freeze, check, inspect, index]
+    allow:
+      subcommands: [list, show, freeze, check, inspect, index]
   - cmd: pip3
-    allow_subs: [list, show, freeze, check, inspect, index]
+    allow:
+      subcommands: [list, show, freeze, check, inspect, index]
   - cmd: uv
-    allow_subs: [tree]
+    parse:
+      subcommand_value_flags: [--config-file, --directory, --project]
+    allow:
+      subcommands: [tree]
   - cmd: poetry
-    allow_subs: [show, check, version, export]
-    block_flags: [-o, --output]
+    allow:
+      subcommands: [show, check, version, export]
+    deny:
+      flags: [-o, --output]
   - cmd: ruff
-    allow_subs: [check, --version]
+    allow:
+      subcommands: [check, --version]
 
   # ── Ruby / Bundler ───────────────────────────────────────────────────────────
   - cmd: bundle
-    allow_subs: [list, show, check, outdated, version, info]
+    allow:
+      subcommands: [list, show, check, outdated, version, info]
   - cmd: gem
-    allow_subs: [list, info, outdated, contents, dependency, search, spec]
+    allow:
+      subcommands: [list, info, outdated, contents, dependency, search, spec]
 
   # ── Docker / container tools ────────────────────────────────────────────────
   - cmd: docker
-    allow_subs:
-      - ps
-      - images
-      - logs
-      - inspect
-      - stats
-      - top
-      - version
-      - info
-      - diff
-      - port
-      - history
+    parse:
+      subcommand_value_flags: [-H, --config, --context, --host]
+    allow:
+      subcommands:
+        - ps
+        - images
+        - logs
+        - inspect
+        - stats
+        - top
+        - version
+        - info
+        - diff
+        - port
+        - history
   - cmd: docker-compose
-    allow_subs: [ps, logs, config, version, images, top]
+    parse:
+      subcommand_value_flags: [-f, -p, --context, --env-file, --host, --project-directory, --project-name]
+    allow:
+      subcommands: [ps, logs, config, version, images, top]
   - cmd: podman
-    allow_subs: [ps, images, logs, inspect, stats, version, info, diff, history]
+    allow:
+      subcommands: [ps, images, logs, inspect, stats, version, info, diff, history]
 
   # ── Kubernetes ──────────────────────────────────────────────────────────────
   - cmd: kubectl
-    allow_subs:
-      - get
-      - describe
-      - logs
-      - top
-      - version
-      - cluster-info
-      - explain
-      - api-resources
-      - api-versions
+    parse:
+      subcommand_value_flags: [-n, --cluster, --context, --kubeconfig, --namespace, --server, --user]
+    allow:
+      subcommands:
+        - get
+        - describe
+        - logs
+        - top
+        - version
+        - cluster-info
+        - explain
+        - api-resources
+        - api-versions
   - cmd: helm
-    allow_subs: [list, status, history, get, show, version, env, search]
+    parse:
+      subcommand_value_flags: [-n, --kube-context, --kubeconfig, --namespace, --registry-config, --repository-cache, --repository-config]
+    allow:
+      subcommands: [list, status, history, get, show, version, env, search]
 
   # ── GitHub CLI ──────────────────────────────────────────────────────────────
   - cmd: gh
-    allow_subs: [version, --version]
+    allow:
+      subcommands: [version, --version]
 
   # ── Package managers ─────────────────────────────────────────────
   - cmd: brew
-    allow_subs: [list, info, outdated, search, deps, uses, doctor, config, --version]
+    allow:
+      subcommands: [list, info, outdated, search, deps, uses, doctor, config, --version]
   - cmd: apt
-    allow_subs: [list, show, search, depends, rdepends, --version]
+    allow:
+      subcommands: [list, show, search, depends, rdepends, --version]
   - cmd: dpkg
-    allow_subs: [-l, -s, -L, -S, --list, --status, --listfiles, --search]
+    allow:
+      subcommands: [-l, -s, -L, -S, --list, --status, --listfiles, --search]
   - cmd: rpm
-    allow_subs: [-q, -qi, -ql, -qa, --query]
+    allow:
+      subcommands: [-q, -qi, -ql, -qa, --query]
   - cmd: pacman
-    allow_subs: [-Q, -Qi, -Ql, -Qs, -Si, -Ss, --query, --sync]
+    allow:
+      subcommands: [-Q, -Qi, -Ql, -Qs, -Si, -Ss, --query, --sync]

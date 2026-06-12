@@ -2,7 +2,6 @@ package allowlist
 
 import (
 	_ "embed"
-	"slices"
 	"strings"
 	"sync"
 
@@ -17,7 +16,7 @@ type ruleEngine struct {
 	redirectRoots []string
 }
 
-var packageRuleEngine = sync.OnceValue(func() *ruleEngine {
+var engine = sync.OnceValue(func() *ruleEngine {
 	return newRuleEngine(loadBuiltinRules())
 })
 
@@ -31,28 +30,28 @@ func Parse(s string) (Rule, bool) {
 
 // Matches reports whether rule allows the given shell command.
 func Matches(rule Rule, command string) bool {
-	return packageRuleEngine().Matches(rule, command)
+	return engine().matches(rule, command)
 }
 
 // NeedsApproval reports whether the command must be confirmed by the user.
 func NeedsApproval(userRules []string, command string) bool {
-	return packageRuleEngine().NeedsApproval(userRules, command)
+	return engine().needsApproval(userRules, command)
 }
 
 // BuildRuleFromCommand derives a sensible rule string from a shell command.
 func BuildRuleFromCommand(command string) string {
-	return packageRuleEngine().BuildRuleFromCommand(command)
+	return engine().buildRuleFromCommand(command)
 }
 
 func newRuleEngine(rules []Rule) *ruleEngine {
 	return &ruleEngine{
-		builtinRules:  rules,
+		builtinRules:  cloneRules(rules),
 		validators:    defaultValidators(),
 		redirectRoots: defaultRedirectRoots(),
 	}
 }
 
-func (e *ruleEngine) Matches(rule Rule, command string) bool {
+func (e *ruleEngine) matches(rule Rule, command string) bool {
 	segments, err := e.parseCommand(command)
 	if err != nil || len(segments) != 1 {
 		return false
@@ -60,7 +59,7 @@ func (e *ruleEngine) Matches(rule Rule, command string) bool {
 	return e.matchRule(rule, segments[0])
 }
 
-func (e *ruleEngine) NeedsApproval(userRules []string, command string) bool {
+func (e *ruleEngine) needsApproval(userRules []string, command string) bool {
 	command = strings.TrimSpace(command)
 	if command == "" {
 		return true
@@ -80,14 +79,14 @@ func (e *ruleEngine) NeedsApproval(userRules []string, command string) bool {
 	return false
 }
 
-func (e *ruleEngine) BuildRuleFromCommand(command string) string {
+func (e *ruleEngine) buildRuleFromCommand(command string) string {
 	segments, err := e.parseCommand(command)
 	if err != nil || len(segments) != 1 {
 		return ""
 	}
 
 	cmd := segments[0].Name
-	if sub := preferredRuleSubcommand(segments[0].Args); sub != "" {
+	if sub := preferredRuleSubcommand(e.ruleMetadata(cmd), segments[0].Args); sub != "" {
 		return cmd + ":" + sub
 	}
 	return cmd
@@ -100,13 +99,10 @@ func (e *ruleEngine) matchRule(rule Rule, cmd parsedCommand) bool {
 	if cmd.Name != rule.Cmd {
 		return false
 	}
+	rule = e.effectiveRule(rule)
 
-	if len(rule.AllowSubs) > 0 {
-		if !slices.ContainsFunc(subcommandCandidates(cmd.Args), func(c string) bool {
-			return slices.Contains(rule.AllowSubs, c)
-		}) {
-			return false
-		}
+	if !matchesAllowedSubcommand(rule, cmd.Args) {
+		return false
 	}
 
 	if validator := e.validators[rule.Cmd]; validator != nil && !validator(e, cmd) {
@@ -114,8 +110,8 @@ func (e *ruleEngine) matchRule(rule Rule, cmd parsedCommand) bool {
 	}
 
 	for _, tok := range cmd.Args {
-		for _, blocked := range rule.BlockFlags {
-			if tokenMatchesBlockedFlag(tok, blocked) {
+		for _, blocked := range rule.Deny.Flags {
+			if tokenMatchesDeniedFlag(tok, blocked) {
 				return false
 			}
 		}
@@ -151,4 +147,40 @@ func loadBuiltinRules() []Rule {
 		return nil
 	}
 	return f.Rules
+}
+
+func (e *ruleEngine) ruleMetadata(command string) Rule {
+	for _, rule := range e.builtinRules {
+		if rule.Cmd == command {
+			return rule
+		}
+	}
+	return Rule{Cmd: command}
+}
+
+func (e *ruleEngine) effectiveRule(rule Rule) Rule {
+	meta := e.ruleMetadata(rule.Cmd)
+	if len(rule.Parse.SubcommandValueFlags) == 0 {
+		rule.Parse.SubcommandValueFlags = append([]string(nil), meta.Parse.SubcommandValueFlags...)
+	}
+	return rule
+}
+
+func cloneRules(rules []Rule) []Rule {
+	out := make([]Rule, len(rules))
+	for i, rule := range rules {
+		out[i] = Rule{
+			Cmd: rule.Cmd,
+			Parse: ParseRule{
+				SubcommandValueFlags: append([]string(nil), rule.Parse.SubcommandValueFlags...),
+			},
+			Allow: AllowRule{
+				Subcommands: append([]string(nil), rule.Allow.Subcommands...),
+			},
+			Deny: DenyRule{
+				Flags: append([]string(nil), rule.Deny.Flags...),
+			},
+		}
+	}
+	return out
 }

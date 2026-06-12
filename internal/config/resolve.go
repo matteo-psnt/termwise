@@ -62,25 +62,33 @@ func Resolve(cfg FileConfig) (ResolvedConfig, error) {
 	}, nil
 }
 
-// LoadRuntimeConfig loads the config file, falls back to zero-config defaults
-// when the file is absent, validates it structurally, and resolves it into a
-// ResolvedConfig. This is the entry point for the normal runtime path.
-func LoadRuntimeConfig(path string) (ResolvedConfig, error) {
+// LoadAndResolve loads, validates, and resolves the config at path, returning
+// both the raw FileConfig (for settings access) and the resolved runtime config.
+func LoadAndResolve(path string) (FileConfig, ResolvedConfig, error) {
 	cfg, exists, err := LoadConfig(path)
 	if err != nil {
-		return ResolvedConfig{}, err
+		return FileConfig{}, ResolvedConfig{}, err
 	}
 	if !exists {
 		var ok bool
 		cfg, ok = ZeroConfigDefaults()
 		if !ok {
-			return ResolvedConfig{}, fmt.Errorf("no configuration found — run `tw config` to set up")
+			return FileConfig{}, ResolvedConfig{}, fmt.Errorf("no configuration found — run `tw config` to set up")
 		}
 	}
 	if err := ValidateForRuntime(cfg); err != nil {
-		return ResolvedConfig{}, err
+		return FileConfig{}, ResolvedConfig{}, err
 	}
-	return Resolve(cfg)
+	rc, err := Resolve(cfg)
+	return cfg, rc, err
+}
+
+// LoadRuntimeConfig loads the config file, falls back to zero-config defaults
+// when the file is absent, validates it structurally, and resolves it into a
+// ResolvedConfig. This is the entry point for the normal runtime path.
+func LoadRuntimeConfig(path string) (ResolvedConfig, error) {
+	_, rc, err := LoadAndResolve(path)
+	return rc, err
 }
 
 // ZeroConfigDefaults builds a minimal FileConfig from well-known API key
@@ -142,7 +150,7 @@ func newClient(name string, cfg provider.Config) (provider.AgentClient, error) {
 func ResolveAuth(name string, pc ProviderConfig) (ResolvedAuth, error) {
 	key, err := resolveKey(name, pc)
 	if err != nil {
-		if fb := fallbackEnvVar(name); fb != "" {
+		if fb := DefaultEnvVar(name); fb != "" {
 			if v := os.Getenv(fb); v != "" {
 				return ResolvedAuth{APIKey: v, BaseURL: pc.BaseURL}, nil
 			}

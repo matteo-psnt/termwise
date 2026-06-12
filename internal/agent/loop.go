@@ -23,9 +23,6 @@ func ChatCmd(ctx context.Context, provider provider.AgentClient, req provider.Ch
 // ToolStepExecuted so callers can decide whether to show progress or continue looping.
 func NextToolStep(ctx context.Context, toolCalls []provider.ToolCall, collected []provider.ToolResult, needsApproval func(string) bool) ToolStep {
 	for i, tc := range toolCalls {
-		remaining := make([]provider.ToolCall, len(toolCalls)-i-1)
-		copy(remaining, toolCalls[i+1:])
-
 		switch tc.Name {
 		case "respond":
 			respondType, _ := tc.Input["type"].(string)
@@ -47,7 +44,7 @@ func NextToolStep(ctx context.Context, toolCalls []provider.ToolCall, collected 
 				Kind:         ToolStepExecuted,
 				ToolCall:     tc,
 				Result:       result,
-				Remaining:    remaining,
+				Remaining:    toolCalls[i+1:],
 				Collected:    append(collected, result),
 				AutoAccepted: true,
 			}
@@ -59,7 +56,7 @@ func NextToolStep(ctx context.Context, toolCalls []provider.ToolCall, collected 
 					Kind:      ToolStepNeedsApproval,
 					ToolCall:  tc,
 					Command:   cmd,
-					Remaining: remaining,
+					Remaining: toolCalls[i+1:],
 					Collected: collected,
 				}
 			}
@@ -68,7 +65,7 @@ func NextToolStep(ctx context.Context, toolCalls []provider.ToolCall, collected 
 				Kind:         ToolStepExecuted,
 				ToolCall:     tc,
 				Result:       result,
-				Remaining:    remaining,
+				Remaining:    toolCalls[i+1:],
 				Collected:    append(collected, result),
 				AutoAccepted: true,
 			}
@@ -90,18 +87,17 @@ func NextToolStep(ctx context.Context, toolCalls []provider.ToolCall, collected 
 				Question:    question,
 				Options:     options,
 				MultiSelect: multiSelect,
-				Remaining:   remaining,
+				Remaining:   toolCalls[i+1:],
 				Collected:   collected,
 			}
 
 		default:
 			// Unknown tool — record error and continue.
-			result := provider.ToolResult{
+			collected = append(collected, provider.ToolResult{
 				ToolCallID: tc.ID,
 				Content:    fmt.Sprintf("error: unknown tool %q", tc.Name),
 				IsError:    true,
-			}
-			collected = append(collected, result)
+			})
 		}
 	}
 
