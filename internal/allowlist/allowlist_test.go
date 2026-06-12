@@ -84,7 +84,6 @@ func TestMatchesSupportsFlagStyleAndPositionalSubcommands(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := Matches(tc.rule, tc.command); got != tc.want {
@@ -465,7 +464,6 @@ func TestNeedsApprovalStructuredShellParsing(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := NeedsApproval(nil, tc.command); got != tc.want {
@@ -490,7 +488,6 @@ func TestBuildRuleFromCommandUsesStructuredTokens(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.command, func(t *testing.T) {
 			t.Parallel()
 			if got := BuildRuleFromCommand(tc.command); got != tc.want {
