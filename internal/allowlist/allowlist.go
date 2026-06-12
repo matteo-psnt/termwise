@@ -143,16 +143,49 @@ func matchesTokens(rule Rule, tokens []string) bool {
 		}
 	}
 
-	// Check BlockFlags: no token may equal a blocked flag.
+	if !matchesCommandSpecificPolicy(rule, tokens) {
+		return false
+	}
+
+	// Check BlockFlags.
 	for _, tok := range tokens[1:] {
 		for _, blocked := range rule.BlockFlags {
-			if tok == blocked {
+			if tokenMatchesBlockedFlag(tok, blocked) {
 				return false
 			}
 		}
 	}
 
 	return true
+}
+
+func matchesCommandSpecificPolicy(rule Rule, tokens []string) bool {
+	switch rule.Cmd {
+	case "find":
+		return validateFindTokens(tokens)
+	case "go":
+		return validateGoTokens(tokens)
+	case "sysctl":
+		for _, tok := range tokens[1:] {
+			if strings.Contains(tok, "=") {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func tokenMatchesBlockedFlag(token, blocked string) bool {
+	if token == blocked {
+		return true
+	}
+	if strings.HasPrefix(blocked, "--") {
+		return strings.HasPrefix(token, blocked+"=")
+	}
+	if strings.HasPrefix(blocked, "-") && !strings.HasPrefix(blocked, "--") && len(blocked) == 2 {
+		return strings.HasPrefix(token, blocked)
+	}
+	return false
 }
 
 // NeedsApproval returns true if the command must be confirmed by the user.
@@ -279,8 +312,10 @@ func parseStmt(stmt *syntax.Stmt) ([]parsedCommand, error) {
 		}
 		return []parsedCommand{parsed}, nil
 	case *syntax.BinaryCmd:
-		if cmd.Op != syntax.Pipe {
-			return nil, fmt.Errorf("non-pipeline binary operator requires approval")
+		switch cmd.Op {
+		case syntax.Pipe, syntax.AndStmt, syntax.OrStmt:
+		default:
+			return nil, fmt.Errorf("unsupported binary operator requires approval")
 		}
 		left, err := parseStmt(cmd.X)
 		if err != nil {
@@ -345,6 +380,19 @@ func validateRedirect(redir *syntax.Redirect) error {
 	}
 
 	switch redir.Op {
+	case syntax.RdrIn:
+		fd := ""
+		if redir.N != nil {
+			fd = redir.N.Value
+		}
+		if fd != "" && fd != "0" {
+			return fmt.Errorf("unsupported input redirect fd")
+		}
+		target, ok := literalWord(redir.Word)
+		if !ok || target != "/dev/null" {
+			return fmt.Errorf("input redirection requires approval")
+		}
+		return nil
 	case syntax.RdrOut, syntax.AppOut:
 		fd := ""
 		if redir.N != nil {
@@ -356,6 +404,19 @@ func validateRedirect(redir *syntax.Redirect) error {
 		target, ok := literalWord(redir.Word)
 		if !ok || !isSafeRedirectTarget(target, redir.Op == syntax.AppOut) {
 			return fmt.Errorf("output redirection requires approval")
+		}
+		return nil
+	case syntax.DplOut:
+		srcFD := "1"
+		if redir.N != nil {
+			srcFD = redir.N.Value
+		}
+		if srcFD != "1" && srcFD != "2" {
+			return fmt.Errorf("unsupported duplicate output fd")
+		}
+		target, ok := literalWord(redir.Word)
+		if !ok || (target != "1" && target != "2") {
+			return fmt.Errorf("output duplication requires approval")
 		}
 		return nil
 	default:
@@ -397,11 +458,62 @@ func literalWordParts(parts []syntax.WordPart) (string, bool) {
 	return b.String(), true
 }
 
+func validateFindTokens(tokens []string) bool {
+	for i := 1; i < len(tokens); i++ {
+		switch tokens[i] {
+		case "-delete", "-ok", "-okdir", "-execdir":
+			return false
+		case "-exec":
+			end := -1
+			for j := i + 1; j < len(tokens); j++ {
+				if tokens[j] == ";" || tokens[j] == `\;` || tokens[j] == "+" {
+					end = j
+					break
+				}
+			}
+			if end == -1 || end == i+1 {
+				return false
+			}
+			nested := tokens[i+1 : end]
+			if !matchesBuiltinTokens(nested) {
+				return false
+			}
+			i = end
+		}
+	}
+	return true
+}
+
+func validateGoTokens(tokens []string) bool {
+	if firstPositional(tokens[1:]) != "env" {
+		return true
+	}
+	for _, tok := range tokens[1:] {
+		if tokenMatchesBlockedFlag(tok, "-w") || tokenMatchesBlockedFlag(tok, "-u") {
+			return false
+		}
+	}
+	return true
+}
+
+func matchesBuiltinTokens(tokens []string) bool {
+	loadBuiltin()
+	for _, rule := range builtinRules {
+		if matchesTokens(rule, tokens) {
+			return true
+		}
+	}
+	return false
+}
+
 func isSafeRedirectTarget(target string, _ bool) bool {
 	if target == "/dev/null" {
 		return true
 	}
 	if !filepath.IsAbs(target) {
+		return false
+	}
+	if strings.ContainsAny(target, "*?[") {
 		return false
 	}
 
