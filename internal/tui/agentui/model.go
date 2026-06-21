@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -85,6 +86,13 @@ type Model struct {
 	nextGeneration   uint64
 	activeGeneration uint64
 
+	// Sidecar prompt suggestion generation.
+	suggestion       string
+	suggestionCtx    context.Context
+	suggestionCancel context.CancelFunc
+	nextSuggestion   uint64
+	activeSuggestion uint64
+
 	// Renderer (built once)
 	renderer Renderer
 
@@ -121,6 +129,10 @@ type initialPromptMsg struct {
 
 func newGenerationContext() (context.Context, context.CancelFunc) {
 	return context.WithCancel(context.Background())
+}
+
+func newSuggestionContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 8*time.Second)
 }
 
 func wrapGenerationCmd(generation uint64, cmd tea.Cmd) tea.Cmd {
@@ -169,27 +181,31 @@ func newModel(
 	}
 
 	ctx, cancel := newGenerationContext()
+	suggestionCtx, suggestionCancel := context.WithCancel(context.Background())
 
 	m := Model{
-		provider:      prov,
-		modelID:       modelID,
-		system:        system,
-		stdin:         stdin,
-		contextWindow: contextWindow,
-		llmJudge:      llmJudge,
-		initialPrompt: initialPrompt,
-		input:         ti,
-		spin:          sp,
-		ctx:           ctx,
-		cancel:        cancel,
-		renderer:      newRenderer(r, theme.Get(themeName), glamourStyle(r)),
-		closeKey:      closeKey,
-		promptHistory: promptHistory,
-		histIdx:       -1,
-		sessionStore:  sessionStore,
-		sessionID:     sessionID,
-		providerName:  providerName,
+		provider:         prov,
+		modelID:          modelID,
+		system:           system,
+		stdin:            stdin,
+		contextWindow:    contextWindow,
+		llmJudge:         llmJudge,
+		initialPrompt:    initialPrompt,
+		input:            ti,
+		spin:             sp,
+		ctx:              ctx,
+		cancel:           cancel,
+		suggestionCtx:    suggestionCtx,
+		suggestionCancel: suggestionCancel,
+		renderer:         newRenderer(r, theme.Get(themeName), glamourStyle(r)),
+		closeKey:         closeKey,
+		promptHistory:    promptHistory,
+		histIdx:          -1,
+		sessionStore:     sessionStore,
+		sessionID:        sessionID,
+		providerName:     providerName,
 	}
+	m.input.PlaceholderStyle = m.renderer.styles.Suggestion
 
 	if initialSession != nil && len(initialSession.Messages) > 0 {
 		m.messages = initialSession.Messages
@@ -221,6 +237,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleSpinnerTick(msg)
 	case generationMsg:
 		return m.handleGenerationMsg(msg)
+	case suggestionMsg:
+		return m.handleSuggestionMsg(msg)
 	case initialPromptMsg:
 		return m.handleInitialPrompt(msg.prompt)
 	case tea.MouseMsg:
@@ -233,6 +251,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) quit() (tea.Model, tea.Cmd) {
+	m.suggestionCancel()
+	m.cancel()
 	m.saveSession()
 	m.quitting = true
 	return m, tea.Quit
@@ -308,6 +328,17 @@ func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
 		return m.submitCurrentInput()
+
+	case tea.KeyTab:
+		if s := m.visibleSuggestion(); s != "" {
+			m.input.SetValue(s)
+			m.input.CursorEnd()
+			m.suggestion = ""
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		return m, cmd
 
 	case tea.KeyUp:
 		return m.historyBack(), nil
@@ -580,6 +611,9 @@ func (m Model) handlePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // submitMessage adds the user's message and starts a model request.
 func (m Model) submitMessage(text string) (tea.Model, tea.Cmd) {
+	m.resetSuggestionContext()
+	m.clearSuggestion()
+
 	// Attach stdin to first user message if present.
 	content := text
 	if m.stdin != "" {

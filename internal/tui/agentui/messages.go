@@ -88,7 +88,7 @@ func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
 		m.state = stateIdle
 		m.refreshViewport()
 		m.saveSession()
-		return m, nil
+		return m, m.startSuggestion()
 	}
 
 	m.refreshViewport()
@@ -153,7 +153,7 @@ func (m Model) handleRespondMsg(msg agent.RespondMsg) (tea.Model, tea.Cmd) {
 	m.state = stateIdle
 	m.refreshViewport()
 	m.saveSession()
-	return m, nil
+	return m, m.startSuggestion()
 }
 
 func (m Model) handleAllToolsDoneMsg(msg agent.AllToolsDoneMsg) (tea.Model, tea.Cmd) {

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -150,14 +151,18 @@ func TestHandleToolExecutedMsgIgnoresStaleGeneration(t *testing.T) {
 func TestHandleInitialPromptSubmitsPrompt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	suggestionCtx, suggestionCancel := context.WithCancel(context.Background())
+	defer suggestionCancel()
 
 	m := Model{
-		ctx:           ctx,
-		cancel:        cancel,
-		state:         stateIdle,
-		vp:            viewport.New(80, 10),
-		initialPrompt: "inspect the repo",
-		contextWindow: 32_000,
+		ctx:              ctx,
+		cancel:           cancel,
+		suggestionCtx:    suggestionCtx,
+		suggestionCancel: suggestionCancel,
+		state:            stateIdle,
+		vp:               viewport.New(80, 10),
+		initialPrompt:    "inspect the repo",
+		contextWindow:    32_000,
 	}
 
 	gotModel, _ := m.handleInitialPrompt("inspect the repo")
@@ -177,5 +182,57 @@ func TestHandleInitialPromptSubmitsPrompt(t *testing.T) {
 	}
 	if len(got.messages) != 1 || got.messages[0].Content != "inspect the repo" {
 		t.Fatalf("expected one user message, got %#v", got.messages)
+	}
+}
+
+func TestHandleIdleKeyTabAcceptsSuggestion(t *testing.T) {
+	m := Model{
+		state:      stateIdle,
+		suggestion: "run the tests",
+		input:      textinput.New(),
+		vp:         viewport.New(80, 10),
+	}
+
+	gotModel, _ := m.handleIdleKey(tea.KeyMsg{Type: tea.KeyTab})
+	got := gotModel.(Model)
+
+	if got.input.Value() != "run the tests" {
+		t.Fatalf("expected suggestion to be inserted, got %q", got.input.Value())
+	}
+	if got.suggestion != "" {
+		t.Fatalf("expected suggestion to be cleared after accept, got %q", got.suggestion)
+	}
+}
+
+func TestBuildSuggestionPromptIncludesOriginalRequestAndCommand(t *testing.T) {
+	prompt := buildSuggestionPrompt([]ThreadEntry{
+		UserEntry{Content: "fix the flaky test"},
+		AssistantEntry{Content: "I found the race and updated the test."},
+		CommandEntry{Content: "go test ./..."},
+	})
+
+	if !strings.Contains(prompt, "Original user request:\nfix the flaky test") {
+		t.Fatalf("expected original request in prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "Assistant: $ go test ./...") {
+		t.Fatalf("expected command entry in prompt, got %q", prompt)
+	}
+}
+
+func TestShouldFilterSuggestion(t *testing.T) {
+	tests := []struct {
+		suggestion string
+		filtered   bool
+	}{
+		{suggestion: "run the tests", filtered: false},
+		{suggestion: "Looks good", filtered: true},
+		{suggestion: "What about logs?", filtered: true},
+		{suggestion: "yes", filtered: false},
+	}
+
+	for _, tt := range tests {
+		if got := shouldFilterSuggestion(tt.suggestion); got != tt.filtered {
+			t.Fatalf("shouldFilterSuggestion(%q) = %v, want %v", tt.suggestion, got, tt.filtered)
+		}
 	}
 }

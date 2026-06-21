@@ -88,7 +88,14 @@ func (m Model) renderInputRow() string {
 		return m.renderer.styles.InputPrompt.Render(" / "+query+hint+" › ") + m.input.View()
 
 	default: // stateIdle
-		return m.renderer.styles.InputPrompt.Render(" › ") + m.input.View()
+		input := m.input
+		suggestion := m.visibleSuggestion()
+		if suggestion != "" {
+			input.Placeholder = suggestion
+			return m.renderer.styles.InputPrompt.Render(" › ") + input.View()
+		}
+		input.Placeholder = ""
+		return m.renderer.styles.InputPrompt.Render(" › ") + input.View()
 	}
 }
 
