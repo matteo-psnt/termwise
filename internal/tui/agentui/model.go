@@ -50,7 +50,8 @@ type Model struct {
 	contextWindow int
 
 	// Config
-	llmJudge bool
+	llmJudge    bool
+	suggestions bool
 	// initialPrompt is auto-submitted when the TUI starts.
 	initialPrompt string
 
@@ -157,6 +158,7 @@ func newModel(
 	stdin string,
 	r *lipgloss.Renderer,
 	llmJudge bool,
+	suggestions bool,
 	initialDraft string,
 	initialPrompt string,
 	themeName string,
@@ -190,6 +192,7 @@ func newModel(
 		stdin:            stdin,
 		contextWindow:    contextWindow,
 		llmJudge:         llmJudge,
+		suggestions:      suggestions,
 		initialPrompt:    initialPrompt,
 		input:            ti,
 		spin:             sp,

@@ -65,14 +65,16 @@ func Open(
 	var llmJudge bool
 	var closeKey string
 	var autoResume bool
+	suggestions := true
 	var configDir string
 	if cfgPath != "" {
 		cfg, exists, err := config.LoadConfig(cfgPath)
 		if err == nil && exists {
 			themeName = theme.Normalize(cfg.Settings.Theme)
-			llmJudge = cfg.Settings.LLMJudge
+			llmJudge = config.ResolveBoolSetting(cfg, "llm_judge")
 			closeKey = cfg.Settings.Keybinding
-			autoResume = cfg.Settings.AutoResume
+			autoResume = config.ResolveBoolSetting(cfg, "auto_resume")
+			suggestions = config.ResolveBoolSetting(cfg, "suggestions")
 		}
 		configDir = filepath.Dir(cfgPath)
 	}
@@ -97,7 +99,7 @@ func Open(
 	}
 
 	system := systemprompt.Agent(agenttools.Defs)
-	m := newModel(providerName, provider, modelID, system, stdin, r, llmJudge, initialDraft, initialPrompt, themeName, closeKey,
+	m := newModel(providerName, provider, modelID, system, stdin, r, llmJudge, suggestions, initialDraft, initialPrompt, themeName, closeKey,
 		promptHistory, sessionStore, sessionID, initialSession)
 
 	programOpts = append(programOpts, tea.WithMouseCellMotion())

@@ -7,10 +7,11 @@ import (
 )
 
 func TestDisplayValueFormatsToggleInTitleCase(t *testing.T) {
+	boolPtr := func(v bool) *bool { return &v }
 	cfg := config.FileConfig{
 		Settings: config.SettingsConfig{
-			LLMJudge:   true,
-			AutoResume: false,
+			LLMJudge:   boolPtr(true),
+			AutoResume: boolPtr(false),
 		},
 	}
 

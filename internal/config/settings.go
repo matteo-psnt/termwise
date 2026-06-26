@@ -61,13 +61,17 @@ type SettingDef struct {
 var Settings = []SettingDef{
 	themeSetting(),
 	keybindingSetting(),
-	boolSetting("llm_judge", "LLM judge",
-		func(cfg FileConfig) bool { return cfg.Settings.LLMJudge },
-		func(cfg *FileConfig, v bool) { cfg.Settings.LLMJudge = v },
+	boolSetting("llm_judge", "LLM judge", false,
+		func(cfg FileConfig) *bool { return cfg.Settings.LLMJudge },
+		func(cfg *FileConfig, v *bool) { cfg.Settings.LLMJudge = v },
 	),
-	boolSetting("auto_resume", "Auto resume",
-		func(cfg FileConfig) bool { return cfg.Settings.AutoResume },
-		func(cfg *FileConfig, v bool) { cfg.Settings.AutoResume = v },
+	boolSetting("auto_resume", "Auto resume", false,
+		func(cfg FileConfig) *bool { return cfg.Settings.AutoResume },
+		func(cfg *FileConfig, v *bool) { cfg.Settings.AutoResume = v },
+	),
+	boolSetting("suggestions", "Suggestions", true,
+		func(cfg FileConfig) *bool { return cfg.Settings.Suggestions },
+		func(cfg *FileConfig, v *bool) { cfg.Settings.Suggestions = v },
 	),
 }
 
@@ -120,26 +124,52 @@ func keybindingSetting() SettingDef {
 	}
 }
 
-// boolSetting constructs a SettingDef for a boolean field.
-// Validation is implicit (Get always returns "On" or "Off").
-func boolSetting(key, label string, get func(FileConfig) bool, set func(*FileConfig, bool)) SettingDef {
-	getString := func(cfg FileConfig) string {
-		if get(cfg) {
+// boolSetting constructs a SettingDef for a *bool field.
+// defaultOn is the effective value when the field has never been set (nil).
+// Get preserves the raw stored state by returning empty for nil.
+func boolSetting(key, label string, defaultOn bool, get func(FileConfig) *bool, set func(*FileConfig, *bool)) SettingDef {
+	resolve := func(v *bool) bool {
+		if v == nil {
+			return defaultOn
+		}
+		return *v
+	}
+	formatBool := func(v bool) string {
+		if v {
 			return "On"
 		}
 		return "Off"
+	}
+	getString := func(cfg FileConfig) string {
+		raw := get(cfg)
+		if raw == nil {
+			return ""
+		}
+		return formatBool(*raw)
 	}
 	return SettingDef{
 		Key:     key,
 		Label:   label,
 		Kind:    KindToggle,
 		Get:     getString,
-		Resolve: getString, // booleans have no empty state; Resolve == Get
+		Resolve: func(cfg FileConfig) string { return formatBool(resolve(get(cfg))) },
 		Set: func(cfg *FileConfig, val string) {
-			set(cfg, strings.EqualFold(val, "on") || strings.EqualFold(val, "true"))
+			on := strings.EqualFold(val, "on") || strings.EqualFold(val, "true")
+			set(cfg, &on)
 		},
-		GetAny: func(cfg FileConfig) any { return get(cfg) },
+		GetAny: func(cfg FileConfig) any { return resolve(get(cfg)) },
 	}
+}
+
+// ResolveBoolSetting returns the effective boolean value for a setting by key,
+// applying its declared default when the field has never been explicitly set.
+func ResolveBoolSetting(cfg FileConfig, key string) bool {
+	if s, ok := FindSetting(key); ok {
+		if v, ok := s.GetAny(cfg).(bool); ok {
+			return v
+		}
+	}
+	return false
 }
 
 // FindSetting returns the SettingDef with the given key, or (SettingDef{}, false).

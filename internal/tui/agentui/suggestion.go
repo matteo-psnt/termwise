@@ -116,6 +116,9 @@ func (m *Model) startSuggestion() tea.Cmd {
 }
 
 func (m Model) suggestionSuppressReason() string {
+	if !m.suggestions {
+		return "disabled"
+	}
 	if m.state != stateIdle {
 		return "not_idle"
 	}

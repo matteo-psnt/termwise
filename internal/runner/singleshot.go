@@ -124,7 +124,7 @@ func resolveRuntime() (runtimeContext, error) {
 	return runtimeContext{
 		client:   client,
 		modelID:  rc.Model,
-		llmJudge: cfg.Settings.LLMJudge,
+		llmJudge: config.ResolveBoolSetting(cfg, "llm_judge"),
 		isTTY:    tty.IsTerminal(os.Stdout),
 	}, nil
 }

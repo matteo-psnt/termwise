@@ -23,9 +23,12 @@ type ProviderConfig struct {
 }
 
 // SettingsConfig holds all user-facing preferences in a single flat block.
+// Boolean settings use *bool so nil (never written) is distinguishable from
+// an explicit false, allowing each setting to declare its own default.
 type SettingsConfig struct {
-	Theme      string `toml:"theme,omitempty"`
-	Keybinding string `toml:"keybinding,omitempty"`
-	LLMJudge   bool   `toml:"llm_judge,omitempty"`
-	AutoResume bool   `toml:"auto_resume,omitempty"`
+	Theme       string `toml:"theme,omitempty"`
+	Keybinding  string `toml:"keybinding,omitempty"`
+	LLMJudge    *bool  `toml:"llm_judge,omitempty"`
+	AutoResume  *bool  `toml:"auto_resume,omitempty"`
+	Suggestions *bool  `toml:"suggestions,omitempty"`
 }

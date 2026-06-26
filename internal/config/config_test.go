@@ -40,7 +40,7 @@ llm_judge  = true
 	assertEqual(t, "settings.theme", "ocean", cfg.Settings.Theme)
 	assertEqual(t, "settings.keybinding", "^T", cfg.Settings.Keybinding)
 
-	if !cfg.Settings.LLMJudge {
+	if !ResolveBoolSetting(cfg, "llm_judge") {
 		t.Error("expected settings.llm_judge to be true")
 	}
 }
@@ -80,7 +80,7 @@ func TestSaveAndLoadRoundtrip(t *testing.T) {
 		Providers: map[string]ProviderConfig{
 			"openai": {Auth: "env", EnvVar: "OPENAI_API_KEY", Model: "gpt-4o"},
 		},
-		Settings: SettingsConfig{Theme: "ocean", Keybinding: "^T", LLMJudge: true},
+		Settings: SettingsConfig{Theme: "ocean", Keybinding: "^T", LLMJudge: boolPtr(true)},
 	}
 
 	if err := SaveConfig(path, original); err != nil {
@@ -167,6 +167,8 @@ func TestValidateRejectsMissingProviderBlock(t *testing.T) {
 	}
 }
 
+func boolPtr(v bool) *bool { return &v }
+
 func TestValidateRejectsMissingModel(t *testing.T) {
 	cfg := FileConfig{
 		SelectedProvider: "anthropic",
@@ -211,6 +213,43 @@ func TestValidateAcceptsAllAuthMethods(t *testing.T) {
 			if strings.Contains(e, "unknown auth") {
 				t.Errorf("auth method %q unexpectedly rejected: %s", method, e)
 			}
+		}
+	}
+}
+
+func TestBoolSettingGetPreservesUnsetState(t *testing.T) {
+	cfg := FileConfig{}
+
+	for _, key := range []string{"llm_judge", "auto_resume", "suggestions"} {
+		def, ok := FindSetting(key)
+		if !ok {
+			t.Fatalf("expected setting %q to exist", key)
+		}
+		if got := def.Get(cfg); got != "" {
+			t.Fatalf("def.Get(%q) = %q, want empty for unset value", key, got)
+		}
+	}
+}
+
+func TestBoolSettingResolveAppliesDefaults(t *testing.T) {
+	cfg := FileConfig{}
+
+	tests := []struct {
+		key  string
+		want string
+	}{
+		{key: "llm_judge", want: "Off"},
+		{key: "auto_resume", want: "Off"},
+		{key: "suggestions", want: "On"},
+	}
+
+	for _, tt := range tests {
+		def, ok := FindSetting(tt.key)
+		if !ok {
+			t.Fatalf("expected setting %q to exist", tt.key)
+		}
+		if got := def.Resolve(cfg); got != tt.want {
+			t.Fatalf("def.Resolve(%q) = %q, want %q", tt.key, got, tt.want)
 		}
 	}
 }

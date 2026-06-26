@@ -18,18 +18,18 @@ func glamourStyle(r *lipgloss.Renderer) string {
 // Styles holds all lipgloss styles for the TUI.
 // Built once at model construction from a renderer tied to the output TTY.
 type Styles struct {
-	Outer          lipgloss.Style
-	Header         lipgloss.Style
-	UserSymbol     lipgloss.Style
-	TWSymbol       lipgloss.Style
-	ToolCall       lipgloss.Style
-	ToolOutput     lipgloss.Style
-	ApprovalHint   lipgloss.Style
-	Spinner        lipgloss.Style
-	Error          lipgloss.Style
-	Command        lipgloss.Style
-	InputPrompt    lipgloss.Style
-	Suggestion lipgloss.Style
+	Outer        lipgloss.Style
+	Header       lipgloss.Style
+	UserSymbol   lipgloss.Style
+	TWSymbol     lipgloss.Style
+	ToolCall     lipgloss.Style
+	ToolOutput   lipgloss.Style
+	ApprovalHint lipgloss.Style
+	Spinner      lipgloss.Style
+	Error        lipgloss.Style
+	Command      lipgloss.Style
+	InputPrompt  lipgloss.Style
+	Suggestion   lipgloss.Style
 }
 
 func newStyles(r *lipgloss.Renderer, palette theme.Palette) Styles {
@@ -46,16 +46,16 @@ func newStyles(r *lipgloss.Renderer, palette theme.Palette) Styles {
 			BorderBottom(true).
 			BorderTop(false).
 			BorderForeground(dim),
-		Header:         r.NewStyle().Foreground(dim),
-		UserSymbol:     r.NewStyle().Faint(true),
-		TWSymbol:       r.NewStyle().Foreground(accent),
-		ToolCall:       r.NewStyle().Faint(true),
-		ToolOutput:     r.NewStyle().Faint(true),
-		ApprovalHint:   r.NewStyle(),
-		Spinner:        r.NewStyle().Foreground(accent),
-		Error:          r.NewStyle().Foreground(errCol),
-		Command:        r.NewStyle().Bold(true),
-		InputPrompt:    r.NewStyle().Foreground(accent),
-		Suggestion: r.NewStyle().Foreground(dim).Italic(true),
+		Header:       r.NewStyle().Foreground(dim),
+		UserSymbol:   r.NewStyle().Faint(true),
+		TWSymbol:     r.NewStyle().Foreground(accent),
+		ToolCall:     r.NewStyle().Faint(true),
+		ToolOutput:   r.NewStyle().Faint(true),
+		ApprovalHint: r.NewStyle(),
+		Spinner:      r.NewStyle().Foreground(accent),
+		Error:        r.NewStyle().Foreground(errCol),
+		Command:      r.NewStyle().Bold(true),
+		InputPrompt:  r.NewStyle().Foreground(accent),
+		Suggestion:   r.NewStyle().Foreground(dim).Italic(true),
 	}
 }
