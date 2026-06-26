@@ -45,18 +45,24 @@ func LoadConfig(path string) (FileConfig, bool, error) {
 // SaveConfig writes cfg to path atomically.
 // The config directory is created (mode 0700) if it does not exist, and the
 // config file is written with mode 0600 before being renamed into place.
-func SaveConfig(path string, cfg FileConfig) (err error) {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("creating config directory: %w", err)
-	}
-
+func SaveConfig(path string, cfg FileConfig) error {
 	data, err := toml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
+	return atomicWriteFile(path, data)
+}
 
-	tmp, err := os.CreateTemp(dir, ".config.toml.tmp")
+// atomicWriteFile writes data to path atomically: it creates a temp file in the
+// same directory, syncs it, chmods it to 0600, then renames it into place.
+// The directory is created with mode 0700 if it does not exist.
+func atomicWriteFile(path string, data []byte) (err error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(dir, ".tmp")
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
@@ -70,19 +76,19 @@ func SaveConfig(path string, cfg FileConfig) (err error) {
 	}()
 
 	if _, err = tmp.Write(data); err != nil {
-		return fmt.Errorf("writing config: %w", err)
+		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	if err = tmp.Sync(); err != nil {
-		return fmt.Errorf("syncing config: %w", err)
+		return fmt.Errorf("syncing %s: %w", path, err)
 	}
 	if err = tmp.Close(); err != nil {
 		return fmt.Errorf("closing temp file: %w", err)
 	}
 	if err = os.Chmod(tmpPath, 0o600); err != nil {
-		return fmt.Errorf("setting config permissions: %w", err)
+		return fmt.Errorf("setting permissions: %w", err)
 	}
 	if err = os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("saving config: %w", err)
+		return fmt.Errorf("saving %s: %w", path, err)
 	}
 	return nil
 }

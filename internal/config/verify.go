@@ -9,11 +9,18 @@ import (
 
 // ListProviderModels returns the models available for the given provider config.
 func ListProviderModels(ctx context.Context, name string, pc ProviderConfig) ([]provider.Model, error) {
-	client, err := newProviderClient(name, pc)
+	auth, err := ResolveAuth(name, pc)
 	if err != nil {
 		return nil, err
 	}
-	return client.ListModels(ctx)
+	desc := modelCacheDescriptorFor(name, auth)
+	return defaultProviderModelsCache.getOrFetch(ctx, desc, func(ctx context.Context) ([]provider.Model, error) {
+		client, err := newProviderClientWithAuth(name, pc, auth)
+		if err != nil {
+			return nil, err
+		}
+		return client.ListModels(ctx)
+	})
 }
 
 // CheckProviderConnectivity verifies that the provider is reachable and returns
@@ -29,13 +36,7 @@ func CheckProviderConnectivity(ctx context.Context, name string, pc ProviderConf
 	return nil
 }
 
-// newProviderClient resolves auth and constructs a provider client from a
-// ProviderConfig. Used internally for connectivity checks and model listing.
-func newProviderClient(name string, pc ProviderConfig) (provider.AgentClient, error) {
-	auth, err := ResolveAuth(name, pc)
-	if err != nil {
-		return nil, err
-	}
+func newProviderClientWithAuth(name string, pc ProviderConfig, auth ResolvedAuth) (provider.AgentClient, error) {
 	if name != "anthropic" && auth.BaseURL == "" && !isKnownProvider(name) {
 		return nil, fmt.Errorf("unknown provider %q — supported: %v", name, ProviderNames())
 	}
