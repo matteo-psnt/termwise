@@ -84,6 +84,7 @@ func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if len(resp.ToolCalls) == 0 {
+		m.clearShellCommand()
 		m.finishGeneration()
 		m.state = stateIdle
 		m.refreshViewport()
@@ -144,8 +145,10 @@ func (m Model) handleAskMsg(msg agent.AskMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleRespondMsg(msg agent.RespondMsg) (tea.Model, tea.Cmd) {
 	if msg.RespondType == "command" {
+		m.setShellCommand(msg.Content)
 		m.appendThreadEntries(CommandEntry{Content: msg.Content})
 	} else {
+		m.clearShellCommand()
 		m.appendThreadEntries(AssistantEntry{Content: msg.Content})
 	}
 	m.appendToolResultsMessage(msg.Collected)

@@ -236,3 +236,80 @@ func TestShouldFilterSuggestion(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleRespondMsgStoresShellCommand(t *testing.T) {
+	m := Model{
+		state: stateThinking,
+		vp:    viewport.New(80, 10),
+	}
+
+	gotModel, _ := m.handleRespondMsg(agent.RespondMsg{
+		RespondType: "command",
+		Content:     "go test ./...",
+	})
+	got := gotModel.(Model)
+
+	if got.shellCommand != "go test ./..." {
+		t.Fatalf("expected shell command result, got %q", got.shellCommand)
+	}
+}
+
+func TestHandleRespondMsgTextClearsShellCommand(t *testing.T) {
+	m := Model{
+		state:        stateThinking,
+		vp:           viewport.New(80, 10),
+		shellCommand: "go test ./...",
+	}
+
+	gotModel, _ := m.handleRespondMsg(agent.RespondMsg{
+		RespondType: "text",
+		Content:     "done",
+	})
+	got := gotModel.(Model)
+
+	if got.exitShellCommand() != "" {
+		t.Fatalf("expected shell result to clear, got %q", got.shellCommand)
+	}
+}
+
+func TestSubmitMessageClearsPendingShellCommand(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	suggestionCtx, suggestionCancel := context.WithCancel(context.Background())
+	defer suggestionCancel()
+
+	m := Model{
+		ctx:              ctx,
+		cancel:           cancel,
+		suggestionCtx:    suggestionCtx,
+		suggestionCancel: suggestionCancel,
+		state:            stateIdle,
+		vp:               viewport.New(80, 10),
+		contextWindow:    32_000,
+		shellCommand:     "go test ./...",
+	}
+
+	gotModel, _ := m.submitMessage("next question")
+	got := gotModel.(Model)
+
+	if got.exitShellCommand() != "" {
+		t.Fatalf("expected shell result to clear on new prompt, got %q", got.shellCommand)
+	}
+}
+
+func TestHandleResponseMsgWithoutToolsClearsShellCommand(t *testing.T) {
+	m := Model{
+		state:        stateThinking,
+		vp:           viewport.New(80, 10),
+		shellCommand: "go test ./...",
+	}
+
+	gotModel, _ := m.handleResponseMsg(agent.ResponseMsg{
+		Resp: &provider.ChatResponse{Content: "plain text"},
+	})
+	got := gotModel.(Model)
+
+	if got.exitShellCommand() != "" {
+		t.Fatalf("expected shell result to clear after plain text response, got %q", got.shellCommand)
+	}
+}

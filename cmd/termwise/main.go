@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/runner"
 	"github.com/matteo-psnt/termwise/internal/tui/agentui"
 )
@@ -20,22 +21,26 @@ func main() {
 		Long:  "tw — open the agent TUI, optionally with an initial prompt. Use `tw ask` for a headless agent response.",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			prefill, _ := cmd.Flags().GetString("prefill")
 			sessionID, _ := cmd.Flags().GetString("session-id")
 			resume, _ := cmd.Flags().GetBool("resume")
-			if len(args) == 0 {
-				return openTUI(prefill, "", sessionID, resume)
+			shellWidget, _ := cmd.Flags().GetBool("shell-widget")
+			if shellWidget {
+				return runShellWidget(sessionID, resume, args)
 			}
-			return openTUI("", strings.Join(args, " "), sessionID, resume)
+
+			if len(args) == 0 {
+				return openTUI(sessionID, resume)
+			}
+			return openTUIWithPrompt(strings.Join(args, " "), sessionID, resume)
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 
-	root.Flags().String("prefill", "", "")
-	root.Flags().Lookup("prefill").Hidden = true
 	root.Flags().String("session-id", "", "")
 	root.Flags().Lookup("session-id").Hidden = true
+	root.Flags().Bool("shell-widget", false, "")
+	root.Flags().Lookup("shell-widget").Hidden = true
 	root.Flags().Bool("resume", false, "Resume the most recent session for this terminal")
 
 	root.AddCommand(askCmd)
@@ -56,18 +61,62 @@ func main() {
 	// (cobra swallows non-nil errors; RunE errors land in the Execute() return above.)
 }
 
-func openTUI(initialDraft string, initialPrompt string, sessionID string, forceResume bool) error {
-	cfgPath, err := config.DefaultConfigPath()
+func openTUI(sessionID string, forceResume bool) error {
+	rt, err := resolveTUIRuntime()
 	if err != nil {
 		return err
+	}
+	return agentui.Open(rt.providerName, rt.client, rt.modelID, rt.cfgPath, sessionID, forceResume)
+}
+
+func openTUIWithPrompt(initialPrompt string, sessionID string, forceResume bool) error {
+	rt, err := resolveTUIRuntime()
+	if err != nil {
+		return err
+	}
+	return agentui.OpenWithPrompt(rt.providerName, rt.client, rt.modelID, rt.cfgPath, initialPrompt, sessionID, forceResume)
+}
+
+type tuiRuntime struct {
+	cfgPath      string
+	providerName string
+	client       provider.AgentClient
+	modelID      string
+}
+
+func resolveTUIRuntime() (tuiRuntime, error) {
+	cfgPath, err := config.DefaultConfigPath()
+	if err != nil {
+		return tuiRuntime{}, err
 	}
 	rc, err := config.LoadRuntimeConfig(cfgPath)
 	if err != nil {
-		return err
+		return tuiRuntime{}, err
 	}
 	client, err := config.NewClientFromResolved(rc)
 	if err != nil {
+		return tuiRuntime{}, err
+	}
+	return tuiRuntime{
+		cfgPath:      cfgPath,
+		providerName: rc.ProviderName,
+		client:       client,
+		modelID:      rc.Model,
+	}, nil
+}
+
+func runShellWidget(sessionID string, forceResume bool, args []string) error {
+	if len(args) != 0 {
+		return fmt.Errorf("shell widget mode does not accept positional arguments")
+	}
+	rt, err := resolveTUIRuntime()
+	if err != nil {
 		return err
 	}
-	return agentui.Open(rc.ProviderName, client, rc.Model, cfgPath, initialDraft, initialPrompt, sessionID, forceResume)
+	result, err := agentui.OpenShellWidget(rt.providerName, rt.client, rt.modelID, rt.cfgPath, sessionID, forceResume)
+	if err != nil {
+		return err
+	}
+	fmt.Print(result)
+	return nil
 }

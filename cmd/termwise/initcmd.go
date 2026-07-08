@@ -73,11 +73,17 @@ tw() {
 }
 
 _termwise_widget() {
+    local _tw_result _tw_status
     zle -I
-    if [[ -n "$BUFFER" ]]; then
-        command termwise --session-id "$$" --prefill "$BUFFER" 0<>/dev/tty >&0 2>&0
-    else
-        command termwise --session-id "$$" 0<>/dev/tty >&0 2>&0
+    _tw_result="$(printf '%%s' "$BUFFER" | command termwise --shell-widget --session-id "$$")"
+    _tw_status=$?
+    if [[ $_tw_status -ne 0 ]]; then
+        zle reset-prompt
+        return
+    fi
+    if [[ -n "$_tw_result" ]]; then
+        BUFFER="$_tw_result"
+        CURSOR=${#BUFFER}
     fi
     zle reset-prompt
 }
@@ -109,10 +115,15 @@ tw() {
 }
 
 _termwise_widget() {
-    if [[ -n "$READLINE_LINE" ]]; then
-        command termwise --session-id "$$" --prefill "$READLINE_LINE" 0<>/dev/tty >&0 2>&0
-    else
-        command termwise --session-id "$$" 0<>/dev/tty >&0 2>&0
+    local _tw_result _tw_status
+    _tw_result="$(printf '%%s' "$READLINE_LINE" | command termwise --shell-widget --session-id "$$")"
+    _tw_status=$?
+    if [[ $_tw_status -ne 0 ]]; then
+        return
+    fi
+    if [[ -n "$_tw_result" ]]; then
+        READLINE_LINE="$_tw_result"
+        READLINE_POINT=${#READLINE_LINE}
     fi
 }
 # Remove any previous _termwise_widget binding before applying the configured one.

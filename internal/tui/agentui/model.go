@@ -117,6 +117,10 @@ type Model struct {
 	sessionStore *history.SessionStore
 	sessionID    string
 	providerName string
+
+	// shellCommand holds the latest completed command that can be returned to a
+	// shell IPC caller when the TUI exits.
+	shellCommand string
 }
 
 type generationMsg struct {
@@ -274,6 +278,18 @@ func (m *Model) saveSession() {
 		Thread:       serializeThread(m.thread),
 	}
 	m.sessionStore.Save(s) //nolint:errcheck // Session persistence is best-effort during UI updates.
+}
+
+func (m *Model) setShellCommand(content string) {
+	m.shellCommand = strings.TrimSpace(content)
+}
+
+func (m *Model) clearShellCommand() {
+	m.shellCommand = ""
+}
+
+func (m Model) exitShellCommand() string {
+	return m.shellCommand
 }
 
 // handleKey handles all keyboard input based on current state.
@@ -616,6 +632,7 @@ func (m Model) handlePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) submitMessage(text string) (tea.Model, tea.Cmd) {
 	m.resetSuggestionContext()
 	m.clearSuggestion()
+	m.clearShellCommand()
 
 	// Attach stdin to first user message if present.
 	content := text
