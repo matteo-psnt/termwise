@@ -1,0 +1,28 @@
+pre-commit:
+  parallel: true
+  commands:
+    check-merge-conflict:
+      run: |
+        files=$(git diff --cached --name-only)
+        if [ -n "$files" ] && echo "$files" | xargs grep -rl "^<<<<<<< " 2>/dev/null | grep -q .; then
+          echo "Merge conflict markers found"
+          exit 1
+        fi
+
+    check-added-large-files:
+      run: |
+        for f in $(git diff --cached --name-only); do
+          size=$(git cat-file -s ":$f" 2>/dev/null || echo 0)
+          if [ "$size" -gt 500000 ]; then
+            echo "Large file: $f ($size bytes, limit 500KB)"
+            exit 1
+          fi
+        done
+
+    golangci-lint-fmt:
+      glob: "**/*.go"
+      run: golangci-lint fmt
+
+    golangci-lint:
+      glob: "**/*.go"
+      run: golangci-lint run
