@@ -24,18 +24,13 @@ func ChatCmd(ctx context.Context, provider provider.AgentClient, req provider.Ch
 func NextToolStep(ctx context.Context, toolCalls []provider.ToolCall, collected []provider.ToolResult, needsApproval func(string) bool) ToolStep {
 	for i, tc := range toolCalls {
 		switch tc.Name {
-		case "respond":
-			respondType, _ := tc.Input["type"].(string)
+		case "command":
 			content, _ := tc.Input["content"].(string)
-			if respondType == "" {
-				respondType = "text"
-			}
 			return ToolStep{
-				Kind:        ToolStepRespond,
-				ToolCall:    tc,
-				RespondType: respondType,
-				Content:     content,
-				Collected:   append(collected, provider.ToolResult{ToolCallID: tc.ID, Content: "ok"}),
+				Kind:      ToolStepRespond,
+				ToolCall:  tc,
+				Content:   content,
+				Collected: append(collected, provider.ToolResult{ToolCallID: tc.ID, Content: "ok"}),
 			}
 
 		case "read":
@@ -114,10 +109,9 @@ func ProcessToolsCmd(ctx context.Context, toolCalls []provider.ToolCall, collect
 		switch step.Kind {
 		case ToolStepRespond:
 			return RespondMsg{
-				ToolCallID:  step.ToolCall.ID,
-				RespondType: step.RespondType,
-				Content:     step.Content,
-				Collected:   step.Collected,
+				ToolCallID: step.ToolCall.ID,
+				Content:    step.Content,
+				Collected:  step.Collected,
 			}
 		case ToolStepExecuted:
 			return ToolExecutedMsg{

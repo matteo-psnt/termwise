@@ -144,19 +144,14 @@ func (m Model) handleAskMsg(msg agent.AskMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleRespondMsg(msg agent.RespondMsg) (tea.Model, tea.Cmd) {
-	if msg.RespondType == "command" {
-		m.setShellCommand(msg.Content)
-		m.appendThreadEntries(CommandEntry{Content: msg.Content})
-	} else {
-		m.clearShellCommand()
-		m.appendThreadEntries(AssistantEntry{Content: msg.Content})
-	}
+	m.setShellCommand(msg.Content)
+	m.appendThreadEntries(CommandEntry{Content: msg.Content})
 	m.appendToolResultsMessage(msg.Collected)
 	m.finishGeneration()
-	m.state = stateIdle
+	m.state = stateCommandProposal
 	m.refreshViewport()
 	m.saveSession()
-	return m, m.startSuggestion()
+	return m, nil
 }
 
 func (m Model) handleAllToolsDoneMsg(msg agent.AllToolsDoneMsg) (tea.Model, tea.Cmd) {
@@ -166,10 +161,12 @@ func (m Model) handleAllToolsDoneMsg(msg agent.AllToolsDoneMsg) (tea.Model, tea.
 }
 
 func (m Model) updateViewportOnly(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.state != stateIdle && m.state != stateThinking && m.state != stateJudging {
-		return m, nil
+	var inputCmd tea.Cmd
+	m.input, inputCmd = m.input.Update(msg)
+	if m.state != stateIdle && m.state != stateThinking && m.state != stateJudging && m.state != stateCommandProposal {
+		return m, inputCmd
 	}
 	var vpCmd tea.Cmd
 	m.vp, vpCmd = m.vp.Update(msg)
-	return m, vpCmd
+	return m, tea.Batch(vpCmd, inputCmd)
 }

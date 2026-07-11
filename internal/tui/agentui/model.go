@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -26,12 +27,14 @@ import (
 type tuiState int
 
 const (
-	stateIdle       tuiState = iota
-	stateThinking            // waiting for model
-	stateApproval            // waiting for bash approval
-	stateJudging             // LLM judging a bash command
-	stateAskPicker           // waiting for ask answer
-	stateHistSearch          // Ctrl+R reverse search through prompt history
+	stateIdle            tuiState = iota
+	stateThinking                 // waiting for model
+	stateApproval                 // waiting for bash approval
+	stateApprovalEdit             // user is editing a bash command before running
+	stateJudging                  // LLM judging a bash command
+	stateAskPicker                // waiting for ask answer
+	stateHistSearch               // Ctrl+R reverse search through prompt history
+	stateCommandProposal          // model proposed a shell command; awaiting accept/dismiss
 )
 
 // histSearchState holds the state for Ctrl+R reverse search.
@@ -80,6 +83,7 @@ type Model struct {
 	height       int
 	ready        bool
 	userScrolled bool // true when user has manually scrolled up
+	showHelp     bool // ? key toggles the contextual key-binding overlay
 
 	// Cancellation for the current in-flight async generation.
 	ctx              context.Context
@@ -121,7 +125,13 @@ type Model struct {
 	// shellCommand holds the latest completed command that can be returned to a
 	// shell IPC caller when the TUI exits.
 	shellCommand string
+
+	// lastEscAt tracks when the most recent Esc was pressed in idle state,
+	// enabling the double-Esc-to-stash gesture.
+	lastEscAt time.Time
 }
+
+type escTimeoutMsg struct{}
 
 type generationMsg struct {
 	generation uint64
@@ -175,6 +185,9 @@ func newModel(
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.Placeholder = ""
+	ti.Cursor.Style = r.NewStyle()
+	ti.Cursor.TextStyle = r.NewStyle()
+	ti.Cursor.SetMode(cursor.CursorStatic)
 	ti.SetValue(initialDraft)
 	ti.Focus()
 
@@ -228,7 +241,7 @@ func newModel(
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.spin.Tick, textinput.Blink}
+	cmds := []tea.Cmd{m.spin.Tick}
 	if prompt := strings.TrimSpace(m.initialPrompt); prompt != "" {
 		cmds = append(cmds, func() tea.Msg { return initialPromptMsg{prompt: prompt} })
 	}
@@ -248,8 +261,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleSuggestionMsg(msg)
 	case initialPromptMsg:
 		return m.handleInitialPrompt(msg.prompt)
-	case tea.MouseMsg:
-		return m.handleMouse(msg)
+	case escTimeoutMsg:
+		m.lastEscAt = time.Time{}
+		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -303,6 +317,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// When the help overlay is visible, any non-quit key closes it without further action.
+	// This prevents keystrokes from silently reaching hidden inputs (e.g. the textinput).
+	if m.showHelp {
+		m.showHelp = false
+		return m, nil
+	}
+
+	// ? opens the help overlay when the user is not mid-message.
+	if msg.String() == "?" {
+		if m.state != stateIdle || m.input.Value() == "" {
+			m.showHelp = true
+			return m, nil
+		}
+	}
+
 	switch m.state {
 	case stateIdle:
 		return m.handleIdleKey(msg)
@@ -310,6 +339,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleThinkingKey(msg)
 	case stateApproval:
 		return m.handleApprovalKey(msg)
+	case stateApprovalEdit:
+		return m.handleApprovalEditKey(msg)
+	case stateCommandProposal:
+		return m.handleCommandProposalKey(msg)
 	case stateAskPicker:
 		return m.handlePickerKey(msg)
 	case stateHistSearch:
@@ -385,8 +418,23 @@ func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyEsc:
-		// ESC while idle does nothing.
-		return m, nil
+		if m.input.Value() == "" {
+			return m, nil
+		}
+		if !m.lastEscAt.IsZero() && time.Since(m.lastEscAt) < 500*time.Millisecond {
+			text := m.input.Value()
+			m.input.SetValue("")
+			m.input.CursorEnd()
+			m.lastEscAt = time.Time{}
+			if m.promptHistory != nil {
+				_ = m.promptHistory.Push(text)
+			}
+			return m, nil
+		}
+		m.lastEscAt = time.Now()
+		return m, tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
+			return escTimeoutMsg{}
+		})
 
 	default:
 		if msg.String() == "ctrl+r" {
@@ -594,13 +642,90 @@ func (m Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
 		return m.approvePendingBash()
-
 	case tea.KeyEsc:
-		m.appendThreadEntries(ToolResultEntry{Content: "User denied this command.", IsError: true})
-		m.refreshViewport()
-		return m.resumePendingToolLoop(m.pending.result("User denied this command.", true))
+		return m.denyPendingBash()
+	}
+	switch msg.String() {
+	case "1", "y":
+		return m.approvePendingBash()
+	case "2", "n":
+		return m.denyPendingBash()
+	case "3", "e":
+		cmd, _ := m.pending.toolCall.Input["command"].(string)
+		m.input.SetValue(cmd)
+		m.input.CursorEnd()
+		m.state = stateApprovalEdit
+		return m, nil
 	}
 	return m, nil
+}
+
+func (m Model) denyPendingBash() (tea.Model, tea.Cmd) {
+	m.appendThreadEntries(ToolResultEntry{Content: "User denied this command.", IsError: true})
+	m.refreshViewport()
+	return m.resumePendingToolLoop(m.pending.result("User denied this command.", true))
+}
+
+func (m Model) handleApprovalEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		edited := strings.TrimSpace(m.input.Value())
+		m.input.SetValue("")
+		if edited != "" {
+			m.pending.toolCall.Input["command"] = edited
+		}
+		return m.approvePendingBash()
+	case tea.KeyEsc:
+		m.input.SetValue("")
+		m.state = stateApproval
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m Model) handleCommandProposalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		return m.acceptCommandProposal()
+	case tea.KeyEsc:
+		return m.dismissCommandProposal()
+	case tea.KeyPgUp:
+		m.vp.PageUp()
+		if m.vp.ScrollPercent() < 1.0 {
+			m.userScrolled = true
+		}
+		return m, nil
+	case tea.KeyPgDown:
+		m.vp.PageDown()
+		if m.vp.ScrollPercent() >= 1.0 {
+			m.userScrolled = false
+		}
+		return m, nil
+	case tea.KeyEnd:
+		m.userScrolled = false
+		m.vp.GotoBottom()
+		return m, nil
+	}
+	switch msg.String() {
+	case "1":
+		return m.acceptCommandProposal()
+	case "2":
+		return m.dismissCommandProposal()
+	}
+	return m, nil
+}
+
+func (m Model) acceptCommandProposal() (tea.Model, tea.Cmd) {
+	return m.quit()
+}
+
+func (m Model) dismissCommandProposal() (tea.Model, tea.Cmd) {
+	m.clearShellCommand()
+	m.state = stateIdle
+	m.refreshViewport()
+	return m, m.startSuggestion()
 }
 
 // needsApproval returns true if the bash command must be confirmed by the user.
@@ -730,32 +855,6 @@ func (m *Model) refreshViewport() {
 	}
 }
 
-// handleMouse handles mouse events: wheel scrolling and title-bar clicks to go to bottom.
-func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	// Left-click on the title bar releases the scroll lock and snaps to bottom.
-	if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && msg.Y == 0 && m.userScrolled {
-		m.userScrolled = false
-		m.vp.GotoBottom()
-		return m, nil
-	}
-
-	var vpCmd tea.Cmd
-	m.vp, vpCmd = m.vp.Update(msg)
-
-	switch msg.Button {
-	case tea.MouseButtonWheelUp:
-		if m.vp.ScrollPercent() < 1.0 {
-			m.userScrolled = true
-		}
-	case tea.MouseButtonWheelDown:
-		if m.vp.ScrollPercent() >= 1.0 {
-			m.userScrolled = false
-		}
-	}
-
-	return m, vpCmd
-}
-
 // popupHeight is the maximum number of terminal lines the TUI occupies.
 // Inline mode (no alt screen) renders in place, so we cap the height to
 // keep it feeling like a small popup rather than a full-page takeover.
@@ -763,9 +862,8 @@ const popupHeight = 20
 
 // viewportDims calculates viewport dimensions from terminal size.
 func (m Model) viewportDims() (width, height int) {
-	// Layout: top border(1) | viewport | input(1) | bottom border(1)
-	// Outer style: 1 border char each side = 2 chars total horizontal chrome.
-	innerW := m.width - 2
+	// Layout: header(1) | viewport | sep(1) | input(1) | sep(1) | status(1)
+	innerW := m.width
 	if innerW < 10 {
 		innerW = 10
 	}
@@ -773,7 +871,7 @@ func (m Model) viewportDims() (width, height int) {
 	if m.height > 0 && m.height < h {
 		h = m.height
 	}
-	innerH := h - 3 // top border(1) + input(1) + bottom border(1)
+	innerH := h - 5 // header(1) + sep(1) + input(1) + sep(1) + status(1)
 	if innerH < 3 {
 		innerH = 3
 	}

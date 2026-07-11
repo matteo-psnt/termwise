@@ -244,31 +244,12 @@ func TestHandleRespondMsgStoresShellCommand(t *testing.T) {
 	}
 
 	gotModel, _ := m.handleRespondMsg(agent.RespondMsg{
-		RespondType: "command",
-		Content:     "go test ./...",
+		Content: "go test ./...",
 	})
 	got := gotModel.(Model)
 
 	if got.shellCommand != "go test ./..." {
 		t.Fatalf("expected shell command result, got %q", got.shellCommand)
-	}
-}
-
-func TestHandleRespondMsgTextClearsShellCommand(t *testing.T) {
-	m := Model{
-		state:        stateThinking,
-		vp:           viewport.New(80, 10),
-		shellCommand: "go test ./...",
-	}
-
-	gotModel, _ := m.handleRespondMsg(agent.RespondMsg{
-		RespondType: "text",
-		Content:     "done",
-	})
-	got := gotModel.(Model)
-
-	if got.exitShellCommand() != "" {
-		t.Fatalf("expected shell result to clear, got %q", got.shellCommand)
 	}
 }
 

@@ -202,7 +202,6 @@ func openProgram(cfg openProgramConfig) (string, error) {
 	m := newModel(cfg.providerName, cfg.provider, cfg.modelID, system, cfg.stdin, r, llmJudge, suggestions, cfg.initialDraft, cfg.initialPrompt, themeName, closeKey,
 		promptHistory, sessionStore, cfg.sessionID, initialSession)
 
-	programOpts = append(programOpts, tea.WithMouseCellMotion())
 	p := tea.NewProgram(m, programOpts...)
 	finalModel, err := p.Run()
 	if err != nil {

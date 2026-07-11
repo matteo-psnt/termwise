@@ -62,29 +62,24 @@ var (
 			"required": []string{"question", "options"},
 		},
 	}
-	RespondDef = provider.ToolDef{
-		Name:        "respond",
-		Description: "Deliver the final response to the user. Use 'command' for runnable shell commands, 'text' for explanations.",
+	CommandDef = provider.ToolDef{
+		Name:        "command",
+		Description: "Propose a shell command for the user to review and run.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"type": map[string]any{
-					"type":        "string",
-					"enum":        []string{"command", "text"},
-					"description": "'command' for a shell command to run, 'text' for an explanation or answer.",
-				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "The response content.",
+					"description": "The shell command to propose.",
 				},
 			},
-			"required": []string{"type", "content"},
+			"required": []string{"content"},
 		},
 	}
 )
 
 // Defs are the tool definitions sent to the model in the interactive agent TUI.
-var Defs = []provider.ToolDef{ReadDef, BashDef, AskDef, RespondDef}
+var Defs = []provider.ToolDef{ReadDef, BashDef, AskDef, CommandDef}
 
 // HeadlessDefs are the tool definitions available to non-interactive agent runs.
-var HeadlessDefs = []provider.ToolDef{ReadDef, BashDef, RespondDef}
+var HeadlessDefs = []provider.ToolDef{ReadDef, BashDef, CommandDef}

@@ -106,7 +106,7 @@ func runToolLoop(
 		step := NextToolStep(ctx, remaining, collected, needsApproval)
 		switch step.Kind {
 		case ToolStepRespond:
-			final := FinalResponse{Type: step.RespondType, Content: strings.TrimSpace(step.Content)}
+			final := FinalResponse{Type: "command", Content: strings.TrimSpace(step.Content)}
 			return &final, nil, nil
 		case ToolStepExecuted:
 			collected = step.Collected

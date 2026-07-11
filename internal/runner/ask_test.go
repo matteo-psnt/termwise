@@ -28,7 +28,7 @@ func (f fakeAgentClient) Chat(ctx context.Context, req provider.ChatRequest) (*p
 	return f.chatFn(ctx, req)
 }
 
-func TestRunHeadlessAgentUsesHeadlessDefsAndRespond(t *testing.T) {
+func TestRunHeadlessAgentUsesHeadlessDefsAndCommand(t *testing.T) {
 	var toolNames []string
 	client := fakeAgentClient{
 		chatFn: func(_ context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
@@ -36,9 +36,8 @@ func TestRunHeadlessAgentUsesHeadlessDefsAndRespond(t *testing.T) {
 			return &provider.ChatResponse{
 				ToolCalls: []provider.ToolCall{{
 					ID:   "1",
-					Name: "respond",
+					Name: "command",
 					Input: map[string]any{
-						"type":    "command",
 						"content": "git status",
 					},
 				}},
@@ -53,7 +52,7 @@ func TestRunHeadlessAgentUsesHeadlessDefsAndRespond(t *testing.T) {
 	if output.Type != "command" || output.Content != "git status" {
 		t.Fatalf("unexpected output: %#v", output)
 	}
-	if got, want := strings.Join(toolNames, ","), "read,bash,respond"; got != want {
+	if got, want := strings.Join(toolNames, ","), "read,bash,command"; got != want {
 		t.Fatalf("expected headless tools %q, got %q", want, got)
 	}
 }
@@ -107,16 +106,7 @@ func TestRunHeadlessAgentApprovalFailureFeedsBackToModel(t *testing.T) {
 				if !strings.Contains(last.ToolResults[0].Content, "llm_judge is disabled") {
 					t.Fatalf("unexpected tool result: %#v", last.ToolResults[0])
 				}
-				return &provider.ChatResponse{
-					ToolCalls: []provider.ToolCall{{
-						ID:   "respond-1",
-						Name: "respond",
-						Input: map[string]any{
-							"type":    "text",
-							"content": "used a safer path",
-						},
-					}},
-				}, nil
+				return &provider.ChatResponse{Content: "used a safer path"}, nil
 			default:
 				t.Fatalf("unexpected chat call %d", calls)
 				return nil, nil
@@ -171,16 +161,7 @@ func TestRunHeadlessAgentJudgeSafeExecutesCommand(t *testing.T) {
 				if result.ExitCode != 0 {
 					t.Fatalf("expected exit code 0, got %d", result.ExitCode)
 				}
-				return &provider.ChatResponse{
-					ToolCalls: []provider.ToolCall{{
-						ID:   "respond-1",
-						Name: "respond",
-						Input: map[string]any{
-							"type":    "text",
-							"content": "done",
-						},
-					}},
-				}, nil
+				return &provider.ChatResponse{Content: "done"}, nil
 			default:
 				t.Fatalf("unexpected normal chat call %d", normalCalls)
 				return nil, nil
@@ -234,16 +215,7 @@ func TestRunHeadlessAgentJudgeUnsafeReturnsToolError(t *testing.T) {
 				if !strings.Contains(last.ToolResults[0].Content, "not auto-approved") {
 					t.Fatalf("unexpected tool result: %#v", last.ToolResults[0])
 				}
-				return &provider.ChatResponse{
-					ToolCalls: []provider.ToolCall{{
-						ID:   "respond-1",
-						Name: "respond",
-						Input: map[string]any{
-							"type":    "text",
-							"content": "blocked",
-						},
-					}},
-				}, nil
+				return &provider.ChatResponse{Content: "blocked"}, nil
 			default:
 				t.Fatalf("unexpected normal chat call %d", normalCalls)
 				return nil, nil

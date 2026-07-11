@@ -79,7 +79,11 @@ type ToolCallEntry struct {
 }
 
 func (e ToolCallEntry) render(r Renderer) string {
-	return r.styles.ToolCall.Render(capitalizeFirst(e.Name) + "(" + e.Detail + ")")
+	label := "  ─ " + strings.ToLower(e.Name)
+	if e.Detail != "" {
+		label += ": " + e.Detail
+	}
+	return r.styles.ToolCall.Render(label)
 }
 
 // ToolResultEntry shows the output of a tool call.
@@ -131,13 +135,6 @@ type ErrorEntry struct{ Content string }
 
 func (e ErrorEntry) render(r Renderer) string {
 	return r.styles.Error.Render("Error: " + e.Content)
-}
-
-func capitalizeFirst(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 func renderMarkdown(content string, gr *glamour.TermRenderer) string {

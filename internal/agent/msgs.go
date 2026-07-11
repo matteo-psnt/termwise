@@ -24,7 +24,6 @@ type ToolStep struct {
 	Question     string
 	Options      []string
 	MultiSelect  bool
-	RespondType  string
 	Content      string
 	AutoAccepted bool
 }
@@ -62,12 +61,11 @@ type AskMsg struct {
 	Collected   []provider.ToolResult
 }
 
-// RespondMsg is sent when the model calls the respond tool.
+// RespondMsg is sent when the model calls the command tool.
 type RespondMsg struct {
-	ToolCallID  string
-	RespondType string // "command" | "text"
-	Content     string
-	Collected   []provider.ToolResult
+	ToolCallID string
+	Content    string
+	Collected  []provider.ToolResult
 }
 
 // AllToolsDoneMsg is sent when all tool calls have been processed and results
