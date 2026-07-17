@@ -93,7 +93,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		return nil, fmt.Errorf("building messages: %w", err)
 	}
 	tools := toToolParams(req.Tools)
-	params := toParams(req.Model, req.System, msgs, tools)
+	params := toParamsWithEffort(req.Model, req.System, msgs, tools, req.Effort)
 
 	msg, err := c.sdk.Chat.Completions.New(ctx, params)
 	if err != nil {

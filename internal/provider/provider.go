@@ -80,6 +80,9 @@ type ChatRequest struct {
 	System   string
 	Messages []Message
 	Tools    []ToolDef
+	// Effort sets the reasoning/thinking effort level ("low", "medium", "high").
+	// Empty means no reasoning config is sent (provider default).
+	Effort string
 }
 
 // ChatResponse is the output of AgentClient.Chat.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/allowlist"
+	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/keybinding"
 	"github.com/matteo-psnt/termwise/internal/models"
@@ -122,6 +125,13 @@ type Model struct {
 	sessionID    string
 	providerName string
 
+	// effort is the configured reasoning effort level ("low", "medium", "high").
+	// Empty means use the provider default.
+	effort string
+
+	// workDir is the basename of the working directory at startup.
+	workDir string
+
 	// shellCommand holds the latest completed command that can be returned to a
 	// shell IPC caller when the TUI exits.
 	shellCommand string
@@ -173,6 +183,7 @@ func newModel(
 	r *lipgloss.Renderer,
 	llmJudge bool,
 	suggestions bool,
+	effort string,
 	initialDraft string,
 	initialPrompt string,
 	themeName string,
@@ -224,6 +235,8 @@ func newModel(
 		sessionStore:     sessionStore,
 		sessionID:        sessionID,
 		providerName:     providerName,
+		effort:           effort,
+		workDir:          workDirBasename(),
 	}
 	m.input.PlaceholderStyle = m.renderer.styles.Suggestion
 
@@ -783,7 +796,21 @@ func (m Model) chatRequest() provider.ChatRequest {
 		System:   m.system,
 		Messages: m.messages,
 		Tools:    tools.Defs,
+		Effort:   m.effectiveEffort(),
 	}
+}
+
+// effectiveEffort returns the effort to send: configured value, or the default
+// for thinking-capable models, or empty for models without thinking support.
+func (m Model) effectiveEffort() string {
+	md := models.Find(m.providerName, m.modelID)
+	if md == nil || !md.SupportsThinking {
+		return ""
+	}
+	if m.effort != "" {
+		return m.effort
+	}
+	return config.DefaultEffort
 }
 
 func (m *Model) beginGeneration() {
@@ -876,6 +903,22 @@ func (m Model) viewportDims() (width, height int) {
 		innerH = 3
 	}
 	return innerW, innerH
+}
+
+func workDirBasename() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return filepath.Base(wd)
+}
+
+func (m Model) modelShortName() string {
+	md := models.Find(m.providerName, m.modelID)
+	if md == nil {
+		return m.modelID
+	}
+	return strings.TrimPrefix(md.Name, "Claude ")
 }
 
 // trimContext drops oldest tool results when approaching the context window limit.

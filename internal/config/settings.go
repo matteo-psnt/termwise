@@ -73,6 +73,7 @@ var Settings = []SettingDef{
 		func(cfg FileConfig) *bool { return cfg.Settings.Suggestions },
 		func(cfg *FileConfig, v *bool) { cfg.Settings.Suggestions = v },
 	),
+	effortSetting(),
 }
 
 // themeSetting builds the theme SettingDef, including validation and default resolution.
@@ -158,6 +159,43 @@ func boolSetting(key, label string, defaultOn bool, get func(FileConfig) *bool, 
 			set(cfg, &on)
 		},
 		GetAny: func(cfg FileConfig) any { return resolve(get(cfg)) },
+	}
+}
+
+// EffortLevels lists valid reasoning effort values.
+var EffortLevels = []string{"low", "medium", "high"}
+
+// DefaultEffort is the effective effort when none is configured.
+const DefaultEffort = "medium"
+
+// effortSetting builds the effort SettingDef.
+func effortSetting() SettingDef {
+	get := func(cfg FileConfig) string { return cfg.Settings.Effort }
+	return SettingDef{
+		Key:     "effort",
+		Label:   "Reasoning effort",
+		Kind:    KindEnum,
+		Options: EffortLevels,
+		Get:     get,
+		Resolve: func(cfg FileConfig) string {
+			if v := get(cfg); v != "" {
+				return v
+			}
+			return DefaultEffort
+		},
+		Set:    func(cfg *FileConfig, v string) { cfg.Settings.Effort = v },
+		GetAny: func(cfg FileConfig) any { return get(cfg) },
+		Validate: func(val string) error {
+			if val == "" {
+				return nil
+			}
+			for _, l := range EffortLevels {
+				if val == l {
+					return nil
+				}
+			}
+			return fmt.Errorf("unknown effort %q — valid values: %s", val, strings.Join(EffortLevels, ", "))
+		},
 	}
 }
 

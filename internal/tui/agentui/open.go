@@ -166,6 +166,7 @@ func openProgram(cfg openProgramConfig) (string, error) {
 	var closeKey string
 	var autoResume bool
 	suggestions := true
+	var effort string
 	var configDir string
 	if cfg.cfgPath != "" {
 		cfgFile, exists, err := config.LoadConfig(cfg.cfgPath)
@@ -175,6 +176,7 @@ func openProgram(cfg openProgramConfig) (string, error) {
 			closeKey = cfgFile.Settings.Keybinding
 			autoResume = config.ResolveBoolSetting(cfgFile, "auto_resume")
 			suggestions = config.ResolveBoolSetting(cfgFile, "suggestions")
+			effort = cfgFile.Settings.Effort
 		}
 		configDir = filepath.Dir(cfg.cfgPath)
 	}
@@ -199,7 +201,7 @@ func openProgram(cfg openProgramConfig) (string, error) {
 	}
 
 	system := systemprompt.Agent(agenttools.Defs)
-	m := newModel(cfg.providerName, cfg.provider, cfg.modelID, system, cfg.stdin, r, llmJudge, suggestions, cfg.initialDraft, cfg.initialPrompt, themeName, closeKey,
+	m := newModel(cfg.providerName, cfg.provider, cfg.modelID, system, cfg.stdin, r, llmJudge, suggestions, effort, cfg.initialDraft, cfg.initialPrompt, themeName, closeKey,
 		promptHistory, sessionStore, cfg.sessionID, initialSession)
 
 	p := tea.NewProgram(m, programOpts...)

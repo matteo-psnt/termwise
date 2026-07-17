@@ -31,4 +31,5 @@ type SettingsConfig struct {
 	LLMJudge    *bool  `toml:"llm_judge,omitempty"`
 	AutoResume  *bool  `toml:"auto_resume,omitempty"`
 	Suggestions *bool  `toml:"suggestions,omitempty"`
+	Effort      string `toml:"effort,omitempty"`
 }

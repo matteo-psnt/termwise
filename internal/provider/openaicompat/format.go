@@ -11,9 +11,13 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
-// toParams builds ChatCompletionNewParams for both Complete and Chat calls.
-// System prompt is prepended as a system message if non-empty.
+// toParams builds ChatCompletionNewParams for Complete calls (no reasoning effort).
 func toParams(model, system string, messages []openai.ChatCompletionMessageParamUnion, tools []openai.ChatCompletionToolParam) openai.ChatCompletionNewParams {
+	return toParamsWithEffort(model, system, messages, tools, "")
+}
+
+// toParamsWithEffort builds ChatCompletionNewParams and sets reasoning_effort when provided.
+func toParamsWithEffort(model, system string, messages []openai.ChatCompletionMessageParamUnion, tools []openai.ChatCompletionToolParam, effort string) openai.ChatCompletionNewParams {
 	p := openai.ChatCompletionNewParams{
 		Model:    openai.ChatModel(model),
 		Messages: messages,
@@ -23,6 +27,9 @@ func toParams(model, system string, messages []openai.ChatCompletionMessageParam
 	}
 	if len(tools) > 0 {
 		p.Tools = tools
+	}
+	if effort != "" {
+		p.ReasoningEffort = shared.ReasoningEffort(effort)
 	}
 	return p
 }

@@ -11,12 +11,20 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
-// toParams builds the MessageNewParams for both Complete and Chat calls.
-// system and messages are already in their final form; tools may be nil.
+// toParams builds the MessageNewParams for Complete calls (no thinking).
 func toParams(model, system string, messages []sdk.MessageParam, tools []sdk.ToolUnionParam) sdk.MessageNewParams {
+	return toParamsWithEffort(model, system, messages, tools, "")
+}
+
+// toParamsWithEffort builds MessageNewParams and enables adaptive thinking when effort is set.
+func toParamsWithEffort(model, system string, messages []sdk.MessageParam, tools []sdk.ToolUnionParam, effort string) sdk.MessageNewParams {
+	maxTokens := int64(8096)
+	if effort != "" {
+		maxTokens = 16000
+	}
 	p := sdk.MessageNewParams{
 		Model:     sdk.Model(model),
-		MaxTokens: 8096,
+		MaxTokens: maxTokens,
 		Messages:  messages,
 	}
 	if system != "" {
@@ -24,6 +32,10 @@ func toParams(model, system string, messages []sdk.MessageParam, tools []sdk.Too
 	}
 	if len(tools) > 0 {
 		p.Tools = tools
+	}
+	if effort != "" {
+		p.Thinking = sdk.ThinkingConfigParamUnion{OfAdaptive: &sdk.ThinkingConfigAdaptiveParam{}}
+		p.OutputConfig = sdk.OutputConfigParam{Effort: sdk.OutputConfigEffort(effort)}
 	}
 	return p
 }

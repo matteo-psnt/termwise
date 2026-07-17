@@ -42,21 +42,13 @@ func (m Model) View() string {
 	)
 }
 
-// renderHeader renders the top title line:
-//
-//	termwise ──────────────────── claude-haiku · 1,243 tok
-//	termwise ─── ↓ 40% · claude-haiku · 1,243 tok          (when scrolled up)
+// renderHeader renders the top title line.
 func (m Model) renderHeader(w int) string {
 	left := " termwise "
-	tokens := formatTokens(m.inputTokens + m.outputTokens)
-	modelInfo := m.modelID + " · " + tokens + " tok "
-
 	var right string
 	if m.userScrolled {
 		pct := int(m.vp.ScrollPercent() * 100)
-		right = fmt.Sprintf(" ↓ %d%% · %s", pct, modelInfo)
-	} else {
-		right = " " + modelInfo
+		right = fmt.Sprintf(" ↓ %d%% ", pct)
 	}
 
 	leftW := lipgloss.Width(left)
@@ -200,21 +192,37 @@ func (m Model) renderHelpOverlay() string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-// renderStatusLine renders a one-line status bar below the input separator.
-// It shows contextual hints right-aligned (e.g. "esc" after first Esc press).
+// renderStatusLine renders a one-line status bar below the input separator:
+//
+//	termwise | Sonnet 4.6 [med] | 1,243 tok                  Esc again to clear
 func (m Model) renderStatusLine() string {
-	var text string
+	tokens := formatTokens(m.inputTokens + m.outputTokens)
+	modelPart := m.modelShortName()
+	if eff := m.effectiveEffort(); eff != "" {
+		modelPart += " [" + effortLabel(eff) + "]"
+	}
+	left := fmt.Sprintf(" %s | %s | %s tok ", m.workDir, modelPart, tokens)
+	leftStr := m.renderer.styles.ActionHints.Render(left)
+
+	var rightStr string
 	if !m.lastEscAt.IsZero() {
-		text = m.renderer.styles.ActionHints.Render("  Esc again to clear  ")
+		rightStr = m.renderer.styles.ActionHints.Render("  Esc again to clear  ")
 	}
-	if text == "" {
-		return ""
-	}
-	pad := m.width - lipgloss.Width(text)
+
+	pad := m.width - lipgloss.Width(leftStr) - lipgloss.Width(rightStr)
 	if pad < 0 {
 		pad = 0
 	}
-	return strings.Repeat(" ", pad) + text
+	return leftStr + strings.Repeat(" ", pad) + rightStr
+}
+
+func effortLabel(effort string) string {
+	switch effort {
+	case "medium":
+		return "med"
+	default:
+		return effort // "low", "high", "max" — already short
+	}
 }
 
 func formatTokens(n int) string {

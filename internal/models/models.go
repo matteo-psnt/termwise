@@ -10,12 +10,13 @@ import (
 
 // ModelData holds metadata for a single model.
 type ModelData struct {
-	ID            string  `yaml:"id"`
-	Name          string  `yaml:"name"`
-	Context       int     `yaml:"context"`      // tokens
-	InputPrice    float64 `yaml:"input_price"`  // per 1M tokens
-	OutputPrice   float64 `yaml:"output_price"` // per 1M tokens
-	SupportsTools bool    `yaml:"supports_tools"`
+	ID               string  `yaml:"id"`
+	Name             string  `yaml:"name"`
+	Context          int     `yaml:"context"`      // tokens
+	InputPrice       float64 `yaml:"input_price"`  // per 1M tokens
+	OutputPrice      float64 `yaml:"output_price"` // per 1M tokens
+	SupportsTools    bool    `yaml:"supports_tools"`
+	SupportsThinking bool    `yaml:"supports_thinking"` // adaptive thinking / reasoning effort
 }
 
 // ProviderData holds all model metadata for one provider.
