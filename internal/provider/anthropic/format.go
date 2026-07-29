@@ -17,10 +17,16 @@ func toParams(model, system string, messages []sdk.MessageParam, tools []sdk.Too
 }
 
 // toParamsWithEffort builds MessageNewParams and enables adaptive thinking when effort is set.
+// max_tokens caps the combined thinking + visible output budget, so the cap is
+// raised when thinking is enabled to leave room for the visible response.
 func toParamsWithEffort(model, system string, messages []sdk.MessageParam, tools []sdk.ToolUnionParam, effort string) sdk.MessageNewParams {
-	maxTokens := int64(8096)
+	const (
+		maxTokensDefault  = 8096
+		maxTokensThinking = 16000
+	)
+	maxTokens := int64(maxTokensDefault)
 	if effort != "" {
-		maxTokens = 16000
+		maxTokens = maxTokensThinking
 	}
 	p := sdk.MessageNewParams{
 		Model:     sdk.Model(model),

@@ -94,6 +94,12 @@ func (m Model) renderInputRow(vpW int) string {
 		}
 		return ""
 
+	case stateSlashPicker:
+		if m.slashPicker != nil {
+			return m.slashPicker.View(m.renderer)
+		}
+		return ""
+
 	case stateHistSearch:
 		query := m.histSearch.query
 		count := len(m.histSearch.matches)
@@ -104,12 +110,74 @@ func (m Model) renderInputRow(vpW int) string {
 		input := m.input
 		input.Placeholder = ""
 		prompt := m.renderer.styles.InputPrompt.Render(" › ")
+
+		// Slash-command dropdown and inline ghost take precedence over prompt
+		// suggestions whenever the dropdown is visible.
+		matches := m.visibleSlashMatches()
 		var suggestion string
-		if s := m.visibleSuggestion(); s != "" {
+		if len(matches) > 0 && m.slashCursor < len(matches) {
+			suggestion = m.renderer.styles.Suggestion.Render(matches[m.slashCursor].Completion)
+		} else if s := m.visibleSuggestion(); s != "" {
 			suggestion = m.renderer.styles.Suggestion.Render(s)
 		}
-		return prompt + input.View() + suggestion
+
+		line := prompt + input.View() + suggestion
+		if len(matches) > 0 {
+			return m.renderSlashDropdown(matches) + "\n" + line
+		}
+		return line
 	}
+}
+
+// renderSlashDropdown renders the slash-command match list. Highlights the
+// cursor row and scrolls a windowed view when matches exceed slashDropdownMaxRows.
+const slashDropdownMaxRows = 5
+
+func (m Model) renderSlashDropdown(matches []slashMatch) string {
+	start := 0
+	end := len(matches)
+	if end > slashDropdownMaxRows {
+		if m.slashCursor >= slashDropdownMaxRows {
+			start = m.slashCursor - slashDropdownMaxRows + 1
+		}
+		end = start + slashDropdownMaxRows
+		if end > len(matches) {
+			end = len(matches)
+			start = end - slashDropdownMaxRows
+		}
+	}
+	visible := matches[start:end]
+
+	labelW := 0
+	for _, mt := range visible {
+		if w := lipgloss.Width(mt.Label); w > labelW {
+			labelW = w
+		}
+	}
+
+	var b strings.Builder
+	for i, mt := range visible {
+		marker := "  "
+		var labelOut string
+		if start+i == m.slashCursor {
+			marker = m.renderer.styles.InputPrompt.Render("› ")
+			labelOut = m.renderer.styles.InputPrompt.Render(mt.Label)
+		} else {
+			labelOut = mt.Label
+		}
+		b.WriteString(marker + labelOut)
+		if mt.Description != "" {
+			pad := labelW - lipgloss.Width(mt.Label) + 2
+			if pad < 1 {
+				pad = 1
+			}
+			b.WriteString(strings.Repeat(" ", pad) + m.renderer.styles.ActionHints.Render(mt.Description))
+		}
+		if i < len(visible)-1 {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
 }
 
 // renderCommandBlock renders a titled thick-border box for bash approval and command proposals:
@@ -173,6 +241,7 @@ func (m Model) renderHelpOverlay() string {
 			{"tab", "accept suggestion"},
 			{"↑ / ↓", "history"},
 			{"ctrl+r", "search history"},
+			{"/", "slash commands (/help)"},
 			{"?", "close help"},
 			{"ctrl+c", "quit"},
 		}
@@ -217,12 +286,10 @@ func (m Model) renderStatusLine() string {
 }
 
 func effortLabel(effort string) string {
-	switch effort {
-	case "medium":
+	if effort == "medium" {
 		return "med"
-	default:
-		return effort // "low", "high", "max" — already short
 	}
+	return effort
 }
 
 func formatTokens(n int) string {

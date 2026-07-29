@@ -38,6 +38,7 @@ const (
 	stateAskPicker                // waiting for ask answer
 	stateHistSearch               // Ctrl+R reverse search through prompt history
 	stateCommandProposal          // model proposed a shell command; awaiting accept/dismiss
+	stateSlashPicker              // slash-command sub-picker (e.g. /effort, /theme, /model)
 )
 
 // histSearchState holds the state for Ctrl+R reverse search.
@@ -101,8 +102,11 @@ type Model struct {
 	nextSuggestion   uint64
 	activeSuggestion uint64
 
-	// Renderer (built once)
-	renderer Renderer
+	// Renderer + the lipgloss renderer it was built from (kept so /theme can
+	// rebuild styles mid-session without re-querying the terminal background).
+	renderer         Renderer
+	lipglossRenderer *lipgloss.Renderer
+	themeName        string
 
 	// closeKey is the zsh bindkey string (e.g. "^T") that quits the TUI,
 	// matching the shell keybinding that opened it.
@@ -129,6 +133,9 @@ type Model struct {
 	// Empty means use the provider default.
 	effort string
 
+	// cfgPath is the path to the config file, used to persist effort changes.
+	cfgPath string
+
 	// workDir is the basename of the working directory at startup.
 	workDir string
 
@@ -139,6 +146,16 @@ type Model struct {
 	// lastEscAt tracks when the most recent Esc was pressed in idle state,
 	// enabling the double-Esc-to-stash gesture.
 	lastEscAt time.Time
+
+	// slashPicker holds the active slash-command sub-picker when state
+	// is stateSlashPicker; nil otherwise.
+	slashPicker *slashPicker
+
+	// slashCursor is the highlighted row in the slash-command dropdown.
+	slashCursor int
+	// slashClosed is set when the user dismisses the dropdown with Esc.
+	// Reset whenever the input no longer starts with "/".
+	slashClosed bool
 }
 
 type escTimeoutMsg struct{}
@@ -184,6 +201,7 @@ func newModel(
 	llmJudge bool,
 	suggestions bool,
 	effort string,
+	cfgPath string,
 	initialDraft string,
 	initialPrompt string,
 	themeName string,
@@ -229,6 +247,8 @@ func newModel(
 		suggestionCtx:    suggestionCtx,
 		suggestionCancel: suggestionCancel,
 		renderer:         newRenderer(r, theme.Get(themeName), glamourStyle(r)),
+		lipglossRenderer: r,
+		themeName:        themeName,
 		closeKey:         closeKey,
 		promptHistory:    promptHistory,
 		histIdx:          -1,
@@ -236,6 +256,7 @@ func newModel(
 		sessionID:        sessionID,
 		providerName:     providerName,
 		effort:           effort,
+		cfgPath:          cfgPath,
 		workDir:          workDirBasename(),
 	}
 	m.input.PlaceholderStyle = m.renderer.styles.Suggestion
@@ -358,9 +379,100 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleCommandProposalKey(msg)
 	case stateAskPicker:
 		return m.handlePickerKey(msg)
+	case stateSlashPicker:
+		return m.handleSlashPickerKey(msg)
 	case stateHistSearch:
 		return m.handleHistSearchKey(msg)
 	}
+	return m, nil
+}
+
+func (m Model) handleSlashPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.slashPicker == nil {
+		m.state = stateIdle
+		return m, nil
+	}
+	updated, choice, submitted, cancelled := m.slashPicker.Update(msg)
+	m.slashPicker = &updated
+	if cancelled {
+		m.slashPicker = nil
+		m.state = stateIdle
+		return m, nil
+	}
+	if submitted {
+		cmd := findSlashCommand(updated.cmd)
+		m.slashPicker = nil
+		m.state = stateIdle
+		if cmd == nil {
+			return m, nil
+		}
+		return cmd.Run(m, []string{choice})
+	}
+	return m, nil
+}
+
+// switchModel swaps the active provider client to the given provider+model.
+// It loads the on-disk config to find auth for the target provider, rebuilds
+// the AgentClient, updates session fields, and persists the new selection.
+// Existing conversation messages are preserved.
+func (m *Model) switchModel(providerName, modelID string) error {
+	if m.cfgPath == "" {
+		return fmt.Errorf("no config path available to resolve auth for %q", providerName)
+	}
+	cfg, exists, err := config.LoadConfig(m.cfgPath)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("config file not found")
+	}
+	pc, ok := cfg.Providers[providerName]
+	if !ok {
+		return fmt.Errorf("provider %q has no config block — run `tw config` to add it", providerName)
+	}
+	auth, err := config.ResolveAuth(providerName, pc)
+	if err != nil {
+		return fmt.Errorf("resolving auth for %q: %w", providerName, err)
+	}
+	client, err := config.NewClientFromResolved(config.ResolvedConfig{
+		ProviderName: providerName,
+		Model:        modelID,
+		APIKey:       auth.APIKey,
+		BaseURL:      auth.BaseURL,
+	})
+	if err != nil {
+		return fmt.Errorf("building client: %w", err)
+	}
+
+	m.provider = client
+	m.providerName = providerName
+	m.modelID = modelID
+	m.contextWindow = 32_000
+	if md := models.Find(providerName, modelID); md != nil && md.Context > 0 {
+		m.contextWindow = md.Context
+	}
+
+	cfg.SelectedProvider = providerName
+	pc.Model = modelID
+	cfg.Providers[providerName] = pc
+	_ = config.SaveConfig(m.cfgPath, cfg)
+	return nil
+}
+
+// applyTheme rebuilds the renderer with the given theme name.
+func (m *Model) applyTheme(name string) {
+	m.themeName = name
+	if m.lipglossRenderer != nil {
+		m.renderer = newRenderer(m.lipglossRenderer, theme.Get(name), glamourStyle(m.lipglossRenderer))
+		m.input.PlaceholderStyle = m.renderer.styles.Suggestion
+	}
+}
+
+// openSlashPicker activates the slash-picker sub-TUI for the given command.
+func (m Model) openSlashPicker(cmd, title string, options []string, current string) (tea.Model, tea.Cmd) {
+	p := newSlashPicker(cmd, title, options, current)
+	m.slashPicker = &p
+	m.state = stateSlashPicker
 	return m, nil
 }
 
@@ -390,6 +502,14 @@ func (m Model) handleThinkingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Slash-command dropdown overrides come first so they shadow history nav,
+	// the prompt-suggestion tab handler, and Esc-stash gestures.
+	if matches := m.visibleSlashMatches(); len(matches) > 0 {
+		if newM, handled := m.handleSlashDropdownKey(msg, matches); handled {
+			return newM, nil
+		}
+	}
+
 	switch msg.Type {
 	case tea.KeyEnter:
 		return m.submitCurrentInput()
@@ -401,9 +521,7 @@ func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.suggestion = ""
 			return m, nil
 		}
-		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
-		return m, cmd
+		return m.updateInputAndResetSlash(msg)
 
 	case tea.KeyUp:
 		return m.historyBack(), nil
@@ -458,10 +576,95 @@ func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.histIdx = -1
 			m.histDraft = ""
 		}
-		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
-		return m, cmd
+		return m.updateInputAndResetSlash(msg)
 	}
+}
+
+// updateInputAndResetSlash forwards the key to the textinput, and clears the
+// transient slash dropdown state (cursor + dismissed flag) whenever the input
+// value changes.
+func (m Model) updateInputAndResetSlash(msg tea.Msg) (tea.Model, tea.Cmd) {
+	prev := m.input.Value()
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	if m.input.Value() != prev {
+		m.slashCursor = 0
+		m.slashClosed = false
+	}
+	return m, cmd
+}
+
+// visibleSlashMatches returns the dropdown rows to render now, or nil if the
+// dropdown should be hidden (no leading slash, no matches, or user-dismissed).
+func (m Model) visibleSlashMatches() []slashMatch {
+	if m.slashClosed {
+		return nil
+	}
+	matches, _ := computeSlashMatches(m, m.input.Value())
+	return matches
+}
+
+// handleSlashDropdownKey handles navigation and acceptance keys when the
+// dropdown is visible. Returns (newModel, handled). When handled is false,
+// the caller should fall through to the normal idle-key handler.
+func (m Model) handleSlashDropdownKey(msg tea.KeyMsg, matches []slashMatch) (Model, bool) {
+	if m.slashCursor >= len(matches) {
+		m.slashCursor = len(matches) - 1
+	}
+	if m.slashCursor < 0 {
+		m.slashCursor = 0
+	}
+	switch msg.Type {
+	case tea.KeyUp:
+		if m.slashCursor > 0 {
+			m.slashCursor--
+		}
+		return m, true
+	case tea.KeyDown:
+		if m.slashCursor < len(matches)-1 {
+			m.slashCursor++
+		}
+		return m, true
+	case tea.KeyTab:
+		return m.acceptSlashCompletion(matches), true
+	case tea.KeyEsc:
+		m.slashClosed = true
+		return m, true
+	}
+	switch msg.String() {
+	case "ctrl+p":
+		if m.slashCursor > 0 {
+			m.slashCursor--
+		}
+		return m, true
+	case "ctrl+n":
+		if m.slashCursor < len(matches)-1 {
+			m.slashCursor++
+		}
+		return m, true
+	case "right":
+		// Only consume Right at end-of-line so cursor movement still works mid-text.
+		if m.input.Position() == len(m.input.Value()) {
+			return m.acceptSlashCompletion(matches), true
+		}
+	}
+	return m, false
+}
+
+// acceptSlashCompletion appends the highlighted match's completion suffix to
+// the input and resets the dropdown cursor.
+func (m Model) acceptSlashCompletion(matches []slashMatch) Model {
+	if m.slashCursor < 0 || m.slashCursor >= len(matches) {
+		return m
+	}
+	completion := matches[m.slashCursor].Completion
+	if completion == "" {
+		return m
+	}
+	m.input.SetValue(m.input.Value() + completion)
+	m.input.CursorEnd()
+	m.slashCursor = 0
+	return m
 }
 
 func (m Model) handleInitialPrompt(prompt string) (tea.Model, tea.Cmd) {
@@ -489,6 +692,9 @@ func (m Model) submitCurrentInput() (tea.Model, tea.Cmd) {
 	m.histDraft = ""
 	if m.promptHistory != nil {
 		m.promptHistory.Push(text) //nolint:errcheck // Prompt history should not block sending a message.
+	}
+	if strings.HasPrefix(text, "/") {
+		return m.dispatchSlashCommand(text)
 	}
 	return m.submitMessage(text)
 }
@@ -803,14 +1009,7 @@ func (m Model) chatRequest() provider.ChatRequest {
 // effectiveEffort returns the effort to send: configured value, or the default
 // for thinking-capable models, or empty for models without thinking support.
 func (m Model) effectiveEffort() string {
-	md := models.Find(m.providerName, m.modelID)
-	if md == nil || !md.SupportsThinking {
-		return ""
-	}
-	if m.effort != "" {
-		return m.effort
-	}
-	return config.DefaultEffort
+	return config.EffectiveEffort(m.providerName, m.modelID, m.effort)
 }
 
 func (m *Model) beginGeneration() {

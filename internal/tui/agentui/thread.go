@@ -137,6 +137,14 @@ func (e ErrorEntry) render(r Renderer) string {
 	return r.styles.Error.Render("Error: " + e.Content)
 }
 
+// SystemEntry is an informational message from termwise itself
+// (e.g. /help output).
+type SystemEntry struct{ Content string }
+
+func (e SystemEntry) render(r Renderer) string {
+	return r.styles.ActionHints.Render(e.Content)
+}
+
 func renderMarkdown(content string, gr *glamour.TermRenderer) string {
 	if gr == nil {
 		return content

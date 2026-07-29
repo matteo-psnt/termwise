@@ -23,10 +23,12 @@ var (
 )
 
 type runtimeContext struct {
-	client   provider.AgentClient
-	modelID  string
-	llmJudge bool
-	isTTY    bool
+	client       provider.AgentClient
+	providerName string
+	modelID      string
+	llmJudge     bool
+	effort       string
+	isTTY        bool
 }
 
 // SingleShot runs a single-shot prompt and writes the response to stdout.
@@ -122,9 +124,11 @@ func resolveRuntime() (runtimeContext, error) {
 		return runtimeContext{}, err
 	}
 	return runtimeContext{
-		client:   client,
-		modelID:  rc.Model,
-		llmJudge: config.ResolveBoolSetting(cfg, "llm_judge"),
-		isTTY:    tty.IsTerminal(os.Stdout),
+		client:       client,
+		providerName: rc.ProviderName,
+		modelID:      rc.Model,
+		llmJudge:     config.ResolveBoolSetting(cfg, "llm_judge"),
+		effort:       cfg.Settings.Effort,
+		isTTY:        tty.IsTerminal(os.Stdout),
 	}, nil
 }

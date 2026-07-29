@@ -69,6 +69,13 @@ func Provider(name string) (ProviderData, bool) {
 	return pd, ok
 }
 
+// SupportsThinking reports whether the given model supports adaptive thinking /
+// reasoning effort. Unknown models return false.
+func SupportsThinking(provider, modelID string) bool {
+	md := Find(provider, modelID)
+	return md != nil && md.SupportsThinking
+}
+
 // Find returns metadata for a specific model within a provider.
 // Returns nil if the provider or model is not found.
 func Find(provider, modelID string) *ModelData {

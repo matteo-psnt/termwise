@@ -201,7 +201,7 @@ func openProgram(cfg openProgramConfig) (string, error) {
 	}
 
 	system := systemprompt.Agent(agenttools.Defs)
-	m := newModel(cfg.providerName, cfg.provider, cfg.modelID, system, cfg.stdin, r, llmJudge, suggestions, effort, cfg.initialDraft, cfg.initialPrompt, themeName, closeKey,
+	m := newModel(cfg.providerName, cfg.provider, cfg.modelID, system, cfg.stdin, r, llmJudge, suggestions, effort, cfg.cfgPath, cfg.initialDraft, cfg.initialPrompt, themeName, closeKey,
 		promptHistory, sessionStore, cfg.sessionID, initialSession)
 
 	p := tea.NewProgram(m, programOpts...)

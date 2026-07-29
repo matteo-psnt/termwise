@@ -97,7 +97,9 @@ func activateSetting(m editorModel, settingIdx int) (editorModel, tea.Cmd) {
 		m.keybinding = &kbm
 		m.activeSettingIdx = settingIdx
 	case config.KindEnum:
-		// future: open an enum picker
+		ep := newEnumPicker(def.Label, def.Resolve(m.cfg), def.Options, m.styles)
+		m.enumPicker = &ep
+		m.activeSettingIdx = settingIdx
 	}
 	return m, nil
 }
@@ -129,6 +131,7 @@ type editorModel struct {
 	authEditor  *authEditorModel
 	keybinding  *keybindingModel
 	themePicker *themePickerModel
+	enumPicker  *enumPickerModel
 	addWizard   *wizardModel
 
 	// Index into config.Settings for the currently active sub-model.
@@ -223,6 +226,8 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateKeybinding(msg)
 	case m.themePicker != nil:
 		return m.updateThemePicker(msg)
+	case m.enumPicker != nil:
+		return m.updateEnumPicker(msg)
 	case m.addWizard != nil:
 		return m.updateAddWizard(msg)
 	}
@@ -318,6 +323,19 @@ func (m editorModel) updateThemePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	} else if tp.PreviewName() != prevPreview {
 		m.styles = newStylesForTheme(m.r, tp.PreviewName())
+	}
+	return m, cmd
+}
+
+func (m editorModel) updateEnumPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
+	newModel, cmd := m.enumPicker.Update(msg)
+	ep := newModel.(enumPickerModel)
+	m.enumPicker = &ep
+	if ep.done {
+		m.enumPicker = nil
+		if !ep.cancelled {
+			config.Settings[m.activeSettingIdx].Set(&m.cfg, ep.result)
+		}
 	}
 	return m, cmd
 }
@@ -524,6 +542,8 @@ func (m editorModel) renderInner() string {
 		return header + m.keybinding.View()
 	case m.themePicker != nil:
 		return header + m.themePicker.View()
+	case m.enumPicker != nil:
+		return header + m.enumPicker.View()
 	case m.addWizard != nil:
 		return m.addWizard.renderInner()
 	default:

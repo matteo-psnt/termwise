@@ -7,6 +7,7 @@ import (
 	"github.com/matteo-psnt/termwise/internal/agent"
 	agenttools "github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/allowlist"
+	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/systemprompt"
 )
@@ -40,6 +41,7 @@ func newAskHeadlessConfig(rt runtimeContext, prompt string) agent.HeadlessConfig
 		System:        systemprompt.Agent(agenttools.HeadlessDefs),
 		Prompt:        prompt,
 		Tools:         agenttools.HeadlessDefs,
+		Effort:        config.EffectiveEffort(rt.providerName, rt.modelID, rt.effort),
 		NeedsApproval: func(cmd string) bool { return allowlist.NeedsApproval(nil, cmd) },
 		OnNeedsApproval: func(ctx context.Context, step agent.ToolStep) provider.ToolResult {
 			return headlessApprovalResult(ctx, rt, step)

@@ -21,6 +21,7 @@ type HeadlessConfig struct {
 	System          string
 	Prompt          string
 	Tools           []provider.ToolDef
+	Effort          string
 	NeedsApproval   func(string) bool
 	OnNeedsApproval func(context.Context, ToolStep) provider.ToolResult
 	OnAsk           func(ToolStep) provider.ToolResult
@@ -61,6 +62,7 @@ func RunHeadless(ctx context.Context, cfg HeadlessConfig) (FinalResponse, error)
 			System:   cfg.System,
 			Messages: messages,
 			Tools:    cfg.Tools,
+			Effort:   cfg.Effort,
 		})
 		if err != nil {
 			return FinalResponse{}, err

@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
+	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
@@ -168,6 +170,19 @@ var EffortLevels = []string{"low", "medium", "high"}
 // DefaultEffort is the effective effort when none is configured.
 const DefaultEffort = "medium"
 
+// EffectiveEffort returns the effort to send for a given model:
+// configured value, or DefaultEffort for thinking-capable models, or empty for
+// models without thinking support.
+func EffectiveEffort(provider, modelID, configured string) string {
+	if !models.SupportsThinking(provider, modelID) {
+		return ""
+	}
+	if configured != "" {
+		return configured
+	}
+	return DefaultEffort
+}
+
 // effortSetting builds the effort SettingDef.
 func effortSetting() SettingDef {
 	get := func(cfg FileConfig) string { return cfg.Settings.Effort }
@@ -186,13 +201,8 @@ func effortSetting() SettingDef {
 		Set:    func(cfg *FileConfig, v string) { cfg.Settings.Effort = v },
 		GetAny: func(cfg FileConfig) any { return get(cfg) },
 		Validate: func(val string) error {
-			if val == "" {
+			if val == "" || slices.Contains(EffortLevels, val) {
 				return nil
-			}
-			for _, l := range EffortLevels {
-				if val == l {
-					return nil
-				}
 			}
 			return fmt.Errorf("unknown effort %q — valid values: %s", val, strings.Join(EffortLevels, ", "))
 		},
