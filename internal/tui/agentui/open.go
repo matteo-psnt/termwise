@@ -136,7 +136,10 @@ func openProgram(cfg openProgramConfig) (string, error) {
 
 	// Determine program input. When stdin is piped we need to reopen the TTY
 	// so bubbletea can receive keyboard events.
-	var programOpts []tea.ProgramOption
+	// WithMouseCellMotion enables mouse wheel forwarding so the viewport can
+	// scroll on wheel events. The tradeoff in inline mode is that the
+	// terminal's native scrollback wheel is captured while the TUI is open.
+	programOpts := []tea.ProgramOption{tea.WithMouseCellMotion()}
 	outputFile := os.Stdout
 
 	if cfg.programInput != nil {

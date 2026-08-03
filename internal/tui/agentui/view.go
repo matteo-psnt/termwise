@@ -42,24 +42,23 @@ func (m Model) View() string {
 	)
 }
 
-// renderHeader renders the top title line.
+// renderHeader renders the top title line. The title is rendered in accent
+// while the fill and scroll indicator stay dim for a cleaner visual hierarchy.
 func (m Model) renderHeader(w int) string {
-	left := " termwise "
+	title := m.renderer.styles.HeaderTitle.Render(" termwise ")
 	var right string
 	if m.userScrolled {
 		pct := int(m.vp.ScrollPercent() * 100)
-		right = fmt.Sprintf(" ↓ %d%% ", pct)
+		right = m.renderer.styles.Header.Render(fmt.Sprintf(" ↓ %d%% ", pct))
 	}
 
-	leftW := lipgloss.Width(left)
+	titleW := lipgloss.Width(title)
 	rightW := lipgloss.Width(right)
-	fill := w - leftW - rightW
+	fill := w - titleW - rightW
 	if fill < 1 {
 		fill = 1
 	}
-
-	title := left + strings.Repeat("─", fill) + right
-	return m.renderer.styles.Header.Render(title)
+	return title + m.renderer.styles.Header.Render(strings.Repeat("─", fill)) + right
 }
 
 // renderInputRow renders the bottom input area based on current state.
@@ -161,7 +160,7 @@ func (m Model) renderSlashDropdown(matches []slashMatch) string {
 		var labelOut string
 		if start+i == m.slashCursor {
 			marker = m.renderer.styles.InputPrompt.Render("› ")
-			labelOut = m.renderer.styles.InputPrompt.Render(mt.Label)
+			labelOut = m.renderer.styles.InputPrompt.Bold(true).Render(mt.Label)
 		} else {
 			labelOut = mt.Label
 		}
@@ -180,30 +179,31 @@ func (m Model) renderSlashDropdown(matches []slashMatch) string {
 	return b.String()
 }
 
-// renderCommandBlock renders a titled thick-border box for bash approval and command proposals:
+// renderCommandBlock renders a titled rounded-border box for bash approval
+// and command proposals:
 //
-//	┏━ label ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-//	┃  content                                               ┃
-//	┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+//	╭─ label ────────────────────────────────────────────────╮
+//	│  content                                               │
+//	╰────────────────────────────────────────────────────────╯
 func (m Model) renderCommandBlock(label, content string, w int) string {
 	style := m.renderer.styles.CommandBox
 	inner := w - 2
 
-	labelPart := "━ " + label + " "
+	labelPart := "─ " + label + " "
 	fillCount := inner - lipgloss.Width(labelPart)
 	if fillCount < 1 {
 		fillCount = 1
 	}
-	top := "┏" + labelPart + strings.Repeat("━", fillCount) + "┓"
+	top := "╭" + labelPart + strings.Repeat("─", fillCount) + "╮"
 
 	contentStr := "  " + content
 	padCount := inner - lipgloss.Width(contentStr)
 	if padCount < 0 {
 		padCount = 0
 	}
-	mid := "┃" + contentStr + strings.Repeat(" ", padCount) + "┃"
+	mid := "│" + contentStr + strings.Repeat(" ", padCount) + "│"
 
-	bot := "┗" + strings.Repeat("━", inner) + "┛"
+	bot := "╰" + strings.Repeat("─", inner) + "╯"
 
 	return style.Render(strings.Join([]string{top, mid, bot}, "\n"))
 }
@@ -263,19 +263,23 @@ func (m Model) renderHelpOverlay() string {
 
 // renderStatusLine renders a one-line status bar below the input separator:
 //
-//	termwise | Sonnet 4.6 [med] | 1,243 tok                  Esc again to clear
+//	termwise · Sonnet 4.6 [med] · 1,243 tok                  Esc again to clear
 func (m Model) renderStatusLine() string {
 	tokens := formatTokens(m.inputTokens + m.outputTokens)
 	modelPart := m.modelShortName()
 	if eff := m.effectiveEffort(); eff != "" {
 		modelPart += " [" + effortLabel(eff) + "]"
 	}
-	left := fmt.Sprintf(" %s | %s | %s tok ", m.workDir, modelPart, tokens)
-	leftStr := m.renderer.styles.ActionHints.Render(left)
+
+	hints := m.renderer.styles.ActionHints
+	sep := hints.Render(" · ")
+	leftStr := hints.Render(" "+m.workDir) +
+		sep + m.renderer.styles.StatusModel.Render(modelPart) +
+		sep + hints.Render(tokens+" tok ")
 
 	var rightStr string
 	if !m.lastEscAt.IsZero() {
-		rightStr = m.renderer.styles.ActionHints.Render("  Esc again to clear  ")
+		rightStr = hints.Render("  Esc again to clear  ")
 	}
 
 	pad := m.width - lipgloss.Width(leftStr) - lipgloss.Width(rightStr)

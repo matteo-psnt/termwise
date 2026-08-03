@@ -61,7 +61,7 @@ type ThreadEntry interface {
 type UserEntry struct{ Content string }
 
 func (e UserEntry) render(r Renderer) string {
-	return r.styles.UserSymbol.Render("› ") + e.Content
+	return r.styles.UserSymbol.Render("› ") + hangingIndent(e.Content, 2)
 }
 
 // AssistantEntry is text output from the model (direct or via the respond tool).
@@ -69,8 +69,26 @@ type AssistantEntry struct{ Content string }
 
 func (e AssistantEntry) render(r Renderer) string {
 	text := strings.TrimLeft(renderMarkdown(e.Content, r.glamour), "\n")
-	return r.styles.TWSymbol.Render("◆ ") + text
+	return r.styles.TWSymbol.Render("◆ ") + hangingIndent(text, 2)
 }
+
+// Tool call/result visual conventions:
+//
+//	⏺ bash(ls -la)
+//	  ⎿  total 24
+//	     drwxr-xr-x 3 user staff
+//	     …
+//	     12 more lines
+//
+// The call lives at column 0 so it reads as flush with normal thread content;
+// the result corner glyph sits at column 2 and continuation lines align under
+// the corner's content (column 5) so the result nests visibly beneath.
+const (
+	toolCallPrefix       = ""
+	toolResultPrefix     = "  "
+	toolResultContPrefix = "     "
+	maxDisplayLines      = 5
+)
 
 // ToolCallEntry shows a tool being invoked.
 type ToolCallEntry struct {
@@ -79,11 +97,13 @@ type ToolCallEntry struct {
 }
 
 func (e ToolCallEntry) render(r Renderer) string {
-	label := "  ─ " + strings.ToLower(e.Name)
+	icon := r.styles.TWSymbol.Render("⏺ ")
+	name := strings.ToLower(e.Name)
+	body := name
 	if e.Detail != "" {
-		label += ": " + e.Detail
+		body = name + r.styles.ToolCall.Render("("+e.Detail+")")
 	}
-	return r.styles.ToolCall.Render(label)
+	return toolCallPrefix + icon + body
 }
 
 // ToolResultEntry shows the output of a tool call.
@@ -92,33 +112,33 @@ type ToolResultEntry struct {
 	IsError bool
 }
 
-const maxDisplayLines = 20
-
 func (e ToolResultEntry) render(r Renderer) string {
 	lines := strings.Split(strings.TrimRight(e.Content, "\n"), "\n")
 	total := len(lines)
-
 	display := lines
 	truncated := 0
 	if total > maxDisplayLines {
 		display = lines[:maxDisplayLines]
 		truncated = total - maxDisplayLines
 	}
-
-	style := r.styles.ToolOutput
-	if e.IsError {
-		style = r.styles.Error
+	if len(display) == 0 {
+		return ""
 	}
+
+	contentStyle := r.styles.ToolOutput
+	if e.IsError {
+		contentStyle = r.styles.Error
+	}
+	marker := r.styles.ToolCall.Render("⎿  ")
 
 	var b strings.Builder
-	for i, l := range display {
-		b.WriteString(style.Render("  " + l))
-		if i < len(display)-1 || truncated > 0 {
-			b.WriteString("\n")
-		}
+	b.WriteString(toolResultPrefix + marker + contentStyle.Render(display[0]))
+	for _, l := range display[1:] {
+		b.WriteString("\n" + toolResultContPrefix + contentStyle.Render(l))
 	}
 	if truncated > 0 {
-		b.WriteString(style.Render(fmt.Sprintf("  [%d more lines]", truncated)))
+		b.WriteString("\n" + toolResultContPrefix +
+			r.styles.ToolCall.Render(fmt.Sprintf("… %d more lines", truncated)))
 	}
 	return b.String()
 }
@@ -127,14 +147,14 @@ func (e ToolResultEntry) render(r Renderer) string {
 type CommandEntry struct{ Content string }
 
 func (e CommandEntry) render(r Renderer) string {
-	return r.styles.TWSymbol.Render("◆ ") + "$ " + r.styles.Command.Render(e.Content)
+	return r.styles.TWSymbol.Render("◆ ") + "$ " + r.styles.Command.Render(hangingIndent(e.Content, 4))
 }
 
 // ErrorEntry shows an inline error message.
 type ErrorEntry struct{ Content string }
 
 func (e ErrorEntry) render(r Renderer) string {
-	return r.styles.Error.Render("Error: " + e.Content)
+	return r.styles.Error.Render("Error: " + hangingIndent(e.Content, 2))
 }
 
 // SystemEntry is an informational message from termwise itself
@@ -142,7 +162,22 @@ func (e ErrorEntry) render(r Renderer) string {
 type SystemEntry struct{ Content string }
 
 func (e SystemEntry) render(r Renderer) string {
-	return r.styles.ActionHints.Render(e.Content)
+	return r.styles.ActionHints.Render(hangingIndent(e.Content, 2))
+}
+
+// hangingIndent prefixes every line after the first with `width` spaces, so
+// multi-line entry content aligns with the first line's content (after the
+// leading icon).
+func hangingIndent(s string, width int) string {
+	if !strings.Contains(s, "\n") {
+		return s
+	}
+	pad := strings.Repeat(" ", width)
+	lines := strings.Split(s, "\n")
+	for i := 1; i < len(lines); i++ {
+		lines[i] = pad + lines[i]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func renderMarkdown(content string, gr *glamour.TermRenderer) string {

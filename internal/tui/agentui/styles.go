@@ -19,6 +19,7 @@ func glamourStyle(r *lipgloss.Renderer) string {
 // Built once at model construction from a renderer tied to the output TTY.
 type Styles struct {
 	Header      lipgloss.Style
+	HeaderTitle lipgloss.Style
 	Separator   lipgloss.Style
 	UserSymbol  lipgloss.Style
 	TWSymbol    lipgloss.Style
@@ -31,6 +32,7 @@ type Styles struct {
 	Suggestion  lipgloss.Style
 	CommandBox  lipgloss.Style
 	ActionHints lipgloss.Style
+	StatusModel lipgloss.Style
 	HelpKey     lipgloss.Style
 	HelpDesc    lipgloss.Style
 }
@@ -42,6 +44,7 @@ func newStyles(r *lipgloss.Renderer, palette theme.Palette) Styles {
 
 	return Styles{
 		Header:      r.NewStyle().Foreground(dim),
+		HeaderTitle: r.NewStyle().Foreground(accent).Bold(true),
 		Separator:   r.NewStyle().Foreground(dim),
 		UserSymbol:  r.NewStyle().Faint(true),
 		TWSymbol:    r.NewStyle().Foreground(accent),
@@ -54,6 +57,7 @@ func newStyles(r *lipgloss.Renderer, palette theme.Palette) Styles {
 		Suggestion:  r.NewStyle().Foreground(dim).Italic(true),
 		CommandBox:  r.NewStyle().Foreground(accent),
 		ActionHints: r.NewStyle().Faint(true),
+		StatusModel: r.NewStyle().Foreground(accent),
 		HelpKey:     r.NewStyle().Foreground(accent).Bold(true),
 		HelpDesc:    r.NewStyle().Faint(true),
 	}

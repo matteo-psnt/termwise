@@ -480,15 +480,11 @@ func (m Model) handleThinkingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyPgUp:
 		m.vp.PageUp()
-		if m.vp.ScrollPercent() < 1.0 {
-			m.userScrolled = true
-		}
+		m.userScrolled = !m.vp.AtBottom()
 		return m, nil
 	case tea.KeyPgDown:
 		m.vp.PageDown()
-		if m.vp.ScrollPercent() >= 1.0 {
-			m.userScrolled = false
-		}
+		m.userScrolled = !m.vp.AtBottom()
 		return m, nil
 	case tea.KeyEnd:
 		m.userScrolled = false
@@ -503,11 +499,15 @@ func (m Model) handleThinkingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Slash-command dropdown overrides come first so they shadow history nav,
-	// the prompt-suggestion tab handler, and Esc-stash gestures.
+	// the prompt-suggestion tab handler, and Esc-stash gestures. When the
+	// override doesn't fully handle the key (e.g. Enter accepts the highlight
+	// and falls through to submit), we still adopt its model mutations.
 	if matches := m.visibleSlashMatches(); len(matches) > 0 {
-		if newM, handled := m.handleSlashDropdownKey(msg, matches); handled {
+		newM, handled := m.handleSlashDropdownKey(msg, matches)
+		if handled {
 			return newM, nil
 		}
+		m = newM
 	}
 
 	switch msg.Type {
@@ -531,16 +531,12 @@ func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPgUp:
 		m.vp.PageUp()
-		if m.vp.ScrollPercent() < 1.0 {
-			m.userScrolled = true
-		}
+		m.userScrolled = !m.vp.AtBottom()
 		return m, nil
 
 	case tea.KeyPgDown:
 		m.vp.PageDown()
-		if m.vp.ScrollPercent() >= 1.0 {
-			m.userScrolled = false
-		}
+		m.userScrolled = !m.vp.AtBottom()
 		return m, nil
 
 	case tea.KeyEnd:
@@ -627,6 +623,12 @@ func (m Model) handleSlashDropdownKey(msg tea.KeyMsg, matches []slashMatch) (Mod
 		return m, true
 	case tea.KeyTab:
 		return m.acceptSlashCompletion(matches), true
+	case tea.KeyEnter:
+		// Enter accepts the highlighted match and submits in one step, so a
+		// dropdown selection always executes the right command (not whatever
+		// raw prefix the user typed).
+		m = m.acceptSlashCompletion(matches)
+		return m, false
 	case tea.KeyEsc:
 		m.slashClosed = true
 		return m, true
@@ -912,15 +914,11 @@ func (m Model) handleCommandProposalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.dismissCommandProposal()
 	case tea.KeyPgUp:
 		m.vp.PageUp()
-		if m.vp.ScrollPercent() < 1.0 {
-			m.userScrolled = true
-		}
+		m.userScrolled = !m.vp.AtBottom()
 		return m, nil
 	case tea.KeyPgDown:
 		m.vp.PageDown()
-		if m.vp.ScrollPercent() >= 1.0 {
-			m.userScrolled = false
-		}
+		m.userScrolled = !m.vp.AtBottom()
 		return m, nil
 	case tea.KeyEnd:
 		m.userScrolled = false
@@ -1075,16 +1073,28 @@ func (m Model) handleGenerationMsg(msg generationMsg) (tea.Model, tea.Cmd) {
 // refreshViewport re-renders the thread and updates viewport content.
 func (m *Model) refreshViewport() {
 	content := m.renderer.RenderThread(m.thread)
+	if content == "" {
+		content = m.emptyStateHint()
+	}
 	m.vp.SetContent(content)
 	if !m.userScrolled {
 		m.vp.GotoBottom()
 	}
 }
 
+// emptyStateHint returns the placeholder text shown when the thread is empty.
+func (m Model) emptyStateHint() string {
+	dim := m.renderer.styles.ActionHints
+	key := m.renderer.styles.HelpKey
+	return dim.Render("  Ready. Ask anything, or type ") +
+		key.Render("/") +
+		dim.Render(" for commands.")
+}
+
 // popupHeight is the maximum number of terminal lines the TUI occupies.
 // Inline mode (no alt screen) renders in place, so we cap the height to
-// keep it feeling like a small popup rather than a full-page takeover.
-const popupHeight = 20
+// keep it feeling like a sized popup rather than a full-page takeover.
+const popupHeight = 30
 
 // viewportDims calculates viewport dimensions from terminal size.
 func (m Model) viewportDims() (width, height int) {
