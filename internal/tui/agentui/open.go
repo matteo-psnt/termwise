@@ -141,8 +141,11 @@ func openProgram(cfg openProgramConfig) (string, error) {
 	// terminal's native scrollback wheel is captured while the TUI is open.
 	programOpts := []tea.ProgramOption{tea.WithMouseCellMotion()}
 	outputFile := os.Stdout
+	// Queried before NewProgram so the DSR reply doesn't end up in bubbletea's input queue.
+	inputFile := os.Stdin
 
 	if cfg.programInput != nil {
+		inputFile = cfg.programInput
 		programOpts = append(programOpts, tea.WithInput(cfg.programInput))
 	}
 	if cfg.programOutput != nil {
@@ -154,7 +157,14 @@ func openProgram(cfg openProgramConfig) (string, error) {
 			return "", fmt.Errorf("opening /dev/tty for keyboard input: %w", err)
 		}
 		defer func() { _ = ttyFile.Close() }()
+		inputFile = ttyFile
 		programOpts = append(programOpts, tea.WithInput(ttyFile))
+	}
+
+	// -1 = unknown; the model falls back to bottom-anchoring.
+	initialCursorRow := -1
+	if row, err := tty.QueryCursorRow(inputFile, outputFile); err == nil {
+		initialCursorRow = row
 	}
 
 	// bubbletea's init() already pre-queried lipgloss.HasDarkBackground() on
@@ -205,7 +215,7 @@ func openProgram(cfg openProgramConfig) (string, error) {
 
 	system := systemprompt.Agent(agenttools.Defs)
 	m := newModel(cfg.providerName, cfg.provider, cfg.modelID, system, cfg.stdin, r, llmJudge, suggestions, effort, cfg.cfgPath, cfg.initialDraft, cfg.initialPrompt, themeName, closeKey,
-		promptHistory, sessionStore, cfg.sessionID, initialSession)
+		promptHistory, sessionStore, cfg.sessionID, initialSession, initialCursorRow)
 
 	p := tea.NewProgram(m, programOpts...)
 	finalModel, err := p.Run()

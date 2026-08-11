@@ -3,6 +3,7 @@ package agentui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -34,9 +35,13 @@ func (m Model) View() string {
 		)
 	}
 
+	vpView := m.vp.View()
+	if m.selection.has() {
+		vpView = renderViewportWithSelection(vpView, m.vp.YOffset, m.selection)
+	}
 	return lipgloss.JoinVertical(lipgloss.Left,
 		m.renderHeader(m.width),
-		m.vp.View(),
+		vpView,
 		inputSection,
 		m.renderStatusLine(),
 	)
@@ -278,7 +283,9 @@ func (m Model) renderStatusLine() string {
 		sep + hints.Render(tokens+" tok ")
 
 	var rightStr string
-	if !m.lastEscAt.IsZero() {
+	if !m.copyToastUntil.IsZero() && time.Now().Before(m.copyToastUntil) {
+		rightStr = m.renderer.styles.StatusModel.Render("  ✓ " + m.copyToastMsg + "  ")
+	} else if !m.lastEscAt.IsZero() {
 		rightStr = hints.Render("  Esc again to clear  ")
 	}
 

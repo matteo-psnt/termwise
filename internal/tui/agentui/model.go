@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,6 +157,25 @@ type Model struct {
 	// slashClosed is set when the user dismisses the dropdown with Esc.
 	// Reset whenever the input no longer starts with "/".
 	slashClosed bool
+
+	// lastContent is the most recent string passed to vp.SetContent, kept
+	// here so URL hit-testing and selection extraction can work against the
+	// same rendered bytes the user is looking at.
+	lastContent string
+	// links indexes every URL occurrence in the current viewport content so
+	// left-clicks can open them in a browser.
+	links []linkPosition
+
+	// selection tracks an in-progress or just-completed text selection.
+	selection selectionState
+	// copyToastUntil is when (if non-zero) the "Copied N chars" status toast
+	// should disappear from the status line.
+	copyToastUntil time.Time
+	copyToastMsg   string
+
+	// tuiTopRow is the absolute terminal row of the TUI's first rendered line.
+	// Only ever decreases — terminal scrolling moves the block up, never down.
+	tuiTopRow int
 }
 
 type escTimeoutMsg struct{}
@@ -210,6 +230,7 @@ func newModel(
 	sessionStore *history.SessionStore,
 	sessionID string,
 	initialSession *history.Session,
+	initialCursorRow int,
 ) Model {
 	ti := textinput.New()
 	ti.Prompt = ""
@@ -258,6 +279,11 @@ func newModel(
 		effort:           effort,
 		cfgPath:          cfgPath,
 		workDir:          workDirBasename(),
+		tuiTopRow:        initialCursorRow,
+	}
+	// Cursor query failed; clampAnchor will pin to the bottom on first WindowSizeMsg.
+	if initialCursorRow < 0 {
+		m.tuiTopRow = math.MaxInt32
 	}
 	m.input.PlaceholderStyle = m.renderer.styles.Suggestion
 
@@ -284,6 +310,14 @@ func (m Model) Init() tea.Cmd {
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	newModel, cmd := m.updateInner(msg)
+	if mm, ok := newModel.(Model); ok {
+		newModel = mm.clampAnchor()
+	}
+	return newModel, cmd
+}
+
+func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		return m.handleWindowSize(msg)
@@ -298,11 +332,160 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case escTimeoutMsg:
 		m.lastEscAt = time.Time{}
 		return m, nil
+	case copyToastTimeoutMsg:
+		m.copyToastUntil = time.Time{}
+		m.copyToastMsg = ""
+		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case tea.MouseMsg:
+		if handled, newM, cmd := m.handleMouseMsg(msg); handled {
+			return newM, cmd
+		}
 	}
 
 	return m.updateViewportOnly(msg)
+}
+
+// handleMouseMsg intercepts left-button events for URL clicks and drag-to-
+// select. Wheel events and clicks outside the viewport fall through to the
+// viewport's default handling via updateViewportOnly.
+func (m Model) handleMouseMsg(msg tea.MouseMsg) (bool, tea.Model, tea.Cmd) {
+	if msg.Button != tea.MouseButtonLeft {
+		return false, m, nil
+	}
+	_, vpH := m.viewportDims()
+	// Inline-mode TUI is bottom-anchored: status sits on the last terminal
+	// row, with sep + input + sep + (any dropdown) above it, then the
+	// viewport above all of that. Compute the viewport's actual terminal
+	// row range so clicks line up with what the user sees.
+	vpTopRow, vpBottomRow := m.viewportTerminalRows(vpH)
+	inViewport := msg.Y >= vpTopRow && msg.Y <= vpBottomRow
+	line := msg.Y - vpTopRow + m.vp.YOffset
+	col := msg.X
+
+	switch msg.Action {
+	case tea.MouseActionPress:
+		if !inViewport {
+			return false, m, nil
+		}
+		// URL click takes precedence over starting a selection.
+		for _, l := range m.links {
+			if l.Line == line && col >= l.StartX && col < l.EndX {
+				_ = openURL(l.URL)
+				return true, m, nil
+			}
+		}
+		m.selection = selectionState{
+			active:    true,
+			startLine: line, startCol: col,
+			endLine: line, endCol: col,
+		}
+		return true, m, nil
+
+	case tea.MouseActionMotion:
+		if !m.selection.active {
+			return false, m, nil
+		}
+		// Clamp drag position into the viewport for sane behavior when the
+		// pointer escapes the popup area.
+		if msg.Y < 1 {
+			line = m.vp.YOffset
+		} else if msg.Y > vpH {
+			line = vpH - 1 + m.vp.YOffset
+		}
+		m.selection.endLine = line
+		m.selection.endCol = col
+		return true, m, nil
+
+	case tea.MouseActionRelease:
+		if !m.selection.active {
+			return false, m, nil
+		}
+		m.selection.active = false
+		if m.selection.has() {
+			text := extractSelection(m.lastContent, m.selection)
+			if text != "" {
+				_ = copyToClipboard(text)
+				m.copyToastMsg = "Copied"
+				m.copyToastUntil = time.Now().Add(2 * time.Second)
+				return true, m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+					return copyToastTimeoutMsg{}
+				})
+			}
+		}
+		// Click without drag clears any stale selection so the next refresh
+		// drops the highlight.
+		m.selection = selectionState{}
+		return true, m, nil
+	}
+	return false, m, nil
+}
+
+// copyToastTimeoutMsg fires after the copy confirmation should disappear.
+type copyToastTimeoutMsg struct{}
+
+// viewportTerminalRows returns the inclusive [top, bottom] terminal-row range
+// occupied by the viewport. Layout below the header (1) and above the
+// separator+input+separator+status block.
+func (m Model) viewportTerminalRows(vpH int) (int, int) {
+	top := m.tuiTopRow + 1
+	bottom := top + vpH - 1
+	return top, bottom
+}
+
+// inputRowHeight returns the row count of the input section between the
+// viewport's bottom separator and the status line's top separator.
+func (m Model) inputRowHeight() int {
+	switch m.state {
+	case stateIdle:
+		if matches := m.visibleSlashMatches(); len(matches) > 0 {
+			n := len(matches)
+			if n > slashDropdownMaxRows {
+				n = slashDropdownMaxRows
+			}
+			return 1 + n // dropdown rows + input line
+		}
+	case stateApproval, stateCommandProposal:
+		return 4 // 3-line command block + 1 action-hints line
+	case stateAskPicker:
+		if m.pending.picker != nil {
+			return strings.Count(m.pending.picker.View(m.renderer), "\n") + 1
+		}
+	case stateSlashPicker:
+		if m.slashPicker != nil {
+			return strings.Count(m.slashPicker.View(m.renderer), "\n") + 1
+		}
+	}
+	return 1
+}
+
+// totalViewHeight returns the total row count of the View() output for the
+// current state: header(1) + viewport + sep(1) + input + sep(1) + status(1).
+func (m Model) totalViewHeight() int {
+	_, vpH := m.viewportDims()
+	return 4 + vpH + m.inputRowHeight()
+}
+
+// clampAnchor enforces tuiTopRow + totalViewHeight() <= m.height. When state
+// inflates the rendered height past what fits below the current anchor, the
+// terminal scrolls and tuiTopRow moves up to track that.
+func (m Model) clampAnchor() Model {
+	if m.height <= 0 {
+		return m
+	}
+	totalH := m.totalViewHeight()
+	maxTop := m.height - totalH
+	if maxTop < 0 {
+		maxTop = 0
+	}
+	if m.tuiTopRow > maxTop {
+		m.tuiTopRow = maxTop
+	}
+	if m.tuiTopRow < 0 {
+		m.tuiTopRow = 0
+	}
+	return m
 }
 
 func (m Model) quit() (tea.Model, tea.Cmd) {
@@ -1070,13 +1253,16 @@ func (m Model) handleGenerationMsg(msg generationMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// refreshViewport re-renders the thread and updates viewport content.
+// refreshViewport re-renders the thread, updates viewport content, and
+// re-indexes URL positions for click-to-open handling.
 func (m *Model) refreshViewport() {
 	content := m.renderer.RenderThread(m.thread)
 	if content == "" {
 		content = m.emptyStateHint()
 	}
 	m.vp.SetContent(content)
+	m.lastContent = content
+	m.links = findLinks(content)
 	if !m.userScrolled {
 		m.vp.GotoBottom()
 	}
