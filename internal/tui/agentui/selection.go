@@ -9,9 +9,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// selectionState tracks an in-progress or just-completed mouse text selection.
-// Coordinates are in content space (line index relative to the full viewport
-// content; col is the visible column).
+// selectionState tracks an in-progress or completed mouse text selection.
+// Coordinates are TUI-block-row indices (0 = header) and visible columns.
 type selectionState struct {
 	active              bool
 	startLine, startCol int
@@ -29,8 +28,7 @@ func (s selectionState) has() bool {
 
 type selPoint struct{ line, col int }
 
-// normalize returns (start, end) in document order so the caller doesn't have
-// to worry about which way the user dragged.
+// normalize returns (start, end) in document order regardless of drag direction.
 func (s selectionState) normalize() (selPoint, selPoint) {
 	a := selPoint{s.startLine, s.startCol}
 	b := selPoint{s.endLine, s.endCol}
@@ -40,27 +38,24 @@ func (s selectionState) normalize() (selPoint, selPoint) {
 	return a, b
 }
 
-// renderViewportWithSelection takes the viewport's visible window output and
-// applies inverse-video to every visible cell that falls inside `sel`. The
-// viewport's YOffset is needed because `view` is already cropped to the
-// visible slice.
-func renderViewportWithSelection(view string, yOffset int, sel selectionState) string {
+// applySelectionToView applies inverse-video to every cell inside `sel` on
+// the composed View output. Any row of the TUI block can be highlighted.
+func applySelectionToView(view string, sel selectionState) string {
 	if !sel.has() {
 		return view
 	}
 	a, b := sel.normalize()
 	lines := strings.Split(view, "\n")
 	for i, line := range lines {
-		contentLine := i + yOffset
-		if contentLine < a.line || contentLine > b.line {
+		if i < a.line || i > b.line {
 			continue
 		}
 		colStart := 0
 		colEnd := lipgloss.Width(stripANSI(line))
-		if contentLine == a.line {
+		if i == a.line {
 			colStart = a.col
 		}
-		if contentLine == b.line {
+		if i == b.line {
 			colEnd = b.col
 		}
 		if colStart >= colEnd {
@@ -71,9 +66,9 @@ func renderViewportWithSelection(view string, yOffset int, sel selectionState) s
 	return strings.Join(lines, "\n")
 }
 
-// applyInverse wraps the visible columns [colStart, colEnd) of `line` with
-// inverse-video ANSI codes, preserving any existing styling outside and
-// inside the range.
+// applyInverse wraps visible columns [colStart, colEnd) of `line` with
+// inverse-video, re-arming \x1b[7m after every escape so resets like \x1b[0m
+// don't silently drop the attribute mid-selection.
 func applyInverse(line string, colStart, colEnd int) string {
 	var b strings.Builder
 	col := 0
@@ -88,6 +83,9 @@ func applyInverse(line string, colStart, colEnd int) string {
 				end++
 			}
 			b.WriteString(line[i:end])
+			if inverted {
+				b.WriteString("\x1b[7m")
+			}
 			i = end
 			continue
 		}

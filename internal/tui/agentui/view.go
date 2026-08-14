@@ -16,7 +16,16 @@ func (m Model) View() string {
 	if !m.ready {
 		return "Loading...\n"
 	}
+	view := m.renderedView()
+	if m.selection.has() {
+		view = applySelectionToView(view, m.selection)
+	}
+	return view
+}
 
+// renderedView composes the TUI block without selection highlight. Used by
+// both View() and the copy path so they share the same row layout.
+func (m Model) renderedView() string {
 	vpW, _ := m.viewportDims()
 	sep := m.renderer.styles.Separator.Render(strings.Repeat("─", m.width))
 
@@ -34,14 +43,9 @@ func (m Model) View() string {
 			sep,
 		)
 	}
-
-	vpView := m.vp.View()
-	if m.selection.has() {
-		vpView = renderViewportWithSelection(vpView, m.vp.YOffset, m.selection)
-	}
 	return lipgloss.JoinVertical(lipgloss.Left,
 		m.renderHeader(m.width),
-		vpView,
+		m.vp.View(),
 		inputSection,
 		m.renderStatusLine(),
 	)
@@ -59,10 +63,7 @@ func (m Model) renderHeader(w int) string {
 
 	titleW := lipgloss.Width(title)
 	rightW := lipgloss.Width(right)
-	fill := w - titleW - rightW
-	if fill < 1 {
-		fill = 1
-	}
+	fill := max(w-titleW-rightW, 1)
 	return title + m.renderer.styles.Header.Render(strings.Repeat("─", fill)) + right
 }
 
@@ -171,10 +172,7 @@ func (m Model) renderSlashDropdown(matches []slashMatch) string {
 		}
 		b.WriteString(marker + labelOut)
 		if mt.Description != "" {
-			pad := labelW - lipgloss.Width(mt.Label) + 2
-			if pad < 1 {
-				pad = 1
-			}
+			pad := max(labelW-lipgloss.Width(mt.Label)+2, 1)
 			b.WriteString(strings.Repeat(" ", pad) + m.renderer.styles.ActionHints.Render(mt.Description))
 		}
 		if i < len(visible)-1 {
@@ -195,17 +193,11 @@ func (m Model) renderCommandBlock(label, content string, w int) string {
 	inner := w - 2
 
 	labelPart := "─ " + label + " "
-	fillCount := inner - lipgloss.Width(labelPart)
-	if fillCount < 1 {
-		fillCount = 1
-	}
+	fillCount := max(inner-lipgloss.Width(labelPart), 1)
 	top := "╭" + labelPart + strings.Repeat("─", fillCount) + "╮"
 
 	contentStr := "  " + content
-	padCount := inner - lipgloss.Width(contentStr)
-	if padCount < 0 {
-		padCount = 0
-	}
+	padCount := max(inner-lipgloss.Width(contentStr), 0)
 	mid := "│" + contentStr + strings.Repeat(" ", padCount) + "│"
 
 	bot := "╰" + strings.Repeat("─", inner) + "╯"
@@ -257,10 +249,7 @@ func (m Model) renderHelpOverlay() string {
 	for _, b := range bindings {
 		key := m.renderer.styles.HelpKey.Render(b.key)
 		desc := m.renderer.styles.HelpDesc.Render(b.desc)
-		pad := keyColW - lipgloss.Width(b.key)
-		if pad < 1 {
-			pad = 1
-		}
+		pad := max(keyColW-lipgloss.Width(b.key), 1)
 		sb.WriteString("  " + key + strings.Repeat(" ", pad) + desc + "\n")
 	}
 	return strings.TrimRight(sb.String(), "\n")
@@ -284,15 +273,12 @@ func (m Model) renderStatusLine() string {
 
 	var rightStr string
 	if !m.copyToastUntil.IsZero() && time.Now().Before(m.copyToastUntil) {
-		rightStr = m.renderer.styles.StatusModel.Render("  ✓ " + m.copyToastMsg + "  ")
+		rightStr = m.renderer.styles.CopyToast.Render(" ✓ " + m.copyToastMsg + " ")
 	} else if !m.lastEscAt.IsZero() {
 		rightStr = hints.Render("  Esc again to clear  ")
 	}
 
-	pad := m.width - lipgloss.Width(leftStr) - lipgloss.Width(rightStr)
-	if pad < 0 {
-		pad = 0
-	}
+	pad := max(m.width-lipgloss.Width(leftStr)-lipgloss.Width(rightStr), 0)
 	return leftStr + strings.Repeat(" ", pad) + rightStr
 }
 

@@ -87,9 +87,7 @@ func computeSlashMatches(m Model, value string) (matches []slashMatch, argMode b
 	if !strings.HasPrefix(value, "/") {
 		return nil, false
 	}
-	if idx := strings.Index(value, " "); idx >= 0 {
-		name := value[:idx]
-		argPrefix := value[idx+1:]
+	if name, argPrefix, ok := strings.Cut(value, " "); ok {
 		cmd := findSlashCommand(name)
 		if cmd == nil || cmd.ArgOptions == nil {
 			return nil, true

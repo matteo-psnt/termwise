@@ -33,6 +33,7 @@ type Styles struct {
 	CommandBox  lipgloss.Style
 	ActionHints lipgloss.Style
 	StatusModel lipgloss.Style
+	CopyToast   lipgloss.Style
 	HelpKey     lipgloss.Style
 	HelpDesc    lipgloss.Style
 }
@@ -58,6 +59,7 @@ func newStyles(r *lipgloss.Renderer, palette theme.Palette) Styles {
 		CommandBox:  r.NewStyle().Foreground(accent),
 		ActionHints: r.NewStyle().Faint(true),
 		StatusModel: r.NewStyle().Foreground(accent),
+		CopyToast:   r.NewStyle().Foreground(accent).Bold(true).Reverse(true),
 		HelpKey:     r.NewStyle().Foreground(accent).Bold(true),
 		HelpDesc:    r.NewStyle().Faint(true),
 	}

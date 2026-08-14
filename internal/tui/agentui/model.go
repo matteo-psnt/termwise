@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -158,10 +159,6 @@ type Model struct {
 	// Reset whenever the input no longer starts with "/".
 	slashClosed bool
 
-	// lastContent is the most recent string passed to vp.SetContent, kept
-	// here so URL hit-testing and selection extraction can work against the
-	// same rendered bytes the user is looking at.
-	lastContent string
 	// links indexes every URL occurrence in the current viewport content so
 	// left-clicks can open them in a browser.
 	links []linkPosition
@@ -347,33 +344,42 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m.updateViewportOnly(msg)
 }
 
-// handleMouseMsg intercepts left-button events for URL clicks and drag-to-
-// select. Wheel events and clicks outside the viewport fall through to the
-// viewport's default handling via updateViewportOnly.
+// handleMouseMsg handles URL clicks and drag-to-select. Wheel and other
+// events fall through to the viewport.
 func (m Model) handleMouseMsg(msg tea.MouseMsg) (bool, tea.Model, tea.Cmd) {
-	if msg.Button != tea.MouseButtonLeft {
+	if msg.Action == tea.MouseActionPress && msg.Button != tea.MouseButtonLeft {
 		return false, m, nil
 	}
-	_, vpH := m.viewportDims()
-	// Inline-mode TUI is bottom-anchored: status sits on the last terminal
-	// row, with sep + input + sep + (any dropdown) above it, then the
-	// viewport above all of that. Compute the viewport's actual terminal
-	// row range so clicks line up with what the user sees.
-	vpTopRow, vpBottomRow := m.viewportTerminalRows(vpH)
-	inViewport := msg.Y >= vpTopRow && msg.Y <= vpBottomRow
-	line := msg.Y - vpTopRow + m.vp.YOffset
+	if msg.Action != tea.MouseActionPress && !m.selection.active {
+		return false, m, nil
+	}
+
+	totalH := m.totalViewHeight()
+	line := msg.Y - m.tuiTopRow
 	col := msg.X
+	inBlock := line >= 0 && line < totalH
 
 	switch msg.Action {
 	case tea.MouseActionPress:
-		if !inViewport {
-			return false, m, nil
+		// Some terminals (zsh ZLE widget host) never emit release and encode
+		// drag-end as another press. Treat a press during an active drag as
+		// that missed release.
+		var copyCmd tea.Cmd
+		if m.selection.active {
+			m, copyCmd = m.finishSelection()
 		}
-		// URL click takes precedence over starting a selection.
-		for _, l := range m.links {
-			if l.Line == line && col >= l.StartX && col < l.EndX {
-				_ = openURL(l.URL)
-				return true, m, nil
+		m.selection = selectionState{}
+		if !inBlock {
+			return copyCmd != nil, m, copyCmd
+		}
+		_, vpH := m.viewportDims()
+		if line >= 1 && line < 1+vpH {
+			vpLine := line - 1 + m.vp.YOffset
+			for _, l := range m.links {
+				if l.Line == vpLine && col >= l.StartX && col < l.EndX {
+					_ = openURL(l.URL)
+					return true, m, copyCmd
+				}
 			}
 		}
 		m.selection = selectionState{
@@ -381,58 +387,53 @@ func (m Model) handleMouseMsg(msg tea.MouseMsg) (bool, tea.Model, tea.Cmd) {
 			startLine: line, startCol: col,
 			endLine: line, endCol: col,
 		}
-		return true, m, nil
+		return true, m, copyCmd
 
 	case tea.MouseActionMotion:
-		if !m.selection.active {
-			return false, m, nil
-		}
-		// Clamp drag position into the viewport for sane behavior when the
-		// pointer escapes the popup area.
-		if msg.Y < 1 {
-			line = m.vp.YOffset
-		} else if msg.Y > vpH {
-			line = vpH - 1 + m.vp.YOffset
+		if line < 0 {
+			line = 0
+		} else if line >= totalH {
+			line = totalH - 1
 		}
 		m.selection.endLine = line
 		m.selection.endCol = col
 		return true, m, nil
 
 	case tea.MouseActionRelease:
-		if !m.selection.active {
-			return false, m, nil
-		}
-		m.selection.active = false
-		if m.selection.has() {
-			text := extractSelection(m.lastContent, m.selection)
-			if text != "" {
-				_ = copyToClipboard(text)
-				m.copyToastMsg = "Copied"
-				m.copyToastUntil = time.Now().Add(2 * time.Second)
-				return true, m, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-					return copyToastTimeoutMsg{}
-				})
-			}
-		}
-		// Click without drag clears any stale selection so the next refresh
-		// drops the highlight.
-		m.selection = selectionState{}
-		return true, m, nil
+		newM, cmd := m.finishSelection()
+		return true, newM, cmd
 	}
 	return false, m, nil
 }
 
+// finishSelection copies the current selection to the clipboard and starts
+// the toast-timeout tick.
+func (m Model) finishSelection() (Model, tea.Cmd) {
+	m.selection.active = false
+	if !m.selection.has() {
+		m.selection = selectionState{}
+		return m, nil
+	}
+	text := extractSelection(m.renderedView(), m.selection)
+	if text == "" {
+		m.selection = selectionState{}
+		return m, nil
+	}
+	_ = copyToClipboard(text)
+	n := utf8.RuneCountInString(text)
+	unit := "chars"
+	if n == 1 {
+		unit = "char"
+	}
+	m.copyToastMsg = fmt.Sprintf("Copied %d %s to clipboard", n, unit)
+	m.copyToastUntil = time.Now().Add(2500 * time.Millisecond)
+	return m, tea.Tick(2500*time.Millisecond, func(time.Time) tea.Msg {
+		return copyToastTimeoutMsg{}
+	})
+}
+
 // copyToastTimeoutMsg fires after the copy confirmation should disappear.
 type copyToastTimeoutMsg struct{}
-
-// viewportTerminalRows returns the inclusive [top, bottom] terminal-row range
-// occupied by the viewport. Layout below the header (1) and above the
-// separator+input+separator+status block.
-func (m Model) viewportTerminalRows(vpH int) (int, int) {
-	top := m.tuiTopRow + 1
-	bottom := top + vpH - 1
-	return top, bottom
-}
 
 // inputRowHeight returns the row count of the input section between the
 // viewport's bottom separator and the status line's top separator.
@@ -440,10 +441,7 @@ func (m Model) inputRowHeight() int {
 	switch m.state {
 	case stateIdle:
 		if matches := m.visibleSlashMatches(); len(matches) > 0 {
-			n := len(matches)
-			if n > slashDropdownMaxRows {
-				n = slashDropdownMaxRows
-			}
+			n := min(len(matches), slashDropdownMaxRows)
 			return 1 + n // dropdown rows + input line
 		}
 	case stateApproval, stateCommandProposal:
@@ -475,16 +473,11 @@ func (m Model) clampAnchor() Model {
 		return m
 	}
 	totalH := m.totalViewHeight()
-	maxTop := m.height - totalH
-	if maxTop < 0 {
-		maxTop = 0
-	}
+	maxTop := max(m.height-totalH, 0)
 	if m.tuiTopRow > maxTop {
 		m.tuiTopRow = maxTop
 	}
-	if m.tuiTopRow < 0 {
-		m.tuiTopRow = 0
-	}
+	m.tuiTopRow = max(m.tuiTopRow, 0)
 	return m
 }
 
@@ -1261,7 +1254,6 @@ func (m *Model) refreshViewport() {
 		content = m.emptyStateHint()
 	}
 	m.vp.SetContent(content)
-	m.lastContent = content
 	m.links = findLinks(content)
 	if !m.userScrolled {
 		m.vp.GotoBottom()
@@ -1285,18 +1277,12 @@ const popupHeight = 30
 // viewportDims calculates viewport dimensions from terminal size.
 func (m Model) viewportDims() (width, height int) {
 	// Layout: header(1) | viewport | sep(1) | input(1) | sep(1) | status(1)
-	innerW := m.width
-	if innerW < 10 {
-		innerW = 10
-	}
+	innerW := max(m.width, 10)
 	h := popupHeight
 	if m.height > 0 && m.height < h {
 		h = m.height
 	}
-	innerH := h - 5 // header(1) + sep(1) + input(1) + sep(1) + status(1)
-	if innerH < 3 {
-		innerH = 3
-	}
+	innerH := max(h-5, 3) // header(1) + sep(1) + input(1) + sep(1) + status(1)
 	return innerW, innerH
 }
 
@@ -1368,8 +1354,7 @@ func trimContext(messages []provider.Message, contextWindow int) []provider.Mess
 // providerErrMsg returns the error string with contextual advice appended for
 // known recoverable error kinds (auth failure, model not found).
 func providerErrMsg(err error) string {
-	var pe *provider.Error
-	if errors.As(err, &pe) {
+	if pe, ok := errors.AsType[*provider.Error](err); ok {
 		switch pe.Kind {
 		case provider.ErrAuth:
 			return pe.Reason + " Run `tw config` to update your key."
