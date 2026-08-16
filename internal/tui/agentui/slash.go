@@ -125,6 +125,7 @@ func (m Model) dispatchSlashCommand(text string) (tea.Model, tea.Cmd) {
 	if cmd == nil {
 		return m.submitMessage(text)
 	}
+	m.appendThreadEntries(UserEntry{Content: text})
 	return cmd.Run(m, parts[1:])
 }
 
