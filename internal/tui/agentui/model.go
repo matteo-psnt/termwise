@@ -17,7 +17,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/allowlist"
 	"github.com/matteo-psnt/termwise/internal/config"
@@ -63,34 +62,8 @@ type Model struct {
 
 type escTimeoutMsg struct{}
 
-type generationMsg struct {
-	generation uint64
-	msg        tea.Msg
-}
-
 type initialPromptMsg struct {
 	prompt string
-}
-
-func newGenerationContext() (context.Context, context.CancelFunc) {
-	return context.WithCancel(context.Background())
-}
-
-func newSuggestionContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), 8*time.Second)
-}
-
-func wrapGenerationCmd(generation uint64, cmd tea.Cmd) tea.Cmd {
-	if cmd == nil {
-		return nil
-	}
-	return func() tea.Msg {
-		msg := cmd()
-		if msg == nil {
-			return nil
-		}
-		return generationMsg{generation: generation, msg: msg}
-	}
 }
 
 // newModel constructs the TUI model.
@@ -787,66 +760,6 @@ func (m Model) chatRequest() provider.ChatRequest {
 // for thinking-capable models, or empty for models without thinking support.
 func (m Model) effectiveEffort() string {
 	return config.EffectiveEffort(m.providerName, m.modelID, m.effort)
-}
-
-func (m *Model) beginGeneration() {
-	m.resetGenerationContext()
-	m.nextGeneration++
-	m.activeGeneration = m.nextGeneration
-}
-
-func (m *Model) resetGenerationContext() {
-	m.cancel()
-	m.ctx, m.cancel = newGenerationContext()
-}
-
-func (m *Model) startChat() tea.Cmd {
-	return tea.Batch(
-		m.spin.Tick,
-		m.wrapActiveGeneration(ChatCmd(m.ctx, m.provider, m.chatRequest())),
-	)
-}
-
-func (m *Model) interruptActiveTurn() {
-	m.resetGenerationContext()
-	m.finishGeneration()
-	m.clearPendingTool()
-	m.state = stateIdle
-	m.appendThreadEntries(ErrorEntry{Content: "Request interrupted."})
-	m.refreshViewport()
-}
-
-func (m *Model) finishGeneration() {
-	m.activeGeneration = 0
-}
-
-func (m Model) wrapActiveGeneration(cmd tea.Cmd) tea.Cmd {
-	return wrapGenerationCmd(m.activeGeneration, cmd)
-}
-
-func (m Model) handleGenerationMsg(msg generationMsg) (tea.Model, tea.Cmd) {
-	if msg.generation != m.activeGeneration {
-		return m, nil
-	}
-
-	switch inner := msg.msg.(type) {
-	case agent.ResponseEvent:
-		return m.handleResponseEvent(inner)
-	case agent.ToolExecutedEvent:
-		return m.handleToolExecutedEvent(inner)
-	case agent.NeedsApprovalEvent:
-		return m.handleNeedsApprovalEvent(inner)
-	case agent.AskEvent:
-		return m.handleAskEvent(inner)
-	case agent.RespondEvent:
-		return m.handleRespondEvent(inner)
-	case agent.AllToolsDoneEvent:
-		return m.handleAllToolsDoneEvent(inner)
-	case judgmentMsg:
-		return m.handleJudgmentMsg(inner)
-	default:
-		return m, nil
-	}
 }
 
 // refreshViewport re-renders the thread, updates viewport content, and
