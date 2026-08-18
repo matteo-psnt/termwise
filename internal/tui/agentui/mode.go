@@ -31,14 +31,6 @@ func (idleMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleIdleKey(msg)
 }
 
-// thinkingMode covers stateThinking and stateJudging — waiting on the model
-// or on the LLM safety judge. The TUI only accepts scroll keys and Esc.
-type thinkingMode struct{}
-
-func (thinkingMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.handleThinkingKey(msg)
-}
-
 // approvalMode handles input when a bash command needs user approval.
 type approvalMode struct{}
 

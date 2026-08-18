@@ -547,27 +547,6 @@ func (m Model) openSlashPicker(cmd, title string, options []string, current stri
 	return m, nil
 }
 
-func (m Model) handleThinkingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyPgUp:
-		m.vp.PageUp()
-		m.userScrolled = !m.vp.AtBottom()
-		return m, nil
-	case tea.KeyPgDown:
-		m.vp.PageDown()
-		m.userScrolled = !m.vp.AtBottom()
-		return m, nil
-	case tea.KeyEnd:
-		m.userScrolled = false
-		m.vp.GotoBottom()
-		return m, nil
-	case tea.KeyEsc:
-		m.interruptActiveTurn()
-		return m, nil
-	}
-	return m, nil
-}
-
 func (m Model) handleIdleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Slash-command dropdown overrides come first so they shadow history nav,
 	// the prompt-suggestion tab handler, and Esc-stash gestures. When the

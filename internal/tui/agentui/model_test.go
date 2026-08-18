@@ -65,7 +65,7 @@ func TestHandleThinkingKeyEscInterruptsRequest(t *testing.T) {
 		state: stateThinking,
 	}
 
-	gotModel, _ := m.handleThinkingKey(tea.KeyMsg{Type: tea.KeyEsc})
+	gotModel, _ := thinkingMode{}.handleKey(m, tea.KeyMsg{Type: tea.KeyEsc})
 	got := gotModel.(Model)
 
 	if got.state != stateIdle {
