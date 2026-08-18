@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -204,4 +205,42 @@ func DefaultKeychainEntry(providerName string) string {
 // StoreKeychain writes an API key into the macOS Keychain under the termwise service.
 func StoreKeychain(providerName, apiKey string) error {
 	return keyring.Set("termwise", DefaultKeychainEntry(providerName), apiKey)
+}
+
+// ListProviderModels returns the models available for the given provider config.
+// Used by the config UI / wizard to populate model pickers before saving.
+func ListProviderModels(ctx context.Context, name string, pc ProviderConfig) ([]provider.Model, error) {
+	auth, err := ResolveAuth(name, pc)
+	if err != nil {
+		return nil, err
+	}
+	desc := modelCacheDescriptorFor(name, auth)
+	return defaultProviderModelsCache.getOrFetch(ctx, desc, func(ctx context.Context) ([]provider.Model, error) {
+		client, err := newProviderClientWithAuth(name, pc, auth)
+		if err != nil {
+			return nil, err
+		}
+		return client.ListModels(ctx)
+	})
+}
+
+// CheckProviderConnectivity verifies that the provider is reachable and returns
+// at least one model. Returns nil on success.
+func CheckProviderConnectivity(ctx context.Context, name string, pc ProviderConfig) error {
+	ms, err := ListProviderModels(ctx, name, pc)
+	if err != nil {
+		return err
+	}
+	if len(ms) == 0 {
+		return fmt.Errorf("no models returned by %s", name)
+	}
+	return nil
+}
+
+func newProviderClientWithAuth(name string, pc ProviderConfig, auth ResolvedAuth) (provider.AgentClient, error) {
+	return provider.NewClient(name, provider.Config{
+		APIKey:  auth.APIKey,
+		Model:   pc.Model,
+		BaseURL: auth.BaseURL,
+	})
 }
