@@ -23,4 +23,3 @@ var (
 	_ mode = slashPickerMode{}
 	_ mode = histSearchMode{}
 )
-
