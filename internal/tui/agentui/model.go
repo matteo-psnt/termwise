@@ -909,79 +909,10 @@ func (m Model) filterHistory(query string) []string {
 	return out
 }
 
-func (m Model) handleApprovalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEnter:
-		return m.approvePendingBash()
-	case tea.KeyEsc:
-		return m.denyPendingBash()
-	}
-	switch msg.String() {
-	case "1", "y":
-		return m.approvePendingBash()
-	case "2", "n":
-		return m.denyPendingBash()
-	case "3", "e":
-		cmd, _ := m.pending.toolCall.Input["command"].(string)
-		m.input.SetValue(cmd)
-		m.input.CursorEnd()
-		m.state = stateApprovalEdit
-		return m, nil
-	}
-	return m, nil
-}
-
 func (m Model) denyPendingBash() (tea.Model, tea.Cmd) {
 	m.appendThreadEntries(ToolResultEntry{Content: "User denied this command.", IsError: true})
 	m.refreshViewport()
 	return m.resumePendingToolLoop(m.pending.result("User denied this command.", true))
-}
-
-func (m Model) handleApprovalEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEnter:
-		edited := strings.TrimSpace(m.input.Value())
-		m.input.SetValue("")
-		if edited != "" {
-			m.pending.toolCall.Input["command"] = edited
-		}
-		return m.approvePendingBash()
-	case tea.KeyEsc:
-		m.input.SetValue("")
-		m.state = stateApproval
-		return m, nil
-	}
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	return m, cmd
-}
-
-func (m Model) handleCommandProposalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEnter:
-		return m.acceptCommandProposal()
-	case tea.KeyEsc:
-		return m.dismissCommandProposal()
-	case tea.KeyPgUp:
-		m.vp.PageUp()
-		m.userScrolled = !m.vp.AtBottom()
-		return m, nil
-	case tea.KeyPgDown:
-		m.vp.PageDown()
-		m.userScrolled = !m.vp.AtBottom()
-		return m, nil
-	case tea.KeyEnd:
-		m.userScrolled = false
-		m.vp.GotoBottom()
-		return m, nil
-	}
-	switch msg.String() {
-	case "1":
-		return m.acceptCommandProposal()
-	case "2":
-		return m.dismissCommandProposal()
-	}
-	return m, nil
 }
 
 func (m Model) acceptCommandProposal() (tea.Model, tea.Cmd) {

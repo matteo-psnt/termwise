@@ -31,29 +31,6 @@ func (idleMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleIdleKey(msg)
 }
 
-// approvalMode handles input when a bash command needs user approval.
-type approvalMode struct{}
-
-func (approvalMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.handleApprovalKey(msg)
-}
-
-// approvalEditMode handles input while the user is editing a proposed bash
-// command before approving.
-type approvalEditMode struct{}
-
-func (approvalEditMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.handleApprovalEditKey(msg)
-}
-
-// commandProposalMode handles input when the agent has proposed a final shell
-// command; the user can accept or dismiss it.
-type commandProposalMode struct{}
-
-func (commandProposalMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.handleCommandProposalKey(msg)
-}
-
 // askPickerMode handles input while the agent's `ask` tool has surfaced a
 // multiple-choice question.
 type askPickerMode struct{}
