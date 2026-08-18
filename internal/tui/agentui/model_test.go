@@ -205,7 +205,7 @@ func TestHandleIdleKeyTabAcceptsSuggestion(t *testing.T) {
 		state: stateIdle,
 	}
 
-	gotModel, _ := m.handleIdleKey(tea.KeyMsg{Type: tea.KeyTab})
+	gotModel, _ := idleMode{}.handleKey(m, tea.KeyMsg{Type: tea.KeyTab})
 	got := gotModel.(Model)
 
 	if got.input.Value() != "run the tests" {

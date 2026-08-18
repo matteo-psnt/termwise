@@ -24,10 +24,3 @@ var (
 	_ mode = histSearchMode{}
 )
 
-// idleMode handles input when no modal screen is open.
-type idleMode struct{}
-
-func (idleMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.handleIdleKey(msg)
-}
-
