@@ -428,25 +428,34 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	switch m.state {
-	case stateIdle:
-		return idleMode{}.handleKey(m, msg)
-	case stateThinking, stateJudging:
-		return m.handleThinkingKey(msg)
-	case stateApproval:
-		return m.handleApprovalKey(msg)
-	case stateApprovalEdit:
-		return m.handleApprovalEditKey(msg)
-	case stateCommandProposal:
-		return m.handleCommandProposalKey(msg)
-	case stateAskPicker:
-		return m.handlePickerKey(msg)
-	case stateSlashPicker:
-		return m.handleSlashPickerKey(msg)
-	case stateHistSearch:
-		return m.handleHistSearchKey(msg)
+	if md := modeFor(m.state); md != nil {
+		return md.handleKey(m, msg)
 	}
 	return m, nil
+}
+
+// modeFor returns the mode that owns key handling for the given state.
+// Returns nil for unknown states (defensive — every defined state has a mode).
+func modeFor(s tuiState) mode {
+	switch s {
+	case stateIdle:
+		return idleMode{}
+	case stateThinking, stateJudging:
+		return thinkingMode{}
+	case stateApproval:
+		return approvalMode{}
+	case stateApprovalEdit:
+		return approvalEditMode{}
+	case stateCommandProposal:
+		return commandProposalMode{}
+	case stateAskPicker:
+		return askPickerMode{}
+	case stateSlashPicker:
+		return slashPickerMode{}
+	case stateHistSearch:
+		return histSearchMode{}
+	}
+	return nil
 }
 
 func (m Model) handleSlashPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
