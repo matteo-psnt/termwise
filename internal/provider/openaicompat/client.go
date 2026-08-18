@@ -16,19 +16,6 @@ import (
 
 const requestTimeout = 30 * time.Second
 
-var providerDefaults = map[string]string{
-	"openai":   "https://api.openai.com/v1",
-	"groq":     "https://api.groq.com/openai/v1",
-	"deepseek": "https://api.deepseek.com",
-	"mistral":  "https://api.mistral.ai/v1",
-	"ollama":   "http://localhost:11434/v1",
-}
-
-func DefaultBaseURL(provider string) (string, bool) {
-	baseURL, ok := providerDefaults[provider]
-	return baseURL, ok
-}
-
 // Client implements provider.AgentClient for any OpenAI-compatible API.
 type Client struct {
 	sdk      openai.Client

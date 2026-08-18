@@ -37,10 +37,7 @@ func CheckProviderConnectivity(ctx context.Context, name string, pc ProviderConf
 }
 
 func newProviderClientWithAuth(name string, pc ProviderConfig, auth ResolvedAuth) (provider.AgentClient, error) {
-	if name != "anthropic" && auth.BaseURL == "" && !isKnownProvider(name) {
-		return nil, fmt.Errorf("unknown provider %q — supported: %v", name, ProviderNames())
-	}
-	return newClient(name, provider.Config{
+	return provider.NewClient(name, provider.Config{
 		APIKey:  auth.APIKey,
 		Model:   pc.Model,
 		BaseURL: auth.BaseURL,

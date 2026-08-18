@@ -3,7 +3,6 @@ package agentui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
@@ -62,7 +61,7 @@ func (m Model) approvePendingBash() (tea.Model, tea.Cmd) {
 	m.state = stateThinking
 	return m, tea.Batch(
 		m.spin.Tick,
-		m.wrapActiveGeneration(agent.ExecuteBashCmd(m.ctx, tc, remaining, collected)),
+		m.wrapActiveGeneration(ExecuteBashCmd(m.ctx, tc, remaining, collected)),
 	)
 }
 
@@ -73,6 +72,6 @@ func (m Model) resumePendingToolLoop(result provider.ToolResult) (tea.Model, tea
 	m.state = stateThinking
 	return m, tea.Batch(
 		m.spin.Tick,
-		m.wrapActiveGeneration(agent.ProcessToolsCmd(m.ctx, remaining, collected, m.needsApproval)),
+		m.wrapActiveGeneration(ProcessToolsCmd(m.ctx, remaining, collected, m.needsApproval)),
 	)
 }

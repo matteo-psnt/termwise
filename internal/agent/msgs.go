@@ -28,14 +28,14 @@ type ToolStep struct {
 	AutoAccepted bool
 }
 
-// ResponseMsg is sent when the model returns a chat response.
-type ResponseMsg struct {
+// ResponseEvent reports a chat response from the model.
+type ResponseEvent struct {
 	Resp *provider.ChatResponse
 	Err  error
 }
 
-// ToolExecutedMsg is sent when a tool (read or auto-accepted bash) has been executed.
-type ToolExecutedMsg struct {
+// ToolExecutedEvent reports that a tool (read or auto-accepted bash) has been executed.
+type ToolExecutedEvent struct {
 	ToolCall     provider.ToolCall
 	Result       provider.ToolResult
 	Remaining    []provider.ToolCall
@@ -43,16 +43,16 @@ type ToolExecutedMsg struct {
 	AutoAccepted bool
 }
 
-// NeedsApprovalMsg is sent when a bash command requires user approval before running.
-type NeedsApprovalMsg struct {
+// NeedsApprovalEvent reports that a bash command requires user approval before running.
+type NeedsApprovalEvent struct {
 	ToolCall  provider.ToolCall
 	Command   string
 	Remaining []provider.ToolCall
 	Collected []provider.ToolResult
 }
 
-// AskMsg is sent when the model uses the ask tool.
-type AskMsg struct {
+// AskEvent reports that the model used the ask tool.
+type AskEvent struct {
 	ToolCall    provider.ToolCall
 	Question    string
 	Options     []string
@@ -61,15 +61,15 @@ type AskMsg struct {
 	Collected   []provider.ToolResult
 }
 
-// RespondMsg is sent when the model calls the command tool.
-type RespondMsg struct {
+// RespondEvent reports that the model called the command tool.
+type RespondEvent struct {
 	ToolCallID string
 	Content    string
 	Collected  []provider.ToolResult
 }
 
-// AllToolsDoneMsg is sent when all tool calls have been processed and results
+// AllToolsDoneEvent reports that all tool calls have been processed and results
 // should be sent back to the model.
-type AllToolsDoneMsg struct {
+type AllToolsDoneEvent struct {
 	Collected []provider.ToolResult
 }

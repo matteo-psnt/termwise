@@ -10,6 +10,7 @@ import (
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
+	_ "github.com/matteo-psnt/termwise/internal/provider/builtin"
 	"github.com/matteo-psnt/termwise/internal/runner"
 	"github.com/matteo-psnt/termwise/internal/tui/agentui"
 )

@@ -11,8 +11,6 @@ import (
 
 	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/matteo-psnt/termwise/internal/provider"
-	"github.com/matteo-psnt/termwise/internal/provider/anthropic"
-	"github.com/matteo-psnt/termwise/internal/provider/openaicompat"
 )
 
 // ResolvedConfig is the fully-resolved provider configuration the runtime operates with.
@@ -96,7 +94,7 @@ func LoadRuntimeConfig(path string) (ResolvedConfig, error) {
 // provider whose env var is set, or (FileConfig{}, false) if none match.
 // Ollama is excluded — it needs no API key and cannot be auto-detected.
 func ZeroConfigDefaults() (FileConfig, bool) {
-	for _, info := range providerCatalog {
+	for _, info := range provider.Catalog() {
 		if info.DefaultEnvVar == "" || os.Getenv(info.DefaultEnvVar) == "" {
 			continue
 		}
@@ -117,31 +115,11 @@ func ZeroConfigDefaults() (FileConfig, bool) {
 // NewClientFromResolved constructs a provider client from a ResolvedConfig.
 // Auth credentials must already be resolved in rc.
 func NewClientFromResolved(rc ResolvedConfig) (provider.AgentClient, error) {
-	return newClient(rc.ProviderName, provider.Config{
+	return provider.NewClient(rc.ProviderName, provider.Config{
 		APIKey:  rc.APIKey,
 		Model:   rc.Model,
 		BaseURL: rc.BaseURL,
 	})
-}
-
-// newClient constructs a provider client from already-resolved config.
-func newClient(name string, cfg provider.Config) (provider.AgentClient, error) {
-	switch name {
-	case "anthropic":
-		return anthropic.New(cfg)
-	default:
-		defaultURL, ok := openaicompat.DefaultBaseURL(name)
-		if !ok {
-			if cfg.BaseURL == "" {
-				return nil, fmt.Errorf(
-					"unknown provider %q — set base_url to use a custom OpenAI-compatible endpoint",
-					name,
-				)
-			}
-			defaultURL = cfg.BaseURL
-		}
-		return openaicompat.New(name, defaultURL, cfg)
-	}
 }
 
 // ResolveAuth returns the resolved API key and base URL for a provider config.

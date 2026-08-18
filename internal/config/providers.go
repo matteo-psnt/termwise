@@ -1,43 +1,25 @@
 package config
 
-// ProviderInfo describes a built-in provider.
-type ProviderInfo struct {
-	Name          string
-	Label         string
-	DefaultEnvVar string
-}
+import "github.com/matteo-psnt/termwise/internal/provider"
 
-// providerCatalog is the authoritative list of built-in providers.
-// Order determines display order in the UI and zero-config detection priority.
-var providerCatalog = []ProviderInfo{
-	{Name: "anthropic", Label: "Anthropic", DefaultEnvVar: "ANTHROPIC_API_KEY"},
-	{Name: "openai", Label: "OpenAI", DefaultEnvVar: "OPENAI_API_KEY"},
-	{Name: "groq", Label: "Groq", DefaultEnvVar: "GROQ_API_KEY"},
-	{Name: "deepseek", Label: "DeepSeek", DefaultEnvVar: "DEEPSEEK_API_KEY"},
-	{Name: "mistral", Label: "Mistral", DefaultEnvVar: "MISTRAL_API_KEY"},
-	{Name: "ollama", Label: "Ollama (local)"},
-}
+// ProviderInfo describes a built-in provider. Re-exports provider.Info so
+// config-package callers don't need to import the provider package directly.
+type ProviderInfo = provider.Info
 
-// ProviderInfos returns a copy of the built-in provider list in display order.
+// ProviderInfos returns the built-in provider catalog in display order.
 func ProviderInfos() []ProviderInfo {
-	out := make([]ProviderInfo, len(providerCatalog))
-	copy(out, providerCatalog)
-	return out
+	return provider.Catalog()
 }
 
-// ProviderNames returns the name of every built-in provider.
+// ProviderNames returns the name of every built-in provider in display order.
 func ProviderNames() []string {
-	names := make([]string, len(providerCatalog))
-	for i, info := range providerCatalog {
-		names[i] = info.Name
-	}
-	return names
+	return provider.Names()
 }
 
 // DefaultEnvVar returns the conventional API key env var for a provider.
-// Returns "" for providers that need no key (e.g. Ollama).
+// Returns "" for providers that need no key (e.g. Ollama) or for unknown names.
 func DefaultEnvVar(name string) string {
-	info, ok := lookupProvider(name)
+	info, ok := provider.Lookup(name)
 	if !ok {
 		return ""
 	}
@@ -45,15 +27,6 @@ func DefaultEnvVar(name string) string {
 }
 
 func isKnownProvider(name string) bool {
-	_, ok := lookupProvider(name)
+	_, ok := provider.Lookup(name)
 	return ok
-}
-
-func lookupProvider(name string) (ProviderInfo, bool) {
-	for _, info := range providerCatalog {
-		if info.Name == name {
-			return info, true
-		}
-	}
-	return ProviderInfo{}, false
 }

@@ -58,7 +58,7 @@ func (m Model) handleSpinnerTick(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleResponseEvent(msg agent.ResponseEvent) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
 		m.finishGeneration()
 		if errors.Is(msg.Err, context.Canceled) {
@@ -93,10 +93,10 @@ func (m Model) handleResponseMsg(msg agent.ResponseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m.refreshViewport()
-	return m, m.wrapActiveGeneration(agent.ProcessToolsCmd(m.ctx, resp.ToolCalls, nil, m.needsApproval))
+	return m, m.wrapActiveGeneration(ProcessToolsCmd(m.ctx, resp.ToolCalls, nil, m.needsApproval))
 }
 
-func (m Model) handleToolExecutedMsg(msg agent.ToolExecutedMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleToolExecutedEvent(msg agent.ToolExecutedEvent) (tea.Model, tea.Cmd) {
 	display := msg.Result.Content
 	if msg.ToolCall.Name == "bash" {
 		display = tools.FormatDisplay(msg.Result.Content)
@@ -106,10 +106,10 @@ func (m Model) handleToolExecutedMsg(msg agent.ToolExecutedMsg) (tea.Model, tea.
 		ToolResultEntry{Content: display, IsError: msg.Result.IsError},
 	)
 	m.refreshViewport()
-	return m, m.wrapActiveGeneration(agent.ProcessToolsCmd(m.ctx, msg.Remaining, msg.Collected, m.needsApproval))
+	return m, m.wrapActiveGeneration(ProcessToolsCmd(m.ctx, msg.Remaining, msg.Collected, m.needsApproval))
 }
 
-func (m Model) handleNeedsApprovalMsg(msg agent.NeedsApprovalMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleNeedsApprovalEvent(msg agent.NeedsApprovalEvent) (tea.Model, tea.Cmd) {
 	m.setPendingTool(msg.ToolCall, msg.Remaining, msg.Collected)
 	m.appendThreadEntries(ToolCallEntry{Name: msg.ToolCall.Name, Detail: msg.Command})
 	m.refreshViewport()
@@ -131,7 +131,7 @@ func (m Model) handleJudgmentMsg(msg judgmentMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleAskMsg(msg agent.AskMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleAskEvent(msg agent.AskEvent) (tea.Model, tea.Cmd) {
 	m.state = stateAskPicker
 	m.setPendingTool(msg.ToolCall, msg.Remaining, msg.Collected)
 	p := newPicker(msg.Question, msg.Options, msg.MultiSelect)
@@ -143,7 +143,7 @@ func (m Model) handleAskMsg(msg agent.AskMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleRespondMsg(msg agent.RespondMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleRespondEvent(msg agent.RespondEvent) (tea.Model, tea.Cmd) {
 	m.setShellCommand(msg.Content)
 	m.appendThreadEntries(CommandEntry{Content: msg.Content})
 	m.appendToolResultsMessage(msg.Collected)
@@ -154,7 +154,7 @@ func (m Model) handleRespondMsg(msg agent.RespondMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleAllToolsDoneMsg(msg agent.AllToolsDoneMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleAllToolsDoneEvent(msg agent.AllToolsDoneEvent) (tea.Model, tea.Cmd) {
 	m.appendToolResultsMessage(msg.Collected)
 	m.state = stateThinking
 	return m, m.startChat()

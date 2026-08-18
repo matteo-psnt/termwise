@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -50,129 +49,16 @@ type histSearchState struct {
 	idx     int
 }
 
-// Model is the bubbletea model for the agent TUI.
+// Model is the bubbletea model for the agent TUI. Shared, always-relevant
+// state lives on the embedded shell; mode-local state (the active mode enum,
+// pending tool, history-search buffer, open slash picker) lives here.
 type Model struct {
-	// Session config
-	provider      provider.AgentClient
-	modelID       string
-	system        string
-	contextWindow int
+	shell
 
-	// Config
-	llmJudge    bool
-	suggestions bool
-	// initialPrompt is auto-submitted when the TUI starts.
-	initialPrompt string
-
-	// Conversation
-	messages []provider.Message
-	thread   []ThreadEntry
-	stdin    string // pre-loaded stdin, attached to first message
-
-	// State
-	state tuiState
-
-	// Pending tool loop (used during stateApproval / stateAskPicker)
-	pending pendingToolState
-
-	// Token counters
-	inputTokens  int
-	outputTokens int
-
-	// Components
-	vp    viewport.Model
-	input textinput.Model
-	spin  spinner.Model
-
-	// Layout
-	width        int
-	height       int
-	ready        bool
-	userScrolled bool // true when user has manually scrolled up
-	showHelp     bool // ? key toggles the contextual key-binding overlay
-
-	// Cancellation for the current in-flight async generation.
-	ctx              context.Context
-	cancel           context.CancelFunc
-	nextGeneration   uint64
-	activeGeneration uint64
-
-	// Sidecar prompt suggestion generation.
-	suggestion       string
-	suggestionCtx    context.Context
-	suggestionCancel context.CancelFunc
-	nextSuggestion   uint64
-	activeSuggestion uint64
-
-	// Renderer + the lipgloss renderer it was built from (kept so /theme can
-	// rebuild styles mid-session without re-querying the terminal background).
-	renderer         Renderer
-	lipglossRenderer *lipgloss.Renderer
-	themeName        string
-
-	// closeKey is the zsh bindkey string (e.g. "^T") that quits the TUI,
-	// matching the shell keybinding that opened it.
-	closeKey string
-
-	// quitting is set before tea.Quit so View() returns "" on the final frame,
-	// causing bubbletea's inline renderer to clear all drawn lines on exit.
-	quitting bool
-
-	// Prompt history navigation.
-	promptHistory *history.PromptHistory
-	histIdx       int    // index into history; -1 means not navigating
-	histDraft     string // saved draft before navigating
-
-	// Ctrl+R reverse search.
-	histSearch histSearchState
-
-	// Session persistence.
-	sessionStore *history.SessionStore
-	sessionID    string
-	providerName string
-
-	// effort is the configured reasoning effort level ("low", "medium", "high").
-	// Empty means use the provider default.
-	effort string
-
-	// cfgPath is the path to the config file, used to persist effort changes.
-	cfgPath string
-
-	// workDir is the basename of the working directory at startup.
-	workDir string
-
-	// shellCommand holds the latest completed command that can be returned to a
-	// shell IPC caller when the TUI exits.
-	shellCommand string
-
-	// lastEscAt tracks when the most recent Esc was pressed in idle state,
-	// enabling the double-Esc-to-stash gesture.
-	lastEscAt time.Time
-
-	// slashPicker holds the active slash-command sub-picker when state
-	// is stateSlashPicker; nil otherwise.
+	state       tuiState
+	pending     pendingToolState
+	histSearch  histSearchState
 	slashPicker *slashPicker
-
-	// slashCursor is the highlighted row in the slash-command dropdown.
-	slashCursor int
-	// slashClosed is set when the user dismisses the dropdown with Esc.
-	// Reset whenever the input no longer starts with "/".
-	slashClosed bool
-
-	// links indexes every URL occurrence in the current viewport content so
-	// left-clicks can open them in a browser.
-	links []linkPosition
-
-	// selection tracks an in-progress or just-completed text selection.
-	selection selectionState
-	// copyToastUntil is when (if non-zero) the "Copied N chars" status toast
-	// should disappear from the status line.
-	copyToastUntil time.Time
-	copyToastMsg   string
-
-	// tuiTopRow is the absolute terminal row of the TUI's first rendered line.
-	// Only ever decreases — terminal scrolling moves the block up, never down.
-	tuiTopRow int
 }
 
 type escTimeoutMsg struct{}
@@ -249,15 +135,17 @@ func newModel(
 	ctx, cancel := newGenerationContext()
 	suggestionCtx, suggestionCancel := context.WithCancel(context.Background())
 
-	m := Model{
+	sh := shell{
 		provider:         prov,
+		providerName:     providerName,
 		modelID:          modelID,
 		system:           system,
-		stdin:            stdin,
 		contextWindow:    contextWindow,
 		llmJudge:         llmJudge,
 		suggestions:      suggestions,
+		effort:           effort,
 		initialPrompt:    initialPrompt,
+		stdin:            stdin,
 		input:            ti,
 		spin:             sp,
 		ctx:              ctx,
@@ -272,28 +160,26 @@ func newModel(
 		histIdx:          -1,
 		sessionStore:     sessionStore,
 		sessionID:        sessionID,
-		providerName:     providerName,
-		effort:           effort,
 		cfgPath:          cfgPath,
 		workDir:          workDirBasename(),
 		tuiTopRow:        initialCursorRow,
 	}
 	// Cursor query failed; clampAnchor will pin to the bottom on first WindowSizeMsg.
 	if initialCursorRow < 0 {
-		m.tuiTopRow = math.MaxInt32
+		sh.tuiTopRow = math.MaxInt32
 	}
-	m.input.PlaceholderStyle = m.renderer.styles.Suggestion
+	sh.input.PlaceholderStyle = sh.renderer.styles.Suggestion
 
 	if initialSession != nil && len(initialSession.Messages) > 0 {
-		m.messages = initialSession.Messages
-		m.thread = deserializeThread(initialSession.Thread)
+		sh.messages = initialSession.Messages
+		sh.thread = deserializeThread(initialSession.Thread)
 	} else if stdin != "" {
-		m.thread = append(m.thread, UserEntry{
+		sh.thread = append(sh.thread, UserEntry{
 			Content: fmt.Sprintf("[stdin: %d lines]", strings.Count(stdin, "\n")+1),
 		})
 	}
 
-	return m
+	return Model{shell: sh}
 }
 
 // Init implements tea.Model.
@@ -544,7 +430,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch m.state {
 	case stateIdle:
-		return m.handleIdleKey(msg)
+		return idleMode{}.handleKey(m, msg)
 	case stateThinking, stateJudging:
 		return m.handleThinkingKey(msg)
 	case stateApproval:
@@ -1200,7 +1086,7 @@ func (m *Model) resetGenerationContext() {
 func (m *Model) startChat() tea.Cmd {
 	return tea.Batch(
 		m.spin.Tick,
-		m.wrapActiveGeneration(agent.ChatCmd(m.ctx, m.provider, m.chatRequest())),
+		m.wrapActiveGeneration(ChatCmd(m.ctx, m.provider, m.chatRequest())),
 	)
 }
 
@@ -1227,18 +1113,18 @@ func (m Model) handleGenerationMsg(msg generationMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch inner := msg.msg.(type) {
-	case agent.ResponseMsg:
-		return m.handleResponseMsg(inner)
-	case agent.ToolExecutedMsg:
-		return m.handleToolExecutedMsg(inner)
-	case agent.NeedsApprovalMsg:
-		return m.handleNeedsApprovalMsg(inner)
-	case agent.AskMsg:
-		return m.handleAskMsg(inner)
-	case agent.RespondMsg:
-		return m.handleRespondMsg(inner)
-	case agent.AllToolsDoneMsg:
-		return m.handleAllToolsDoneMsg(inner)
+	case agent.ResponseEvent:
+		return m.handleResponseEvent(inner)
+	case agent.ToolExecutedEvent:
+		return m.handleToolExecutedEvent(inner)
+	case agent.NeedsApprovalEvent:
+		return m.handleNeedsApprovalEvent(inner)
+	case agent.AskEvent:
+		return m.handleAskEvent(inner)
+	case agent.RespondEvent:
+		return m.handleRespondEvent(inner)
+	case agent.AllToolsDoneEvent:
+		return m.handleAllToolsDoneEvent(inner)
 	case judgmentMsg:
 		return m.handleJudgmentMsg(inner)
 	default:

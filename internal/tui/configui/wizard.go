@@ -429,9 +429,9 @@ func (m wizardModel) renderInner() string {
 		}
 		for i, p := range providers {
 			if i == m.cursor {
-				b.WriteString(m.styles.Selected.Render("▶ "+p.Label) + "\n")
+				b.WriteString(m.styles.Selected.Render("▶ "+p.DisplayName) + "\n")
 			} else {
-				b.WriteString(m.styles.Normal.Render("  "+p.Label) + "\n")
+				b.WriteString(m.styles.Normal.Render("  "+p.DisplayName) + "\n")
 			}
 		}
 		b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   q quit"))

@@ -56,11 +56,13 @@ func TestTrimContextLeavesMessagesWithinLimitUntouched(t *testing.T) {
 func TestHandleThinkingKeyEscInterruptsRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := Model{
-		ctx:              ctx,
-		cancel:           cancel,
-		state:            stateThinking,
-		activeGeneration: 7,
-		vp:               viewport.New(80, 10),
+		shell: shell{
+			ctx:              ctx,
+			cancel:           cancel,
+			activeGeneration: 7,
+			vp:               viewport.New(80, 10),
+		},
+		state: stateThinking,
 	}
 
 	gotModel, _ := m.handleThinkingKey(tea.KeyMsg{Type: tea.KeyEsc})
@@ -86,16 +88,18 @@ func TestHandleThinkingKeyEscInterruptsRequest(t *testing.T) {
 	}
 }
 
-func TestHandleResponseMsgIgnoresStaleResponse(t *testing.T) {
+func TestHandleResponseEventIgnoresStaleResponse(t *testing.T) {
 	m := Model{
-		state:            stateIdle,
-		activeGeneration: 2,
-		vp:               viewport.New(80, 10),
+		shell: shell{
+			activeGeneration: 2,
+			vp:               viewport.New(80, 10),
+		},
+		state: stateIdle,
 	}
 
 	gotModel, _ := m.handleGenerationMsg(generationMsg{
 		generation: 1,
-		msg:        agent.ResponseMsg{Resp: &provider.ChatResponse{Content: "stale"}},
+		msg:        agent.ResponseEvent{Resp: &provider.ChatResponse{Content: "stale"}},
 	})
 	got := gotModel.(Model)
 
@@ -107,16 +111,18 @@ func TestHandleResponseMsgIgnoresStaleResponse(t *testing.T) {
 	}
 }
 
-func TestHandleResponseMsgIgnoresCanceledActiveRequest(t *testing.T) {
+func TestHandleResponseEventIgnoresCanceledActiveRequest(t *testing.T) {
 	m := Model{
-		state:            stateThinking,
-		activeGeneration: 3,
-		vp:               viewport.New(80, 10),
+		shell: shell{
+			activeGeneration: 3,
+			vp:               viewport.New(80, 10),
+		},
+		state: stateThinking,
 	}
 
 	gotModel, _ := m.handleGenerationMsg(generationMsg{
 		generation: 3,
-		msg:        agent.ResponseMsg{Err: context.Canceled},
+		msg:        agent.ResponseEvent{Err: context.Canceled},
 	})
 	got := gotModel.(Model)
 
@@ -128,15 +134,17 @@ func TestHandleResponseMsgIgnoresCanceledActiveRequest(t *testing.T) {
 	}
 }
 
-func TestHandleToolExecutedMsgIgnoresStaleGeneration(t *testing.T) {
+func TestHandleToolExecutedEventIgnoresStaleGeneration(t *testing.T) {
 	m := Model{
-		activeGeneration: 2,
-		vp:               viewport.New(80, 10),
+		shell: shell{
+			activeGeneration: 2,
+			vp:               viewport.New(80, 10),
+		},
 	}
 
 	gotModel, _ := m.handleGenerationMsg(generationMsg{
 		generation: 1,
-		msg: agent.ToolExecutedMsg{
+		msg: agent.ToolExecutedEvent{
 			ToolCall: provider.ToolCall{Name: "bash", Input: map[string]any{"command": "echo stale"}},
 			Result:   provider.ToolResult{ToolCallID: "1", Content: "stale"},
 		},
@@ -155,14 +163,16 @@ func TestHandleInitialPromptSubmitsPrompt(t *testing.T) {
 	defer suggestionCancel()
 
 	m := Model{
-		ctx:              ctx,
-		cancel:           cancel,
-		suggestionCtx:    suggestionCtx,
-		suggestionCancel: suggestionCancel,
-		state:            stateIdle,
-		vp:               viewport.New(80, 10),
-		initialPrompt:    "inspect the repo",
-		contextWindow:    32_000,
+		shell: shell{
+			ctx:              ctx,
+			cancel:           cancel,
+			suggestionCtx:    suggestionCtx,
+			suggestionCancel: suggestionCancel,
+			vp:               viewport.New(80, 10),
+			initialPrompt:    "inspect the repo",
+			contextWindow:    32_000,
+		},
+		state: stateIdle,
 	}
 
 	gotModel, _ := m.handleInitialPrompt("inspect the repo")
@@ -187,10 +197,12 @@ func TestHandleInitialPromptSubmitsPrompt(t *testing.T) {
 
 func TestHandleIdleKeyTabAcceptsSuggestion(t *testing.T) {
 	m := Model{
-		state:      stateIdle,
-		suggestion: "run the tests",
-		input:      textinput.New(),
-		vp:         viewport.New(80, 10),
+		shell: shell{
+			suggestion: "run the tests",
+			input:      textinput.New(),
+			vp:         viewport.New(80, 10),
+		},
+		state: stateIdle,
 	}
 
 	gotModel, _ := m.handleIdleKey(tea.KeyMsg{Type: tea.KeyTab})
@@ -237,13 +249,15 @@ func TestShouldFilterSuggestion(t *testing.T) {
 	}
 }
 
-func TestHandleRespondMsgStoresShellCommand(t *testing.T) {
+func TestHandleRespondEventStoresShellCommand(t *testing.T) {
 	m := Model{
+		shell: shell{
+			vp: viewport.New(80, 10),
+		},
 		state: stateThinking,
-		vp:    viewport.New(80, 10),
 	}
 
-	gotModel, _ := m.handleRespondMsg(agent.RespondMsg{
+	gotModel, _ := m.handleRespondEvent(agent.RespondEvent{
 		Content: "go test ./...",
 	})
 	got := gotModel.(Model)
@@ -260,14 +274,16 @@ func TestSubmitMessageClearsPendingShellCommand(t *testing.T) {
 	defer suggestionCancel()
 
 	m := Model{
-		ctx:              ctx,
-		cancel:           cancel,
-		suggestionCtx:    suggestionCtx,
-		suggestionCancel: suggestionCancel,
-		state:            stateIdle,
-		vp:               viewport.New(80, 10),
-		contextWindow:    32_000,
-		shellCommand:     "go test ./...",
+		shell: shell{
+			ctx:              ctx,
+			cancel:           cancel,
+			suggestionCtx:    suggestionCtx,
+			suggestionCancel: suggestionCancel,
+			vp:               viewport.New(80, 10),
+			contextWindow:    32_000,
+			shellCommand:     "go test ./...",
+		},
+		state: stateIdle,
 	}
 
 	gotModel, _ := m.submitMessage("next question")
@@ -278,14 +294,16 @@ func TestSubmitMessageClearsPendingShellCommand(t *testing.T) {
 	}
 }
 
-func TestHandleResponseMsgWithoutToolsClearsShellCommand(t *testing.T) {
+func TestHandleResponseEventWithoutToolsClearsShellCommand(t *testing.T) {
 	m := Model{
-		state:        stateThinking,
-		vp:           viewport.New(80, 10),
-		shellCommand: "go test ./...",
+		shell: shell{
+			vp:           viewport.New(80, 10),
+			shellCommand: "go test ./...",
+		},
+		state: stateThinking,
 	}
 
-	gotModel, _ := m.handleResponseMsg(agent.ResponseMsg{
+	gotModel, _ := m.handleResponseEvent(agent.ResponseEvent{
 		Resp: &provider.ChatResponse{Content: "plain text"},
 	})
 	got := gotModel.(Model)
