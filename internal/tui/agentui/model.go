@@ -458,30 +458,6 @@ func modeFor(s tuiState) mode {
 	return nil
 }
 
-func (m Model) handleSlashPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.slashPicker == nil {
-		m.state = stateIdle
-		return m, nil
-	}
-	updated, choice, submitted, cancelled := m.slashPicker.Update(msg)
-	m.slashPicker = &updated
-	if cancelled {
-		m.slashPicker = nil
-		m.state = stateIdle
-		return m, nil
-	}
-	if submitted {
-		cmd := findSlashCommand(updated.cmd)
-		m.slashPicker = nil
-		m.state = stateIdle
-		if cmd == nil {
-			return m, nil
-		}
-		return cmd.Run(m, []string{choice})
-	}
-	return m, nil
-}
-
 // switchModel swaps the active provider client to the given provider+model.
 // It loads the on-disk config to find auth for the target provider, rebuilds
 // the AgentClient, updates session fields, and persists the new selection.
@@ -810,85 +786,6 @@ func (m Model) enterHistSearch() Model {
 	return m
 }
 
-// handleHistSearchKey handles keyboard input while in Ctrl+R search mode.
-func (m Model) handleHistSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEnter:
-		// Accept the current match and return to idle.
-		m.state = stateIdle
-		m.histSearch = histSearchState{}
-		m.input.CursorEnd()
-		return m, nil
-
-	case tea.KeyEsc:
-		// Cancel search: restore original draft.
-		m.state = stateIdle
-		m.input.SetValue(m.histDraft)
-		m.histSearch = histSearchState{}
-		m.histDraft = ""
-		m.input.CursorEnd()
-		return m, nil
-
-	case tea.KeyUp, tea.KeyDown:
-		// Cycle through matches.
-		if len(m.histSearch.matches) == 0 {
-			return m, nil
-		}
-		if msg.Type == tea.KeyUp {
-			m.histSearch.idx++
-			if m.histSearch.idx >= len(m.histSearch.matches) {
-				m.histSearch.idx = len(m.histSearch.matches) - 1
-			}
-		} else {
-			m.histSearch.idx--
-			if m.histSearch.idx < 0 {
-				m.histSearch.idx = 0
-			}
-		}
-		m.input.SetValue(m.histSearch.matches[m.histSearch.idx])
-		m.input.CursorEnd()
-		return m, nil
-
-	case tea.KeyBackspace, tea.KeyDelete:
-		if len(m.histSearch.query) > 0 {
-			m.histSearch.query = m.histSearch.query[:len(m.histSearch.query)-1]
-		}
-		m.histSearch.matches = m.filterHistory(m.histSearch.query)
-		m.histSearch.idx = 0
-		if len(m.histSearch.matches) > 0 {
-			m.input.SetValue(m.histSearch.matches[0])
-		} else {
-			m.input.SetValue(m.histSearch.query)
-		}
-		m.input.CursorEnd()
-		return m, nil
-
-	default:
-		if msg.String() == "ctrl+r" {
-			// Ctrl+R again: cycle to next match.
-			if len(m.histSearch.matches) > 0 {
-				m.histSearch.idx = (m.histSearch.idx + 1) % len(m.histSearch.matches)
-				m.input.SetValue(m.histSearch.matches[m.histSearch.idx])
-				m.input.CursorEnd()
-			}
-			return m, nil
-		}
-		// Printable character: extend the search query.
-		if len(msg.Runes) > 0 {
-			m.histSearch.query += string(msg.Runes)
-			m.histSearch.matches = m.filterHistory(m.histSearch.query)
-			m.histSearch.idx = 0
-			if len(m.histSearch.matches) > 0 {
-				m.input.SetValue(m.histSearch.matches[0])
-			} else {
-				m.input.SetValue(m.histSearch.query)
-			}
-			m.input.CursorEnd()
-		}
-		return m, nil
-	}
-}
-
 // filterHistory returns history entries that contain query as a substring,
 // in newest-first order.
 func (m Model) filterHistory(query string) []string {
@@ -929,26 +826,6 @@ func (m Model) dismissCommandProposal() (tea.Model, tea.Cmd) {
 // needsApproval returns true if the bash command must be confirmed by the user.
 func (m Model) needsApproval(cmd string) bool {
 	return allowlist.NeedsApproval(nil, cmd)
-}
-
-func (m Model) handlePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.pending.picker == nil {
-		return m, nil
-	}
-	updated, result, submitted, cancelled := m.pending.picker.Update(msg)
-	m.pending.picker = &updated
-
-	if cancelled {
-		result = "User cancelled"
-		submitted = true
-	}
-
-	if submitted {
-		m.appendThreadEntries(UserEntry{Content: result})
-		m.refreshViewport()
-		return m.resumePendingToolLoop(m.pending.result(result, false))
-	}
-	return m, nil
 }
 
 // submitMessage adds the user's message and starts a model request.

@@ -31,25 +31,3 @@ func (idleMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleIdleKey(msg)
 }
 
-// askPickerMode handles input while the agent's `ask` tool has surfaced a
-// multiple-choice question.
-type askPickerMode struct{}
-
-func (askPickerMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.handlePickerKey(msg)
-}
-
-// slashPickerMode handles input inside a slash-command sub-picker (e.g.
-// /effort, /theme, /model).
-type slashPickerMode struct{}
-
-func (slashPickerMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.handleSlashPickerKey(msg)
-}
-
-// histSearchMode handles Ctrl+R reverse search through the prompt history.
-type histSearchMode struct{}
-
-func (histSearchMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.handleHistSearchKey(msg)
-}
