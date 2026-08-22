@@ -2,7 +2,6 @@ package agentui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -16,7 +15,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/allowlist"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/history"
@@ -200,38 +198,6 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m.updateViewportOnly(msg)
-}
-
-// handleMouseMsg handles URL clicks and drag-to-select. Wheel and other
-// events fall through to the viewport.
-// inputRowHeight returns the row count of the input section between the
-// viewport's bottom separator and the status line's top separator.
-func (m Model) inputRowHeight() int {
-	switch m.state {
-	case stateIdle:
-		if matches := m.visibleSlashMatches(); len(matches) > 0 {
-			n := min(len(matches), slashDropdownMaxRows)
-			return 1 + n // dropdown rows + input line
-		}
-	case stateApproval, stateCommandProposal:
-		return 4 // 3-line command block + 1 action-hints line
-	case stateAskPicker:
-		if m.pending.picker != nil {
-			return strings.Count(m.pending.picker.View(m.renderer), "\n") + 1
-		}
-	case stateSlashPicker:
-		if m.slashPicker != nil {
-			return strings.Count(m.slashPicker.View(m.renderer), "\n") + 1
-		}
-	}
-	return 1
-}
-
-// totalViewHeight returns the total row count of the View() output for the
-// current state: header(1) + viewport + sep(1) + input + sep(1) + status(1).
-func (m Model) totalViewHeight() int {
-	_, vpH := m.viewportDims()
-	return 4 + vpH + m.inputRowHeight()
 }
 
 // clampAnchor enforces tuiTopRow + totalViewHeight() <= m.height. When state
@@ -453,86 +419,6 @@ func (Model) needsApproval(cmd string) bool {
 	return allowlist.NeedsApproval(nil, cmd)
 }
 
-// submitMessage adds the user's message and starts a model request.
-func (m Model) submitMessage(text string) (tea.Model, tea.Cmd) {
-	m.resetSuggestionContext()
-	m.clearSuggestion()
-	m.clearShellCommand()
-
-	// Attach stdin to first user message if present.
-	content := text
-	if m.stdin != "" {
-		content = text + "\n\n" + m.stdin
-		m.stdin = ""
-	}
-
-	m.thread = append(m.thread, UserEntry{Content: text})
-	m.messages = append(m.messages, provider.Message{Role: "user", Content: content})
-	m.messages = trimContext(m.messages, m.contextWindow)
-	m.beginGeneration()
-	m.state = stateThinking
-	m.refreshViewport()
-
-	return m, m.startChat()
-}
-
-// chatRequest builds the ChatRequest from current state.
-func (m Model) chatRequest() provider.ChatRequest {
-	return provider.ChatRequest{
-		Model:    m.modelID,
-		System:   m.system,
-		Messages: m.messages,
-		Tools:    tools.Defs,
-		Effort:   m.effectiveEffort(),
-	}
-}
-
-// effectiveEffort returns the effort to send: configured value, or the default
-// for thinking-capable models, or empty for models without thinking support.
-func (m Model) effectiveEffort() string {
-	return config.EffectiveEffort(m.providerName, m.modelID, m.effort)
-}
-
-// refreshViewport re-renders the thread, updates viewport content, and
-// re-indexes URL positions for click-to-open handling.
-func (m *Model) refreshViewport() {
-	content := m.renderer.RenderThread(m.thread)
-	if content == "" {
-		content = m.emptyStateHint()
-	}
-	m.vp.SetContent(content)
-	m.links = findLinks(content)
-	if !m.userScrolled {
-		m.vp.GotoBottom()
-	}
-}
-
-// emptyStateHint returns the placeholder text shown when the thread is empty.
-func (m Model) emptyStateHint() string {
-	dim := m.renderer.styles.ActionHints
-	key := m.renderer.styles.HelpKey
-	return dim.Render("  Ready. Ask anything, or type ") +
-		key.Render("/") +
-		dim.Render(" for commands.")
-}
-
-// popupHeight is the maximum number of terminal lines the TUI occupies.
-// Inline mode (no alt screen) renders in place, so we cap the height to
-// keep it feeling like a sized popup rather than a full-page takeover.
-const popupHeight = 30
-
-// viewportDims calculates viewport dimensions from terminal size.
-func (m Model) viewportDims() (width, height int) {
-	// Layout: header(1) | viewport | sep(1) | input(1) | sep(1) | status(1)
-	innerW := max(m.width, 10)
-	h := popupHeight
-	if m.height > 0 && m.height < h {
-		h = m.height
-	}
-	innerH := max(h-5, 3) // header(1) + sep(1) + input(1) + sep(1) + status(1)
-	return innerW, innerH
-}
-
 func workDirBasename() string {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -547,81 +433,4 @@ func (m Model) modelShortName() string {
 		return m.modelID
 	}
 	return strings.TrimPrefix(md.Name, "Claude ")
-}
-
-// trimContext drops oldest tool results when approaching the context window limit.
-func trimContext(messages []provider.Message, contextWindow int) []provider.Message {
-	const (
-		fixedTokens   = 700 // system prompt + tool defs estimate
-		charsPerToken = 4
-		threshold     = 0.70
-	)
-
-	limit := int(float64(contextWindow) * threshold)
-
-	estimate := func(msgs []provider.Message) int {
-		total := fixedTokens
-		for _, m := range msgs {
-			total += len(m.Content) / charsPerToken
-			for _, tr := range m.ToolResults {
-				total += len(tr.Content) / charsPerToken
-			}
-			for _, tc := range m.ToolCalls {
-				for _, v := range tc.Input {
-					total += len(fmt.Sprintf("%v", v)) / charsPerToken
-				}
-			}
-		}
-		return total
-	}
-
-	if estimate(messages) <= limit {
-		return messages
-	}
-
-	// Drop oldest tool results first.
-	const dropped = "[result dropped — conversation too long. You can re-read this file if needed.]"
-	out := make([]provider.Message, len(messages))
-	copy(out, messages)
-
-	for i := range out {
-		for j := range out[i].ToolResults {
-			if out[i].ToolResults[j].Content != dropped {
-				out[i].ToolResults[j].Content = dropped
-				if estimate(out) <= limit {
-					return out
-				}
-			}
-		}
-	}
-
-	return out
-}
-
-// providerErrMsg returns the error string with contextual advice appended for
-// known recoverable error kinds (auth failure, model not found).
-func providerErrMsg(err error) string {
-	if pe, ok := errors.AsType[*provider.Error](err); ok {
-		switch pe.Kind {
-		case provider.ErrAuth:
-			return pe.Reason + " Run `tw config` to update your key."
-		case provider.ErrModelNotFound:
-			return pe.Reason + " Run `tw config` to change the model."
-		}
-	}
-	return err.Error()
-}
-
-// toolDetail returns the display string for a tool call (command or path).
-func toolDetail(tc provider.ToolCall) string {
-	switch tc.Name {
-	case "bash":
-		cmd, _ := tc.Input["command"].(string)
-		return cmd
-	case "read":
-		path, _ := tc.Input["path"].(string)
-		return path
-	default:
-		return ""
-	}
 }
