@@ -463,13 +463,12 @@ func runDoctor(cfgPath string) bool {
 
 	// Provider block.
 	pc, hasBlock := cfg.Providers[cfg.SelectedProvider]
-	if hasBlock {
-		pass("[providers." + cfg.SelectedProvider + "]: block found")
-	} else {
+	if !hasBlock {
 		fail("[providers." + cfg.SelectedProvider + "]: no config block")
 		fmt.Println("    → Run `tw config` to configure it")
 		return allOk
 	}
+	pass("[providers." + cfg.SelectedProvider + "]: block found")
 
 	// Model.
 	if pc.Model != "" {

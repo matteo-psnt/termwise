@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -40,11 +41,11 @@ func Bash(ctx context.Context, input map[string]any) (string, bool) {
 	err := cmd.Run()
 	exitCode := 0
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
 			return fmt.Sprintf("error starting command: %s", err), true
 		}
+		exitCode = exitErr.ExitCode()
 	}
 
 	result := BashResult{

@@ -19,7 +19,7 @@ func toParams(model, system string, messages []openai.ChatCompletionMessageParam
 // toParamsWithEffort builds ChatCompletionNewParams and sets reasoning_effort when provided.
 func toParamsWithEffort(model, system string, messages []openai.ChatCompletionMessageParamUnion, tools []openai.ChatCompletionToolParam, effort string) openai.ChatCompletionNewParams {
 	p := openai.ChatCompletionNewParams{
-		Model:    openai.ChatModel(model),
+		Model:    model,
 		Messages: messages,
 	}
 	if system != "" {

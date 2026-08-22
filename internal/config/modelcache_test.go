@@ -22,7 +22,7 @@ func TestProviderModelsCacheDeduplicatesConcurrentColdMisses(t *testing.T) {
 
 	var calls atomic.Int32
 	release := make(chan struct{})
-	fetch := func(context.Context) ([]provider.Model, error) {
+	fetch := func(context.Context) ([]provider.Model, error) { //nolint:unparam // signature matches getOrFetch fetcher type
 		calls.Add(1)
 		<-release
 		return []provider.Model{{ID: "gpt-4o"}}, nil

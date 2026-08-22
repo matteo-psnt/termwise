@@ -33,7 +33,7 @@ func newEnumPicker(label, current string, options []string, styles configStyles)
 	}
 }
 
-func (m enumPickerModel) Init() tea.Cmd { return nil }
+func (enumPickerModel) Init() tea.Cmd { return nil }
 
 func (m enumPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)

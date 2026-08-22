@@ -16,11 +16,11 @@ type fakeAgentClient struct {
 	chatFn func(context.Context, provider.ChatRequest) (*provider.ChatResponse, error)
 }
 
-func (f fakeAgentClient) Name() string { return "fake" }
+func (fakeAgentClient) Name() string { return "fake" }
 
-func (f fakeAgentClient) ListModels(context.Context) ([]provider.Model, error) { return nil, nil }
+func (fakeAgentClient) ListModels(context.Context) ([]provider.Model, error) { return nil, nil }
 
-func (f fakeAgentClient) Complete(context.Context, provider.CompleteRequest) (*provider.CompleteResponse, error) {
+func (fakeAgentClient) Complete(context.Context, provider.CompleteRequest) (*provider.CompleteResponse, error) {
 	return nil, nil
 }
 
@@ -45,7 +45,7 @@ func TestRunHeadlessAgentUsesHeadlessDefsAndCommand(t *testing.T) {
 		},
 	}
 
-	output, err := testRunHeadlessAgent(context.Background(), client, "model", "prompt", false)
+	output, err := testRunHeadlessAgent(context.Background(), client, false)
 	if err != nil {
 		t.Fatalf("runHeadlessAgent: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestRunHeadlessAgentFallsBackToBareText(t *testing.T) {
 		},
 	}
 
-	output, err := testRunHeadlessAgent(context.Background(), client, "model", "prompt", false)
+	output, err := testRunHeadlessAgent(context.Background(), client, false)
 	if err != nil {
 		t.Fatalf("runHeadlessAgent: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestRunHeadlessAgentApprovalFailureFeedsBackToModel(t *testing.T) {
 		},
 	}
 
-	output, err := testRunHeadlessAgent(context.Background(), client, "model", "prompt", false)
+	output, err := testRunHeadlessAgent(context.Background(), client, false)
 	if err != nil {
 		t.Fatalf("runHeadlessAgent: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestRunHeadlessAgentJudgeSafeExecutesCommand(t *testing.T) {
 		},
 	}
 
-	output, err := testRunHeadlessAgent(context.Background(), client, "model", "prompt", true)
+	output, err := testRunHeadlessAgent(context.Background(), client, true)
 	if err != nil {
 		t.Fatalf("runHeadlessAgent: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestRunHeadlessAgentJudgeUnsafeReturnsToolError(t *testing.T) {
 		},
 	}
 
-	output, err := testRunHeadlessAgent(context.Background(), client, "model", "prompt", true)
+	output, err := testRunHeadlessAgent(context.Background(), client, true)
 	if err != nil {
 		t.Fatalf("runHeadlessAgent: %v", err)
 	}
@@ -232,10 +232,10 @@ func TestRunHeadlessAgentJudgeUnsafeReturnsToolError(t *testing.T) {
 	}
 }
 
-func testRunHeadlessAgent(ctx context.Context, client provider.AgentClient, modelID string, prompt string, llmJudge bool) (agent.FinalResponse, error) {
+func testRunHeadlessAgent(ctx context.Context, client provider.AgentClient, llmJudge bool) (agent.FinalResponse, error) {
 	return agent.RunHeadless(ctx, newAskHeadlessConfig(runtimeContext{
 		client:   client,
-		modelID:  modelID,
+		modelID:  "model",
 		llmJudge: llmJudge,
-	}, prompt))
+	}, "prompt"))
 }

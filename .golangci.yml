@@ -11,15 +11,45 @@ linters:
     - revive
     - staticcheck
     - unused
+    - bodyclose
+    - errorlint
+    - nilerr
+    - wastedassign
+    - copyloopvar
+    - gocritic
+    - unconvert
+    - unparam
+    - misspell
+
   settings:
     gocyclo:
-      min-complexity: 30
+      min-complexity: 25
     nolintlint:
       require-explanation: true
       require-specific: true
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - singleCaseSwitch
     revive:
       rules:
         - name: unused-parameter
+        - name: unused-receiver
+        - name: early-return
+        - name: superfluous-else
+        - name: indent-error-flow
+        - name: error-return
+        - name: error-naming
+        - name: errorf
+        - name: redefines-builtin-id
+        - name: time-naming
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: unreachable-code
 
 formatters:
   enable:

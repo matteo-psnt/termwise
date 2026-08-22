@@ -74,6 +74,8 @@ func validateSysctlCommand(_ *ruleEngine, cmd parsedCommand) bool {
 //   - Combined short flags (e.g. -rn10) are rejected: getopt combining semantics
 //     are ambiguous in terms of which flags consume values.
 //   - Unknown flags are rejected rather than assumed safe.
+//
+//nolint:gocyclo // xargs flag-parsing state machine; complexity is intrinsic to flag semantics
 func validateXargsCommand(e *ruleEngine, cmd parsedCommand) bool {
 	i := 0
 	for i < len(cmd.Args) {

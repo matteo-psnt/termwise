@@ -37,7 +37,7 @@ func New(cfg provider.Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Name() string { return "anthropic" }
+func (*Client) Name() string { return "anthropic" }
 
 // ListModels fetches available models from the Anthropic API.
 func (c *Client) ListModels(ctx context.Context) ([]provider.Model, error) {
@@ -48,7 +48,7 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.Model, error) {
 	var out []provider.Model
 	for _, m := range page.Data {
 		out = append(out, provider.Model{
-			ID:          string(m.ID),
+			ID:          m.ID,
 			DisplayName: m.DisplayName,
 		})
 	}

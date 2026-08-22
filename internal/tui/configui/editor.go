@@ -77,7 +77,7 @@ func displayValue(def config.SettingDef, cfg config.FileConfig) string {
 
 // activateSetting handles Enter on a setting row: toggles booleans inline,
 // opens the appropriate sub-model for all other kinds.
-func activateSetting(m editorModel, settingIdx int) (editorModel, tea.Cmd) {
+func activateSetting(m editorModel, settingIdx int) editorModel {
 	def := config.Settings[settingIdx]
 	switch def.Kind {
 	case config.KindToggle:
@@ -101,7 +101,7 @@ func activateSetting(m editorModel, settingIdx int) (editorModel, tea.Cmd) {
 		m.enumPicker = &ep
 		m.activeSettingIdx = settingIdx
 	}
-	return m, nil
+	return m
 }
 
 // ---------------------------------------------------------------------------
@@ -419,8 +419,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		return m, m.addWizard.Init()
 
 	case rowSetting:
-		updated, cmd := activateSetting(m, row.settingIdx)
-		return updated, cmd
+		return activateSetting(m, row.settingIdx), nil
 	}
 	return m, nil
 }

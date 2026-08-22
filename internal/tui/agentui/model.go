@@ -449,7 +449,7 @@ func (m Model) dismissCommandProposal() (tea.Model, tea.Cmd) {
 }
 
 // needsApproval returns true if the bash command must be confirmed by the user.
-func (m Model) needsApproval(cmd string) bool {
+func (Model) needsApproval(cmd string) bool {
 	return allowlist.NeedsApproval(nil, cmd)
 }
 

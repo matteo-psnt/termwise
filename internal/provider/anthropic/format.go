@@ -29,7 +29,7 @@ func toParamsWithEffort(model, system string, messages []sdk.MessageParam, tools
 		maxTokens = maxTokensThinking
 	}
 	p := sdk.MessageNewParams{
-		Model:     sdk.Model(model),
+		Model:     model,
 		MaxTokens: maxTokens,
 		Messages:  messages,
 	}

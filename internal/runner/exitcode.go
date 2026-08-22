@@ -6,4 +6,4 @@ type ExitCode struct {
 	Code int
 }
 
-func (e ExitCode) Error() string { return "" }
+func (ExitCode) Error() string { return "" }

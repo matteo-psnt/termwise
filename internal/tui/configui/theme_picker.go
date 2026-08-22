@@ -38,7 +38,7 @@ func (m themePickerModel) PreviewName() string {
 	return m.prev
 }
 
-func (m themePickerModel) Init() tea.Cmd { return nil }
+func (themePickerModel) Init() tea.Cmd { return nil }
 
 func (m themePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)

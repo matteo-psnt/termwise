@@ -67,6 +67,7 @@ func (m Model) approvePendingBash() (tea.Model, tea.Cmd) {
 
 func (m Model) resumePendingToolLoop(result provider.ToolResult) (tea.Model, tea.Cmd) {
 	remaining := m.pending.remaining
+	//nolint:gocritic // intentional: snapshot m.pending.collected + append result
 	collected := append(m.pending.collected, result)
 	m.clearPendingTool()
 	m.state = stateThinking

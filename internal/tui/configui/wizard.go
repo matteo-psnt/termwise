@@ -114,7 +114,7 @@ func (m wizardModel) selectedProvider() (config.ProviderInfo, bool) {
 // Init
 // ---------------------------------------------------------------------------
 
-func (m wizardModel) Init() tea.Cmd {
+func (wizardModel) Init() tea.Cmd {
 	return nil
 }
 
@@ -297,12 +297,7 @@ func (m wizardModel) handlePickModelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", " ":
 		m.modelID = m.apiModels[m.cursor].ID
-		if err := m.saveConfig(); err != nil {
-			m.errMsg = err.Error()
-			m.errBack = wizPickModel
-			m.step = wizErr
-			return m, nil
-		}
+		m.saveConfig()
 		m.step = wizDone
 	}
 
@@ -376,8 +371,8 @@ func (m wizardModel) fetchModelsCmd() tea.Cmd {
 	}
 }
 
-// saveConfig builds and saves the final config, also setting m.Result.
-func (m *wizardModel) saveConfig() error {
+// saveConfig builds the final config and stores it on m.Result.
+func (m *wizardModel) saveConfig() {
 	val := m.input.Value()
 	if val == "" {
 		val = m.enterFallback
@@ -398,7 +393,6 @@ func (m *wizardModel) saveConfig() error {
 		Providers:        map[string]config.ProviderConfig{m.provider: pc},
 	}
 	m.Result = &cfg
-	return nil
 }
 
 // ---------------------------------------------------------------------------

@@ -343,7 +343,7 @@ func latestOf(a, b time.Time) time.Time {
 func evictCacheEntries[T interface{ lastSeenAt() time.Time }](
 	entries map[string]T,
 	isEmpty func(T) bool,
-	max int,
+	limit int,
 	now time.Time,
 ) {
 	for key, entry := range entries {
@@ -351,7 +351,7 @@ func evictCacheEntries[T interface{ lastSeenAt() time.Time }](
 			delete(entries, key)
 		}
 	}
-	if len(entries) <= max {
+	if len(entries) <= limit {
 		return
 	}
 	type candidate struct {
@@ -363,7 +363,7 @@ func evictCacheEntries[T interface{ lastSeenAt() time.Time }](
 		cs = append(cs, candidate{key: key, lastUsed: entry.lastSeenAt()})
 	}
 	sort.Slice(cs, func(i, j int) bool { return cs[i].lastUsed.Before(cs[j].lastUsed) })
-	for _, c := range cs[:len(cs)-max] {
+	for _, c := range cs[:len(cs)-limit] {
 		delete(entries, c.key)
 	}
 }

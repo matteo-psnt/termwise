@@ -23,7 +23,7 @@ func newKeybindingCapture(current string, styles configStyles) keybindingModel {
 	return keybindingModel{styles: styles, current: current}
 }
 
-func (m keybindingModel) Init() tea.Cmd { return nil }
+func (keybindingModel) Init() tea.Cmd { return nil }
 
 func (m keybindingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)

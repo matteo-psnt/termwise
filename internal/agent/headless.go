@@ -114,9 +114,11 @@ func runToolLoop(
 			collected = step.Collected
 			remaining = step.Remaining
 		case ToolStepNeedsApproval:
+			//nolint:gocritic // intentional: snapshot step.Collected + append result
 			collected = append(step.Collected, onNeedsApproval(ctx, step))
 			remaining = step.Remaining
 		case ToolStepAsk:
+			//nolint:gocritic // intentional: snapshot step.Collected + append result
 			collected = append(step.Collected, onAsk(step))
 			remaining = step.Remaining
 		case ToolStepDone:
