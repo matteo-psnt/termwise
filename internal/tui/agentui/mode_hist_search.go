@@ -1,6 +1,10 @@
 package agentui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"fmt"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 // histSearchMode is active during Ctrl+R reverse search through the prompt
 // history. The mode reads m.histSearch off Model; it mutates that state in
@@ -83,4 +87,18 @@ func (histSearchMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+}
+
+func (histSearchMode) renderInputRow(m Model, _ int) string {
+	query := m.histSearch.query
+	count := len(m.histSearch.matches)
+	hint := fmt.Sprintf(" (%d)", count)
+	return m.renderer.styles.InputPrompt.Render(" / "+query+hint+" › ") + m.input.View()
+}
+
+// helpBindings preserves the pre-refactor behavior: hist-search falls through
+// to the idle bindings. The search controls (↑↓ / ctrl+r / esc / ↵) are
+// implicit to the reverse-search convention.
+func (histSearchMode) helpBindings(m Model) []binding {
+	return idleMode{}.helpBindings(m)
 }

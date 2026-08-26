@@ -1,6 +1,9 @@
 package agentui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
 
 // commandProposalMode is active when the agent has proposed a final shell
 // command and is waiting for the user to accept or dismiss it.
@@ -32,4 +35,20 @@ func (commandProposalMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cm
 		return m.dismissCommandProposal()
 	}
 	return m, nil
+}
+
+func (commandProposalMode) renderInputRow(m Model, vpW int) string {
+	return lipgloss.JoinVertical(lipgloss.Left,
+		m.renderCommandBlock("suggested command", "$ "+m.shellCommand, vpW),
+		m.renderer.styles.ActionHints.Render("  [↵] accept   [esc] dismiss"),
+	)
+}
+
+func (commandProposalMode) helpBindings(_ Model) []binding {
+	return []binding{
+		{"↵", "accept command"},
+		{"esc", "dismiss"},
+		{"?", "close help"},
+		{"ctrl+c", "quit"},
+	}
 }

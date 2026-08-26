@@ -26,3 +26,19 @@ func (thinkingMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+func (thinkingMode) renderInputRow(m Model, _ int) string {
+	if m.state == stateJudging {
+		cmd, _ := m.pending.toolCall.Input["command"].(string)
+		return " " + m.renderer.styles.Spinner.Render(m.spin.View()) + " " + cmd
+	}
+	return " " + m.renderer.styles.Spinner.Render(m.spin.View()) + " thinking..."
+}
+
+func (thinkingMode) helpBindings(_ Model) []binding {
+	return []binding{
+		{"esc", "interrupt"},
+		{"?", "close help"},
+		{"ctrl+c", "quit"},
+	}
+}

@@ -25,3 +25,16 @@ func (askPickerMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+func (askPickerMode) renderInputRow(m Model, _ int) string {
+	if m.pending.picker == nil {
+		return ""
+	}
+	return m.pending.picker.View(m.renderer)
+}
+
+// helpBindings preserves the pre-refactor behavior: picker screens fall through
+// to the idle bindings. The picker's own controls are shown inline in its view.
+func (askPickerMode) helpBindings(m Model) []binding {
+	return idleMode{}.helpBindings(m)
+}

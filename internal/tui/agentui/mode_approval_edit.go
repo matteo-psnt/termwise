@@ -28,3 +28,17 @@ func (approvalEditMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
 }
+
+func (approvalEditMode) renderInputRow(m Model, _ int) string {
+	return m.renderer.styles.InputPrompt.Render(" ✎ ") + m.input.View()
+}
+
+func (approvalEditMode) helpBindings(_ Model) []binding {
+	return []binding{
+		{"↵", "run command"},
+		{"esc", "skip"},
+		{"e", "edit command"},
+		{"?", "close help"},
+		{"ctrl+c", "quit"},
+	}
+}

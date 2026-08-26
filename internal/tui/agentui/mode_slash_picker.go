@@ -29,3 +29,16 @@ func (slashPickerMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+func (slashPickerMode) renderInputRow(m Model, _ int) string {
+	if m.slashPicker == nil {
+		return ""
+	}
+	return m.slashPicker.View(m.renderer)
+}
+
+// helpBindings preserves the pre-refactor behavior: picker screens fall through
+// to the idle bindings. The picker's own controls are shown inline in its view.
+func (slashPickerMode) helpBindings(m Model) []binding {
+	return idleMode{}.helpBindings(m)
+}
