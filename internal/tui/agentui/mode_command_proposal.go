@@ -33,6 +33,11 @@ func (commandProposalMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cm
 		return m.acceptCommandProposal()
 	case "2":
 		return m.dismissCommandProposal()
+	case "3", "e":
+		m.input.SetValue(m.shellCommand)
+		m.input.CursorEnd()
+		m.state = stateCommandProposalEdit
+		return m, nil
 	}
 	return m, nil
 }
@@ -40,7 +45,7 @@ func (commandProposalMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cm
 func (commandProposalMode) renderInputRow(m Model, vpW int) string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		m.renderCommandBlock("suggested command", "$ "+m.shellCommand, vpW),
-		m.renderer.styles.ActionHints.Render("  [↵] accept   [esc] dismiss"),
+		m.renderer.styles.ActionHints.Render("  [↵] accept   [esc] dismiss   [e] edit"),
 	)
 }
 
@@ -48,6 +53,7 @@ func (commandProposalMode) helpBindings(_ Model) []binding {
 	return []binding{
 		{"↵", "accept command"},
 		{"esc", "dismiss"},
+		{"e", "edit command"},
 		{"?", "close help"},
 		{"ctrl+c", "quit"},
 	}

@@ -27,15 +27,15 @@ import (
 type tuiState int
 
 const (
-	stateIdle            tuiState = iota
-	stateThinking                 // waiting for model
-	stateApproval                 // waiting for bash approval
-	stateApprovalEdit             // user is editing a bash command before running
-	stateJudging                  // LLM judging a bash command
-	stateAskPicker                // waiting for ask answer
-	stateHistSearch               // Ctrl+R reverse search through prompt history
-	stateCommandProposal          // model proposed a shell command; awaiting accept/dismiss
-	stateSlashPicker              // slash-command sub-picker (e.g. /effort, /theme, /model)
+	stateIdle                tuiState = iota
+	stateThinking                     // waiting for model
+	stateApproval                     // waiting for bash approval
+	stateJudging                      // LLM judging a bash command
+	stateAskPicker                    // waiting for ask answer
+	stateHistSearch                   // Ctrl+R reverse search through prompt history
+	stateCommandProposal              // model proposed a shell command; awaiting accept/dismiss/edit
+	stateCommandProposalEdit          // user is editing the proposed shell command before accepting
+	stateSlashPicker                  // slash-command sub-picker (e.g. /effort, /theme, /model)
 )
 
 // histSearchState holds the state for Ctrl+R reverse search.
@@ -293,10 +293,10 @@ func modeFor(s tuiState) mode {
 		return thinkingMode{}
 	case stateApproval:
 		return approvalMode{}
-	case stateApprovalEdit:
-		return approvalEditMode{}
 	case stateCommandProposal:
 		return commandProposalMode{}
+	case stateCommandProposalEdit:
+		return commandProposalEditMode{}
 	case stateAskPicker:
 		return askPickerMode{}
 	case stateSlashPicker:

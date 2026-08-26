@@ -1,0 +1,44 @@
+package agentui
+
+import (
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// commandProposalEditMode is active while the user is editing the model's
+// proposed shell command before accepting it. Enter commits the edited value
+// to m.shellCommand and accepts; Esc reverts to the proposal screen.
+type commandProposalEditMode struct{}
+
+func (commandProposalEditMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		edited := strings.TrimSpace(m.input.Value())
+		m.input.SetValue("")
+		if edited != "" {
+			m.setShellCommand(edited)
+		}
+		return m.acceptCommandProposal()
+	case tea.KeyEsc:
+		m.input.SetValue("")
+		m.state = stateCommandProposal
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (commandProposalEditMode) renderInputRow(m Model, _ int) string {
+	return m.renderer.styles.InputPrompt.Render(" ✎ $ ") + m.input.View()
+}
+
+func (commandProposalEditMode) helpBindings(_ Model) []binding {
+	return []binding{
+		{"↵", "accept command"},
+		{"esc", "back"},
+		{"?", "close help"},
+		{"ctrl+c", "quit"},
+	}
+}

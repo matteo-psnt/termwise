@@ -22,8 +22,8 @@ var (
 	_ mode = idleMode{}
 	_ mode = thinkingMode{}
 	_ mode = approvalMode{}
-	_ mode = approvalEditMode{}
 	_ mode = commandProposalMode{}
+	_ mode = commandProposalEditMode{}
 	_ mode = askPickerMode{}
 	_ mode = slashPickerMode{}
 	_ mode = histSearchMode{}
