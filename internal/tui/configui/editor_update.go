@@ -170,6 +170,8 @@ func (m editorModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q":
 		return m.saveAndQuit()
+	case "esc":
+		return m.revertToSnapshot()
 	case "up", "k":
 		return m.moveCursor(-1), nil
 	case "down", "j":
@@ -178,6 +180,16 @@ func (m editorModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.activateRow()
 	}
 	return m, nil
+}
+
+// revertToSnapshot rolls in-memory edits back to the config as it was when the
+// editor opened. The editor stays open; nothing is written to disk.
+func (m editorModel) revertToSnapshot() (tea.Model, tea.Cmd) {
+	m.cfg = m.initial.Clone()
+	m.styles = newStylesForTheme(m.r, m.cfg.Settings.Theme)
+	m.buildRows()
+	m.resetConnectivity()
+	return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
 }
 
 func (m editorModel) activateRow() (tea.Model, tea.Cmd) {

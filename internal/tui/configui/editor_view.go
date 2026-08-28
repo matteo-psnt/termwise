@@ -10,8 +10,7 @@ import (
 )
 
 func (m editorModel) View() string {
-	inner := m.renderInner()
-	box := m.styles.Outer.Render(inner)
+	box := m.styles.Outer.Render(m.renderInner())
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
@@ -80,29 +79,42 @@ func (m editorModel) renderNormal() string {
 
 		case rowSetting:
 			def := config.Settings[row.settingIdx]
-			m.renderRow(&b, focused, fmt.Sprintf("%-13s", def.Label), displayValue(def, m.cfg))
+			m.renderRow(&b, focused, fmt.Sprintf("%-*s", settingLabelWidth(), def.Label), displayValue(def, m.cfg))
 		}
 	}
 
 	b.WriteString("\n")
 	if len(m.rows) > 0 && m.cursor < len(m.rows) {
-		switch m.rows[m.cursor].kind {
-		case rowProvHeader:
-			b.WriteString(m.styles.Dim.Render("enter set active   ↑/↓ navigate   q quit"))
-		case rowProvModel:
-			b.WriteString(m.styles.Dim.Render("enter pick model   ↑/↓ navigate   q quit"))
-		case rowProvAuth:
-			b.WriteString(m.styles.Dim.Render("enter edit auth   ↑/↓ navigate   q quit"))
-		case rowAddProvider:
-			b.WriteString(m.styles.Dim.Render("enter add provider   ↑/↓ navigate   q quit"))
-		case rowSetting:
-			b.WriteString(m.styles.Dim.Render(hintForKind(config.Settings[m.rows[m.cursor].settingIdx].Kind)))
-		default:
-			b.WriteString(m.styles.Dim.Render("enter edit   ↑/↓ navigate   q quit"))
-		}
+		row := m.rows[m.cursor]
+		width := m.footerWidth()
+		b.WriteString(m.styles.Dim.Render(padToWidth(row.desc, width)) + "\n")
+		b.WriteString(m.styles.Dim.Render(padToWidth(row.hint, width)))
 	}
 
 	return b.String()
+}
+
+// footerWidth returns the column width that desc/hint lines are padded to.
+// Padding both to the same constant width keeps the box's auto-sized width
+// stable as the cursor moves between rows.
+func (m editorModel) footerWidth() int {
+	w := 0
+	for _, row := range m.rows {
+		if n := lipgloss.Width(row.desc); n > w {
+			w = n
+		}
+		if n := lipgloss.Width(row.hint); n > w {
+			w = n
+		}
+	}
+	return w
+}
+
+func padToWidth(s string, width int) string {
+	if pad := width - lipgloss.Width(s); pad > 0 {
+		return s + strings.Repeat(" ", pad)
+	}
+	return s
 }
 
 func (m editorModel) rowPrefix(focused bool) string {

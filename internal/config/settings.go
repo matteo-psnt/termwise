@@ -29,11 +29,12 @@ const (
 //  2. Add one boolSetting(...) entry to Settings below.
 //     Nothing else changes — validation, display, TUI editing, and show output are automatic.
 type SettingDef struct {
-	Key     string // TOML key name (e.g. "auto_resume"), used in show output
-	Label   string // human-readable label (e.g. "Auto resume")
-	Group   string // optional group label — reserved for future sectioning
-	Kind    SettingKind
-	Options []string // valid values for KindEnum; auto-used in Validate
+	Key         string // TOML key name (e.g. "auto_resume"), used in show output
+	Label       string // human-readable label (e.g. "Auto resume")
+	Description string // one-line explanation surfaced as inline help in the TUI
+	Group       string // optional group label — reserved for future sectioning
+	Kind        SettingKind
+	Options     []string // valid values for KindEnum; auto-used in Validate
 
 	// Get returns the raw stored value as a string (empty if not set).
 	// Used for display and as the input to Validate.
@@ -63,15 +64,18 @@ type SettingDef struct {
 var Settings = []SettingDef{
 	themeSetting(),
 	keybindingSetting(),
-	boolSetting("llm_judge", "LLM judge", false,
+	boolSetting("llm_judge", "LLM judge",
+		"Have the model self-judge bash commands before showing them.", false,
 		func(cfg FileConfig) *bool { return cfg.Settings.LLMJudge },
 		func(cfg *FileConfig, v *bool) { cfg.Settings.LLMJudge = v },
 	),
-	boolSetting("auto_resume", "Auto resume", false,
+	boolSetting("auto_resume", "Auto resume",
+		"Reopen the last active session when the TUI starts.", false,
 		func(cfg FileConfig) *bool { return cfg.Settings.AutoResume },
 		func(cfg *FileConfig, v *bool) { cfg.Settings.AutoResume = v },
 	),
-	boolSetting("suggestions", "Suggestions", true,
+	boolSetting("suggestions", "Suggestions",
+		"Show inline command suggestions while you type.", true,
 		func(cfg FileConfig) *bool { return cfg.Settings.Suggestions },
 		func(cfg *FileConfig, v *bool) { cfg.Settings.Suggestions = v },
 	),
@@ -82,10 +86,11 @@ var Settings = []SettingDef{
 func themeSetting() SettingDef {
 	get := func(cfg FileConfig) string { return cfg.Settings.Theme }
 	return SettingDef{
-		Key:   "theme",
-		Label: "Theme",
-		Kind:  KindTheme,
-		Get:   get,
+		Key:         "theme",
+		Label:       "Theme",
+		Description: "UI color scheme.",
+		Kind:        KindTheme,
+		Get:         get,
 		Resolve: func(cfg FileConfig) string {
 			return theme.Normalize(get(cfg)) // Normalize returns theme.DefaultName when empty
 		},
@@ -111,10 +116,11 @@ func keybindingSetting() SettingDef {
 	const defaultKB = "^T"
 	get := func(cfg FileConfig) string { return cfg.Settings.Keybinding }
 	return SettingDef{
-		Key:   "keybinding",
-		Label: "Keybinding",
-		Kind:  KindKeybinding,
-		Get:   get,
+		Key:         "keybinding",
+		Label:       "Keybinding",
+		Description: "Hotkey that opens the agent overlay from the shell.",
+		Kind:        KindKeybinding,
+		Get:         get,
 		Resolve: func(cfg FileConfig) string {
 			if v := get(cfg); v != "" {
 				return v
@@ -130,7 +136,7 @@ func keybindingSetting() SettingDef {
 // boolSetting constructs a SettingDef for a *bool field.
 // defaultOn is the effective value when the field has never been set (nil).
 // Get preserves the raw stored state by returning empty for nil.
-func boolSetting(key, label string, defaultOn bool, get func(FileConfig) *bool, set func(*FileConfig, *bool)) SettingDef {
+func boolSetting(key, label, description string, defaultOn bool, get func(FileConfig) *bool, set func(*FileConfig, *bool)) SettingDef {
 	resolve := func(v *bool) bool {
 		if v == nil {
 			return defaultOn
@@ -151,11 +157,12 @@ func boolSetting(key, label string, defaultOn bool, get func(FileConfig) *bool, 
 		return formatBool(*raw)
 	}
 	return SettingDef{
-		Key:     key,
-		Label:   label,
-		Kind:    KindToggle,
-		Get:     getString,
-		Resolve: func(cfg FileConfig) string { return formatBool(resolve(get(cfg))) },
+		Key:         key,
+		Label:       label,
+		Description: description,
+		Kind:        KindToggle,
+		Get:         getString,
+		Resolve:     func(cfg FileConfig) string { return formatBool(resolve(get(cfg))) },
 		Set: func(cfg *FileConfig, val string) {
 			on := strings.EqualFold(val, "on") || strings.EqualFold(val, "true")
 			set(cfg, &on)
@@ -187,11 +194,12 @@ func EffectiveEffort(provider, modelID, configured string) string {
 func effortSetting() SettingDef {
 	get := func(cfg FileConfig) string { return cfg.Settings.Effort }
 	return SettingDef{
-		Key:     "effort",
-		Label:   "Reasoning effort",
-		Kind:    KindEnum,
-		Options: EffortLevels,
-		Get:     get,
+		Key:         "effort",
+		Label:       "Reasoning effort",
+		Description: "Reasoning effort level for thinking-capable models.",
+		Kind:        KindEnum,
+		Options:     EffortLevels,
+		Get:         get,
 		Resolve: func(cfg FileConfig) string {
 			if v := get(cfg); v != "" {
 				return v

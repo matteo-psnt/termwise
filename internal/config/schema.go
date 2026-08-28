@@ -33,3 +33,29 @@ type SettingsConfig struct {
 	Suggestions *bool  `toml:"suggestions,omitempty"`
 	Effort      string `toml:"effort,omitempty"`
 }
+
+// Clone returns a deep copy of the config so it can be held as a snapshot
+// independent of subsequent mutations. The Providers map and the *bool fields
+// in Settings are duplicated; everything else is value-typed.
+func (c FileConfig) Clone() FileConfig {
+	out := c
+	if c.Providers != nil {
+		out.Providers = make(map[string]ProviderConfig, len(c.Providers))
+		for k, v := range c.Providers {
+			out.Providers[k] = v
+		}
+	}
+	if c.Settings.LLMJudge != nil {
+		v := *c.Settings.LLMJudge
+		out.Settings.LLMJudge = &v
+	}
+	if c.Settings.AutoResume != nil {
+		v := *c.Settings.AutoResume
+		out.Settings.AutoResume = &v
+	}
+	if c.Settings.Suggestions != nil {
+		v := *c.Settings.Suggestions
+		out.Settings.Suggestions = &v
+	}
+	return out
+}

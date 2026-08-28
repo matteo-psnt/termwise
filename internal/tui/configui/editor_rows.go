@@ -27,20 +27,35 @@ type editorRow struct {
 	kind       editorRowKind
 	provider   string
 	label      string
-	settingIdx int // only meaningful when kind == rowSetting
+	settingIdx int    // only meaningful when kind == rowSetting
+	desc       string // help text shown above hint when focused (may be empty)
+	hint       string // keyboard hint shown when focused
+}
+
+// settingLabelWidth returns the column width to pad setting labels to,
+// computed from the longest registered setting label plus one space.
+func settingLabelWidth() int {
+	const minWidth = 13
+	w := minWidth
+	for _, s := range config.Settings {
+		if n := len(s.Label) + 1; n > w {
+			w = n
+		}
+	}
+	return w
 }
 
 // hintForKind returns the keyboard hint line for a setting row.
 func hintForKind(kind config.SettingKind) string {
 	switch kind {
 	case config.KindToggle:
-		return "enter toggle   ↑/↓ navigate   q quit"
+		return "enter toggle   ↑/↓ navigate   esc revert   q quit"
 	case config.KindEnum, config.KindTheme:
-		return "enter pick   ↑/↓ navigate   q quit"
+		return "enter pick   ↑/↓ navigate   esc revert   q quit"
 	case config.KindKeybinding:
-		return "enter edit   ↑/↓ navigate   q quit"
+		return "enter edit   ↑/↓ navigate   esc revert   q quit"
 	default:
-		return "enter edit   ↑/↓ navigate   q quit"
+		return "enter edit   ↑/↓ navigate   esc revert   q quit"
 	}
 }
 
@@ -101,20 +116,26 @@ func activateSetting(m editorModel, settingIdx int) editorModel {
 // ---------------------------------------------------------------------------
 
 func (m *editorModel) buildRows() {
+	const navTail = "   ↑/↓ navigate   esc revert   q quit"
 	m.rows = []editorRow{{kind: rowSectionHeader, label: "Providers"}}
 	for _, name := range m.sortedProviders() {
 		m.rows = append(m.rows,
-			editorRow{kind: rowProvHeader, provider: name},
-			editorRow{kind: rowProvModel, provider: name},
-			editorRow{kind: rowProvAuth, provider: name},
+			editorRow{kind: rowProvHeader, provider: name, hint: "enter set active" + navTail},
+			editorRow{kind: rowProvModel, provider: name, hint: "enter pick model" + navTail},
+			editorRow{kind: rowProvAuth, provider: name, hint: "enter edit auth" + navTail},
 		)
 	}
 	if len(m.cfg.Providers) < len(config.ProviderInfos()) {
-		m.rows = append(m.rows, editorRow{kind: rowAddProvider})
+		m.rows = append(m.rows, editorRow{kind: rowAddProvider, hint: "enter add provider" + navTail})
 	}
 	m.rows = append(m.rows, editorRow{kind: rowSectionHeader, label: "Settings"})
-	for i := range config.Settings {
-		m.rows = append(m.rows, editorRow{kind: rowSetting, settingIdx: i})
+	for i, s := range config.Settings {
+		m.rows = append(m.rows, editorRow{
+			kind:       rowSetting,
+			settingIdx: i,
+			desc:       s.Description,
+			hint:       hintForKind(s.Kind),
+		})
 	}
 	m.snapCursor()
 }

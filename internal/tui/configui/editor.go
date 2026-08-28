@@ -17,6 +17,7 @@ type editorModel struct {
 
 	cfgPath string
 	cfg     config.FileConfig
+	initial config.FileConfig // snapshot taken on open; restored on esc
 
 	rows   []editorRow
 	cursor int
@@ -49,6 +50,7 @@ func newEditorModel(cfgPath string, cfg config.FileConfig, r *lipgloss.Renderer)
 		spin:    sp,
 		cfgPath: cfgPath,
 		cfg:     cfg,
+		initial: cfg.Clone(),
 	}
 	m.buildRows()
 	return m
