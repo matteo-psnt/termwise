@@ -90,6 +90,8 @@ func resolveTUIRuntime() (tuiRuntime, error) {
 	if err != nil {
 		return tuiRuntime{}, err
 	}
+	// TUI surfaces config warnings inline (the alt-screen wipes stderr).
+	// Non-TUI commands (ask, config) still emit them to stderr.
 	rc, err := config.LoadRuntimeConfig(cfgPath)
 	if err != nil {
 		return tuiRuntime{}, err
@@ -104,6 +106,15 @@ func resolveTUIRuntime() (tuiRuntime, error) {
 		client:       client,
 		modelID:      rc.Model,
 	}, nil
+}
+
+// emitConfigWarnings prints any non-fatal config warnings to stderr. Safe to
+// call before the TUI takes over; warnings land in the user's terminal
+// scrollback (or stderr for non-interactive commands).
+func emitConfigWarnings(cfgPath string) {
+	for _, w := range config.CheckConfigWarnings(cfgPath) {
+		fmt.Fprintln(os.Stderr, "tw: warning:", w)
+	}
 }
 
 func runShellWidget(sessionID string, forceResume bool, args []string) error {

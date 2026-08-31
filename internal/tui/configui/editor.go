@@ -36,7 +36,12 @@ type editorModel struct {
 	addWizard   *wizardModel
 
 	// Index into config.Settings for the currently active sub-model.
+	// Mutually exclusive with activeEffortProvider.
 	activeSettingIdx int
+
+	// When the enum picker is editing a provider's Effort, this names the
+	// provider. Empty otherwise. Mutually exclusive with activeSettingIdx use.
+	activeEffortProvider string
 
 	err error
 }

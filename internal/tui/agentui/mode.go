@@ -26,5 +26,6 @@ var (
 	_ mode = commandProposalEditMode{}
 	_ mode = askPickerMode{}
 	_ mode = slashPickerMode{}
+	_ mode = configEditorMode{}
 	_ mode = histSearchMode{}
 )

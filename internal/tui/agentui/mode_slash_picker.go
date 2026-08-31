@@ -11,21 +11,31 @@ func (slashPickerMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = stateIdle
 		return m, nil
 	}
+	prevCursor := m.slashPicker.cursor
+	originalValue := m.slashPicker.current
 	updated, choice, submitted, cancelled := m.slashPicker.Update(msg)
 	m.slashPicker = &updated
+	cmd := findSlashCommand(updated.cmd)
 	if cancelled {
 		m.slashPicker = nil
 		m.state = stateIdle
+		if cmd != nil && cmd.Preview != nil {
+			m = cmd.Preview(m, originalValue)
+			m.refreshViewport()
+		}
 		return m, nil
 	}
 	if submitted {
-		cmd := findSlashCommand(updated.cmd)
 		m.slashPicker = nil
 		m.state = stateIdle
 		if cmd == nil {
 			return m, nil
 		}
 		return cmd.Run(m, []string{choice})
+	}
+	if updated.cursor != prevCursor && cmd != nil && cmd.Preview != nil && len(updated.options) > 0 {
+		m = cmd.Preview(m, updated.options[updated.cursor].Value)
+		m.refreshViewport()
 	}
 	return m, nil
 }

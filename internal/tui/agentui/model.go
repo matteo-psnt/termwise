@@ -35,7 +35,8 @@ const (
 	stateHistSearch                   // Ctrl+R reverse search through prompt history
 	stateCommandProposal              // model proposed a shell command; awaiting accept/dismiss/edit
 	stateCommandProposalEdit          // user is editing the proposed shell command before accepting
-	stateSlashPicker                  // slash-command sub-picker (e.g. /effort, /theme, /model)
+	stateSlashPicker                  // slash-command sub-picker (e.g. /effort, /model)
+	stateConfigEditor                 // /config two-level settings editor
 )
 
 // histSearchState holds the state for Ctrl+R reverse search.
@@ -51,10 +52,11 @@ type histSearchState struct {
 type Model struct {
 	shell
 
-	state       tuiState
-	pending     pendingToolState
-	histSearch  histSearchState
-	slashPicker *slashPicker
+	state        tuiState
+	pending      pendingToolState
+	histSearch   histSearchState
+	slashPicker  *slashPicker
+	configEditor *configEditor
 }
 
 type escTimeoutMsg struct{}
@@ -301,17 +303,19 @@ func modeFor(s tuiState) mode {
 		return askPickerMode{}
 	case stateSlashPicker:
 		return slashPickerMode{}
+	case stateConfigEditor:
+		return configEditorMode{}
 	case stateHistSearch:
 		return histSearchMode{}
 	}
 	return nil
 }
 
-// switchModel swaps the active provider client to the given provider+model.
-// It loads the on-disk config to find auth for the target provider, rebuilds
-// the AgentClient, updates session fields, and persists the new selection.
-// Existing conversation messages are preserved.
-func (m *Model) switchModel(providerName, modelID string) error {
+// applyModel swaps the active provider client to the given provider+model
+// in memory only. Existing conversation messages are preserved. Use this for
+// live preview while a picker is open; pair with persistActiveModel to write
+// the selection to disk on commit.
+func (m *Model) applyModel(providerName, modelID string) error {
 	if m.cfgPath == "" {
 		return fmt.Errorf("no config path available to resolve auth for %q", providerName)
 	}
@@ -343,16 +347,29 @@ func (m *Model) switchModel(providerName, modelID string) error {
 	m.provider = client
 	m.providerName = providerName
 	m.modelID = modelID
+	m.effort = pc.Effort
 	m.contextWindow = 32_000
 	if md := models.Find(providerName, modelID); md != nil && md.Context > 0 {
 		m.contextWindow = md.Context
 	}
-
-	cfg.SelectedProvider = providerName
-	pc.Model = modelID
-	cfg.Providers[providerName] = pc
-	_ = config.SaveConfig(m.cfgPath, cfg)
 	return nil
+}
+
+// persistActiveModel writes the currently active provider+model to the config
+// file as the selected provider and that provider's default model.
+func (m *Model) persistActiveModel() {
+	if m.cfgPath == "" {
+		return
+	}
+	cfg, exists, err := config.LoadConfig(m.cfgPath)
+	if err != nil || !exists {
+		return
+	}
+	pc := cfg.Providers[m.providerName]
+	pc.Model = m.modelID
+	cfg.Providers[m.providerName] = pc
+	cfg.SelectedProvider = m.providerName
+	_ = config.SaveConfig(m.cfgPath, cfg)
 }
 
 // applyTheme rebuilds the renderer with the given theme name.

@@ -3,8 +3,8 @@ package agentui
 import tea "github.com/charmbracelet/bubbletea"
 
 // openSlashPicker activates the slash-picker sub-TUI for the given command.
-func (m Model) openSlashPicker(cmd, title string, options []string, current string) (tea.Model, tea.Cmd) {
-	p := newSlashPicker(cmd, title, options, current)
+func (m Model) openSlashPicker(cmd, title, subtitle string, options []slashOption, current string) (tea.Model, tea.Cmd) {
+	p := newSlashPicker(cmd, title, subtitle, options, current)
 	m.slashPicker = &p
 	m.state = stateSlashPicker
 	return m, nil

@@ -66,6 +66,9 @@ func (m editorModel) renderNormal() string {
 			}
 			m.renderRow(&b, focused, "     Model   ", val)
 
+		case rowProvEffort:
+			m.renderRow(&b, focused, "     Effort  ", displayEffort(m.cfg.Providers[row.provider].Effort))
+
 		case rowProvAuth:
 			m.renderRow(&b, focused, "     Auth    ", describeAuth(row.provider, m.cfg.Providers[row.provider]))
 
@@ -88,10 +91,20 @@ func (m editorModel) renderNormal() string {
 		row := m.rows[m.cursor]
 		width := m.footerWidth()
 		b.WriteString(m.styles.Dim.Render(padToWidth(row.desc, width)) + "\n")
-		b.WriteString(m.styles.Dim.Render(padToWidth(row.hint, width)))
+		b.WriteString(m.styles.Dim.Render(padToWidth(m.effectiveHint(row), width)))
 	}
 
 	return b.String()
+}
+
+// effectiveHint returns the keyboard hint for a row, swapping in a contextual
+// message for rows whose primary action depends on current state — e.g. the
+// "set active" hint disappears on the already-active provider.
+func (m editorModel) effectiveHint(row editorRow) string {
+	if row.kind == rowProvHeader && row.provider == m.cfg.SelectedProvider {
+		return "↑/↓ navigate   esc revert   q quit"
+	}
+	return row.hint
 }
 
 // footerWidth returns the column width that desc/hint lines are padded to.

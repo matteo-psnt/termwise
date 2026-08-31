@@ -5,6 +5,7 @@ import (
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/keybinding"
+	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
@@ -18,6 +19,7 @@ const (
 	rowSectionHeader editorRowKind = iota
 	rowProvHeader
 	rowProvModel
+	rowProvEffort
 	rowProvAuth
 	rowAddProvider
 	rowSetting // driven by editorSettings table; settingIdx identifies which one
@@ -57,6 +59,15 @@ func hintForKind(kind config.SettingKind) string {
 	default:
 		return "enter edit   ↑/↓ navigate   esc revert   q quit"
 	}
+}
+
+// displayEffort formats a provider's stored effort value for display.
+// Empty falls back to "<default> (default)" so the effective value is always visible.
+func displayEffort(stored string) string {
+	if stored == "" {
+		return config.DefaultEffort + " (default)"
+	}
+	return stored
 }
 
 // displayValue formats a setting's value for display in the TUI list.
@@ -122,6 +133,16 @@ func (m *editorModel) buildRows() {
 		m.rows = append(m.rows,
 			editorRow{kind: rowProvHeader, provider: name, hint: "enter set active" + navTail},
 			editorRow{kind: rowProvModel, provider: name, hint: "enter pick model" + navTail},
+		)
+		if models.SupportsThinking(name, m.cfg.Providers[name].Model) {
+			m.rows = append(m.rows, editorRow{
+				kind:     rowProvEffort,
+				provider: name,
+				desc:     "Reasoning effort level used for this model.",
+				hint:     "enter pick   ↑/↓ navigate   esc revert   q quit",
+			})
+		}
+		m.rows = append(m.rows,
 			editorRow{kind: rowProvAuth, provider: name, hint: "enter edit auth" + navTail},
 		)
 	}

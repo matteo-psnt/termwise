@@ -75,6 +75,9 @@ func (m editorModel) updateModelPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 			pc := m.cfg.Providers[mp.provider]
 			pc.Model = mp.selected
 			config.SetProvider(&m.cfg, mp.provider, pc)
+			// Switching model may toggle thinking-support, which adds or removes
+			// the per-provider Effort row.
+			m.buildRows()
 		}
 	}
 	return m, cmd
@@ -133,11 +136,26 @@ func (m editorModel) updateEnumPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	newModel, cmd := m.enumPicker.Update(msg)
 	ep := newModel.(enumPickerModel)
 	m.enumPicker = &ep
-	if ep.done {
-		m.enumPicker = nil
-		if !ep.cancelled {
-			config.Settings[m.activeSettingIdx].Set(&m.cfg, ep.result)
+	if !ep.done {
+		return m, cmd
+	}
+	m.enumPicker = nil
+	if ep.cancelled {
+		m.activeEffortProvider = ""
+		return m, cmd
+	}
+	if m.activeEffortProvider != "" {
+		pc := m.cfg.Providers[m.activeEffortProvider]
+		// Omit when the picker chose the default — keeps TOML clean.
+		if ep.result == config.DefaultEffort {
+			pc.Effort = ""
+		} else {
+			pc.Effort = ep.result
 		}
+		config.SetProvider(&m.cfg, m.activeEffortProvider, pc)
+		m.activeEffortProvider = ""
+	} else {
+		config.Settings[m.activeSettingIdx].Set(&m.cfg, ep.result)
 	}
 	return m, cmd
 }
@@ -210,6 +228,16 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		mp := newModelPicker(row.provider, pc, pc.Model, m.styles)
 		m.modelPicker = &mp
 		return m, m.modelPicker.Init()
+
+	case rowProvEffort:
+		current := m.cfg.Providers[row.provider].Effort
+		if current == "" {
+			current = config.DefaultEffort
+		}
+		ep := newEnumPicker("Reasoning effort", current, config.EffortLevels, m.styles)
+		m.enumPicker = &ep
+		m.activeEffortProvider = row.provider
+		return m, nil
 
 	case rowProvAuth:
 		ae := newAuthEditor(

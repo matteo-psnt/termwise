@@ -26,6 +26,10 @@ func (m Model) inputRowHeight() int {
 		if m.slashPicker != nil {
 			return strings.Count(m.slashPicker.View(m.renderer), "\n") + 1
 		}
+	case stateConfigEditor:
+		if m.configEditor != nil {
+			return strings.Count(configEditorMode{}.renderInputRow(m, 0), "\n") + 1
+		}
 	}
 	return 1
 }

@@ -20,6 +20,11 @@ type ProviderConfig struct {
 
 	Model   string `toml:"model,omitempty"`
 	BaseURL string `toml:"base_url,omitempty"`
+
+	// Effort is the reasoning effort level ("low" | "medium" | "high") for
+	// thinking-capable models. Empty means use the default. Ignored when the
+	// active model does not support reasoning effort.
+	Effort string `toml:"effort,omitempty"`
 }
 
 // SettingsConfig holds all user-facing preferences in a single flat block.
@@ -31,7 +36,6 @@ type SettingsConfig struct {
 	LLMJudge    *bool  `toml:"llm_judge,omitempty"`
 	AutoResume  *bool  `toml:"auto_resume,omitempty"`
 	Suggestions *bool  `toml:"suggestions,omitempty"`
-	Effort      string `toml:"effort,omitempty"`
 }
 
 // Clone returns a deep copy of the config so it can be held as a snapshot

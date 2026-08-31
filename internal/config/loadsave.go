@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -22,7 +23,8 @@ func DefaultConfigPath() (string, error) {
 
 // LoadConfig reads and parses the config file at path.
 // Returns (cfg, false, nil) when the file does not exist — any other I/O or
-// parse failure is returned as an error.
+// parse failure is returned as an error. Unknown keys are silently ignored;
+// use CheckConfigWarnings to surface them at startup.
 func LoadConfig(path string) (FileConfig, bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -32,14 +34,58 @@ func LoadConfig(path string) (FileConfig, bool, error) {
 		return FileConfig{}, false, fmt.Errorf("reading config: %w", err)
 	}
 
-	dec := toml.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-
 	var cfg FileConfig
-	if err := dec.Decode(&cfg); err != nil {
+	if err := toml.NewDecoder(bytes.NewReader(data)).Decode(&cfg); err != nil {
 		return FileConfig{}, true, fmt.Errorf("config file is invalid: %w\n  File: %s", err, path)
 	}
 	return cfg, true, nil
+}
+
+// CheckConfigWarnings returns human-readable warnings about the config file
+// at path — currently, one entry per unknown key. Returns nil when the file
+// does not exist, cannot be read, or contains only known keys. Intended to be
+// called once at startup so stale keys (e.g. from older versions of termwise)
+// surface to the user without blocking the command.
+func CheckConfigWarnings(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	dec := toml.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	var probe FileConfig
+	err = dec.Decode(&probe)
+	if err == nil {
+		return nil
+	}
+	var sm *toml.StrictMissingError
+	if !errors.As(err, &sm) {
+		return nil
+	}
+	displayPath := shortenHomePath(path)
+	out := make([]string, 0, len(sm.Errors))
+	for _, de := range sm.Errors {
+		key := strings.Join(de.Key(), ".")
+		line, _ := de.Position()
+		out = append(out, fmt.Sprintf("%s:%d: unknown key %q (ignored; remove to silence)", displayPath, line, key))
+	}
+	return out
+}
+
+// shortenHomePath replaces the leading $HOME segment with "~" for compactness
+// in user-facing messages. Returns path unchanged when not under $HOME.
+func shortenHomePath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	if rel, ok := strings.CutPrefix(path, home+string(os.PathSeparator)); ok {
+		return "~" + string(os.PathSeparator) + rel
+	}
+	return path
 }
 
 // SaveConfig writes cfg to path atomically.

@@ -23,6 +23,11 @@ var configCmd = &cobra.Command{
 	Short:         "Manage termwise configuration",
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	PersistentPreRun: func(_ *cobra.Command, _ []string) {
+		if cfgPath, err := config.DefaultConfigPath(); err == nil {
+			emitConfigWarnings(cfgPath)
+		}
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Any positional args mean cobra didn't match a subcommand — show help
 		// rather than trying to open the TUI with garbage input.

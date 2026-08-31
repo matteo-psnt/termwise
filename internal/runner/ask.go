@@ -41,7 +41,7 @@ func newAskHeadlessConfig(rt runtimeContext, prompt string) agent.HeadlessConfig
 		System:        systemprompt.Agent(agenttools.HeadlessDefs),
 		Prompt:        prompt,
 		Tools:         agenttools.HeadlessDefs,
-		Effort:        config.EffectiveEffort(rt.providerName, rt.modelID, rt.effort),
+		Effort:        config.EffectiveEffort(rt.providerName, rt.modelID, rt.providerCfg.Effort),
 		NeedsApproval: func(cmd string) bool { return allowlist.NeedsApproval(nil, cmd) },
 		OnNeedsApproval: func(ctx context.Context, step agent.ToolStep) provider.ToolResult {
 			return headlessApprovalResult(ctx, rt, step)

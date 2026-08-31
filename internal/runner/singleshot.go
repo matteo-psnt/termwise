@@ -27,7 +27,7 @@ type runtimeContext struct {
 	providerName string
 	modelID      string
 	llmJudge     bool
-	effort       string
+	providerCfg  config.ProviderConfig
 	isTTY        bool
 }
 
@@ -128,7 +128,7 @@ func resolveRuntime() (runtimeContext, error) {
 		providerName: rc.ProviderName,
 		modelID:      rc.Model,
 		llmJudge:     config.ResolveBoolSetting(cfg, "llm_judge"),
-		effort:       cfg.Settings.Effort,
+		providerCfg:  cfg.Providers[rc.ProviderName],
 		isTTY:        tty.IsTerminal(os.Stdout),
 	}, nil
 }

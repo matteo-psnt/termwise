@@ -55,21 +55,47 @@ func TestLoadConfigAbsentFileReturnsNotExists(t *testing.T) {
 	}
 }
 
-func TestLoadConfigRejectsUnknownFields(t *testing.T) {
+func TestLoadConfigIgnoresUnknownFields(t *testing.T) {
 	path := writeConfig(t, `selected_provider = "anthropic"
 unknown_field = "oops"`)
-	_, _, err := LoadConfig(path)
-	if err == nil {
-		t.Fatal("expected error for unknown field")
+	cfg, exists, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig should not fail on unknown fields: %v", err)
+	}
+	if !exists {
+		t.Fatal("expected exists=true")
+	}
+	if cfg.SelectedProvider != "anthropic" {
+		t.Fatalf("SelectedProvider = %q, want %q", cfg.SelectedProvider, "anthropic")
 	}
 }
 
-func TestLoadConfigRejectsOldKeys(t *testing.T) {
-	// active_provider is no longer a valid field.
-	path := writeConfig(t, `active_provider = "anthropic"`)
-	_, _, err := LoadConfig(path)
-	if err == nil {
-		t.Fatal("expected error: old key active_provider should be rejected")
+func TestCheckConfigWarningsReportsUnknownFields(t *testing.T) {
+	path := writeConfig(t, `selected_provider = "anthropic"
+unknown_field = "oops"
+
+[settings]
+effort = "high"`)
+	warnings := CheckConfigWarnings(path)
+	if len(warnings) != 2 {
+		t.Fatalf("expected 2 warnings, got %d: %v", len(warnings), warnings)
+	}
+	for _, w := range warnings {
+		if !strings.Contains(w, "unknown key") {
+			t.Errorf("warning missing 'unknown key': %q", w)
+		}
+	}
+}
+
+func TestCheckConfigWarningsCleanFileReturnsNil(t *testing.T) {
+	path := writeConfig(t, `selected_provider = "anthropic"
+
+[providers.anthropic]
+auth = "env"
+env_var = "ANTHROPIC_API_KEY"
+model = "claude-haiku-4-5-20251001"`)
+	if warnings := CheckConfigWarnings(path); warnings != nil {
+		t.Fatalf("expected nil warnings for clean file, got %v", warnings)
 	}
 }
 

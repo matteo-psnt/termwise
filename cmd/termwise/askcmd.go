@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/runner"
 )
 
@@ -16,6 +17,9 @@ var askCmd = &cobra.Command{
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
+		if cfgPath, err := config.DefaultConfigPath(); err == nil {
+			emitConfigWarnings(cfgPath)
+		}
 		return runner.Ask(context.Background(), strings.Join(args, " "))
 	},
 }

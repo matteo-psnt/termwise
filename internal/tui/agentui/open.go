@@ -189,7 +189,7 @@ func openProgram(cfg openProgramConfig) (string, error) {
 			closeKey = cfgFile.Settings.Keybinding
 			autoResume = config.ResolveBoolSetting(cfgFile, "auto_resume")
 			suggestions = config.ResolveBoolSetting(cfgFile, "suggestions")
-			effort = cfgFile.Settings.Effort
+			effort = cfgFile.Providers[cfg.providerName].Effort
 		}
 		configDir = filepath.Dir(cfg.cfgPath)
 	}
@@ -216,6 +216,16 @@ func openProgram(cfg openProgramConfig) (string, error) {
 	system := systemprompt.Agent(agenttools.Defs)
 	m := newModel(cfg.providerName, cfg.provider, cfg.modelID, system, cfg.stdin, r, llmJudge, suggestions, effort, cfg.cfgPath, cfg.initialDraft, cfg.initialPrompt, themeName, closeKey,
 		promptHistory, sessionStore, cfg.sessionID, initialSession, initialCursorRow)
+
+	// Surface any config warnings as a SystemEntry so they remain visible (and
+	// terminal-selectable) inside the TUI — stderr text is wiped by the alt-screen.
+	if cfg.cfgPath != "" {
+		if warnings := config.CheckConfigWarnings(cfg.cfgPath); len(warnings) > 0 {
+			m.thread = append(m.thread, SystemEntry{
+				Content: "Config warnings:\n" + strings.Join(warnings, "\n"),
+			})
+		}
+	}
 
 	p := tea.NewProgram(m, programOpts...)
 	finalModel, err := p.Run()

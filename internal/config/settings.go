@@ -79,7 +79,6 @@ var Settings = []SettingDef{
 		func(cfg FileConfig) *bool { return cfg.Settings.Suggestions },
 		func(cfg *FileConfig, v *bool) { cfg.Settings.Suggestions = v },
 	),
-	effortSetting(),
 }
 
 // themeSetting builds the theme SettingDef, including validation and default resolution.
@@ -177,9 +176,9 @@ var EffortLevels = []string{"low", "medium", "high"}
 // DefaultEffort is the effective effort when none is configured.
 const DefaultEffort = "medium"
 
-// EffectiveEffort returns the effort to send for a given model:
-// configured value, or DefaultEffort for thinking-capable models, or empty for
-// models without thinking support.
+// EffectiveEffort returns the effort to send for a model on a given provider:
+// the configured value, or DefaultEffort for thinking-capable models, or empty
+// for models without thinking support.
 func EffectiveEffort(provider, modelID, configured string) string {
 	if !models.SupportsThinking(provider, modelID) {
 		return ""
@@ -190,31 +189,12 @@ func EffectiveEffort(provider, modelID, configured string) string {
 	return DefaultEffort
 }
 
-// effortSetting builds the effort SettingDef.
-func effortSetting() SettingDef {
-	get := func(cfg FileConfig) string { return cfg.Settings.Effort }
-	return SettingDef{
-		Key:         "effort",
-		Label:       "Reasoning effort",
-		Description: "Reasoning effort level for thinking-capable models.",
-		Kind:        KindEnum,
-		Options:     EffortLevels,
-		Get:         get,
-		Resolve: func(cfg FileConfig) string {
-			if v := get(cfg); v != "" {
-				return v
-			}
-			return DefaultEffort
-		},
-		Set:    func(cfg *FileConfig, v string) { cfg.Settings.Effort = v },
-		GetAny: func(cfg FileConfig) any { return get(cfg) },
-		Validate: func(val string) error {
-			if val == "" || slices.Contains(EffortLevels, val) {
-				return nil
-			}
-			return fmt.Errorf("unknown effort %q — valid values: %s", val, strings.Join(EffortLevels, ", "))
-		},
+// ValidateEffort returns nil for "" or any of EffortLevels, else an error.
+func ValidateEffort(val string) error {
+	if val == "" || slices.Contains(EffortLevels, val) {
+		return nil
 	}
+	return fmt.Errorf("unknown effort %q — valid values: %s", val, strings.Join(EffortLevels, ", "))
 }
 
 // ResolveBoolSetting returns the effective boolean value for a setting by key,

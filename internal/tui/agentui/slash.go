@@ -1,13 +1,13 @@
 package agentui
 
 import (
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/models"
-	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
 // slashCommand describes a single user-visible slash command.
@@ -20,6 +20,11 @@ type slashCommand struct {
 	// Run is invoked when the user submits the command. args is the
 	// whitespace-split tokens after the command name (possibly empty).
 	Run func(m Model, args []string) (tea.Model, tea.Cmd)
+	// Preview applies a candidate value as in-memory state only. It is
+	// called by the slash picker on every cursor move so the user sees the
+	// effect live, and again with the original value on cancel to revert.
+	// nil means the command has no live-preview behavior.
+	Preview func(m Model, value string) Model
 }
 
 // slashCommands is the registry of built-in slash commands, in dropdown order.
@@ -33,18 +38,19 @@ func init() {
 			Description: "set reasoning effort",
 			ArgOptions:  effortArgOptions,
 			Run:         runEffort,
+			Preview:     previewEffort,
 		},
 		{
 			Name:        "/model",
 			Description: "switch active model",
 			ArgOptions:  modelArgOptions,
 			Run:         runModel,
+			Preview:     previewModel,
 		},
 		{
-			Name:        "/theme",
-			Description: "switch UI theme",
-			ArgOptions:  themeArgOptions,
-			Run:         runTheme,
+			Name:        "/config",
+			Description: "edit settings",
+			Run:         runConfig,
 		},
 		{
 			Name:        "/clear",
@@ -137,12 +143,15 @@ func effortArgOptions(_ Model) []string {
 
 func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
 	if !models.SupportsThinking(m.providerName, m.modelID) {
-		m.appendThreadEntries(ErrorEntry{Content: "Current model doesn't support reasoning effort"})
+		name := m.modelShortName()
+		m.appendThreadEntries(ErrorEntry{
+			Content: "Reasoning effort isn't supported by " + name + " — pick a thinking-capable model with /model.",
+		})
 		m.refreshViewport()
 		return m, nil
 	}
 	if len(args) == 0 {
-		return m.openSlashPicker("/effort", "Reasoning effort", effortArgOptions(m), m.effort)
+		return m.openSlashPicker("/effort", "Reasoning effort", "How much the model thinks before responding.", simpleOptions(effortArgOptions(m)), m.effort)
 	}
 	level := normalizeEffortInput(args[0])
 	if level == "" {
@@ -150,16 +159,38 @@ func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 	}
-	m.effort = level
+	stored := level
+	if level == config.DefaultEffort {
+		stored = "" // omit-when-default keeps TOML clean
+	}
+	m.effort = stored
 	if m.cfgPath != "" {
 		cfg, exists, err := config.LoadConfig(m.cfgPath)
 		if err == nil && exists {
-			cfg.Settings.Effort = level
+			pc := cfg.Providers[m.providerName]
+			pc.Effort = stored
+			cfg.Providers[m.providerName] = pc
 			_ = config.SaveConfig(m.cfgPath, cfg)
 		}
 	}
 	m.refreshViewport()
 	return m, nil
+}
+
+// previewEffort applies an effort level in memory only. Called by the picker
+// on cursor move, and again with the prior value on cancel to revert. An empty
+// or unrecognized value is treated as the default (stored as "").
+func previewEffort(m Model, value string) Model {
+	if !models.SupportsThinking(m.providerName, m.modelID) {
+		return m
+	}
+	level := normalizeEffortInput(value)
+	stored := level
+	if level == config.DefaultEffort {
+		stored = ""
+	}
+	m.effort = stored
+	return m
 }
 
 func normalizeEffortInput(s string) string {
@@ -182,23 +213,76 @@ func modelOptionFor(providerName, modelID string) string {
 	return providerName + "/" + modelID
 }
 
-func modelArgOptions(_ Model) []string {
-	var out []string
-	for _, p := range models.KnownProviders() {
+// configuredModelOptions returns one slashOption per (provider, model) pair
+// across all configured providers. Label is the human model name, Detail is
+// the provider name, Value is the canonical "provider/modelID" string. Returns
+// nil when no config is available or no providers are configured. The first
+// option for the currently active provider is sorted to the top to make
+// switching within a provider one keystroke.
+func configuredModelOptions(m Model) []slashOption {
+	if m.cfgPath == "" {
+		return nil
+	}
+	cfg, exists, err := config.LoadConfig(m.cfgPath)
+	if err != nil || !exists || len(cfg.Providers) == 0 {
+		return nil
+	}
+
+	providerOrder := make([]string, 0, len(cfg.Providers))
+	if _, ok := cfg.Providers[m.providerName]; ok {
+		providerOrder = append(providerOrder, m.providerName)
+	}
+	others := make([]string, 0, len(cfg.Providers))
+	for p := range cfg.Providers {
+		if p != m.providerName {
+			others = append(others, p)
+		}
+	}
+	sort.Strings(others)
+	providerOrder = append(providerOrder, others...)
+
+	var out []slashOption
+	for _, p := range providerOrder {
 		pd, ok := models.Provider(p)
 		if !ok {
 			continue
 		}
 		for _, md := range pd.Models {
-			out = append(out, modelOptionFor(p, md.ID))
+			label := md.Name
+			if label == "" {
+				label = md.ID
+			}
+			out = append(out, slashOption{
+				Label:  label,
+				Detail: p,
+				Value:  modelOptionFor(p, md.ID),
+			})
 		}
+	}
+	return out
+}
+
+func modelArgOptions(m Model) []string {
+	opts := configuredModelOptions(m)
+	if len(opts) == 0 {
+		return nil
+	}
+	out := make([]string, len(opts))
+	for i, opt := range opts {
+		out[i] = opt.Value
 	}
 	return out
 }
 
 func runModel(m Model, args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
-		return m.openSlashPicker("/model", "Active model", modelArgOptions(m), modelOptionFor(m.providerName, m.modelID))
+		opts := configuredModelOptions(m)
+		if len(opts) == 0 {
+			m.appendThreadEntries(ErrorEntry{Content: "No providers configured — run `tw config` to add one."})
+			m.refreshViewport()
+			return m, nil
+		}
+		return m.openSlashPicker("/model", "Active model", "Switch the model used for this session.", opts, modelOptionFor(m.providerName, m.modelID))
 	}
 	providerName, modelID, ok := strings.Cut(args[0], "/")
 	if !ok || providerName == "" || modelID == "" {
@@ -211,40 +295,35 @@ func runModel(m Model, args []string) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 	}
-	if err := m.switchModel(providerName, modelID); err != nil {
+	if err := m.applyModel(providerName, modelID); err != nil {
 		m.appendThreadEntries(ErrorEntry{Content: err.Error()})
 		m.refreshViewport()
 		return m, nil
 	}
+	m.persistActiveModel()
 	m.refreshViewport()
 	return m, nil
 }
 
-// --- /theme ----------------------------------------------------------------
-
-func themeArgOptions(_ Model) []string {
-	return theme.Names()
+// previewModel applies the candidate provider/model in memory only. Errors
+// are dropped silently — the picker will keep showing the cursor and the user
+// can simply move on or cancel; a hard error would land via runModel on submit.
+func previewModel(m Model, value string) Model {
+	providerName, modelID, ok := strings.Cut(value, "/")
+	if !ok || providerName == "" || modelID == "" {
+		return m
+	}
+	if models.Find(providerName, modelID) == nil {
+		return m
+	}
+	_ = m.applyModel(providerName, modelID)
+	return m
 }
 
-func runTheme(m Model, args []string) (tea.Model, tea.Cmd) {
-	if len(args) == 0 {
-		return m.openSlashPicker("/theme", "UI theme", theme.Names(), m.themeName)
-	}
-	name := theme.Normalize(args[0])
-	if !theme.IsValid(name) {
-		m.appendThreadEntries(ErrorEntry{Content: "Unknown theme '" + args[0] + "'"})
-		m.refreshViewport()
-		return m, nil
-	}
-	m.applyTheme(name)
-	if m.cfgPath != "" {
-		cfg, exists, err := config.LoadConfig(m.cfgPath)
-		if err == nil && exists {
-			cfg.Settings.Theme = name
-			_ = config.SaveConfig(m.cfgPath, cfg)
-		}
-	}
-	m.refreshViewport()
+// --- /config ---------------------------------------------------------------
+
+func runConfig(m Model, _ []string) (tea.Model, tea.Cmd) {
+	m = m.openConfigEditor()
 	return m, nil
 }
 
@@ -268,14 +347,15 @@ func runClear(m Model, _ []string) (tea.Model, tea.Cmd) {
 // --- /help -----------------------------------------------------------------
 
 func runHelp(m Model, _ []string) (tea.Model, tea.Cmd) {
-	var b strings.Builder
-	b.WriteString("Slash commands:\n")
 	width := 0
 	for _, c := range slashCommands {
 		if w := len(c.Name); w > width {
 			width = w
 		}
 	}
+
+	var b strings.Builder
+	b.WriteString("Slash commands:\n")
 	for i, c := range slashCommands {
 		b.WriteString("  " + c.Name + strings.Repeat(" ", width-len(c.Name)+2) + c.Description)
 		if i < len(slashCommands)-1 {
