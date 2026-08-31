@@ -97,21 +97,18 @@ func (idleMode) renderInputRow(m Model, _ int) string {
 	input.Placeholder = ""
 	prompt := m.renderer.styles.InputPrompt.Render(" › ")
 
-	// Slash-command dropdown and inline ghost take precedence over prompt
-	// suggestions whenever the dropdown is visible.
+	// Inline ghost suggestion is hidden while the dropdown is visible — the
+	// dropdown already shows the highlighted completion, and rendering both
+	// makes the input line overflow m.width and wrap.
 	matches := m.visibleSlashMatches()
 	var suggestion string
-	if len(matches) > 0 && m.slashCursor < len(matches) {
-		suggestion = m.renderer.styles.Suggestion.Render(matches[m.slashCursor].Completion)
-	} else if s := m.visibleSuggestion(); s != "" {
-		suggestion = m.renderer.styles.Suggestion.Render(s)
+	if len(matches) == 0 {
+		if s := m.visibleSuggestion(); s != "" {
+			suggestion = m.renderer.styles.Suggestion.Render(s)
+		}
 	}
 
-	line := prompt + input.View() + suggestion
-	if len(matches) > 0 {
-		return m.renderSlashDropdown(matches) + "\n" + line
-	}
-	return line
+	return prompt + input.View() + suggestion
 }
 
 func (idleMode) helpBindings(_ Model) []binding {
@@ -126,9 +123,10 @@ func (idleMode) helpBindings(_ Model) []binding {
 	}
 }
 
-// renderSlashDropdown renders the slash-command match list above the input
-// row. Highlights the cursor row and scrolls a windowed view when matches
-// exceed slashDropdownMaxRows.
+// renderSlashDropdown renders the slash-command match list below the input
+// row. The selected row uses the accent color; the other rows are faint to
+// keep the dropdown unobtrusive. Scrolls a windowed view when matches exceed
+// slashDropdownMaxRows.
 const slashDropdownMaxRows = 5
 
 func (m Model) renderSlashDropdown(matches []slashMatch) string {
@@ -155,15 +153,13 @@ func (m Model) renderSlashDropdown(matches []slashMatch) string {
 
 	var b strings.Builder
 	for i, mt := range visible {
-		marker := "  "
 		var labelOut string
 		if start+i == m.slashCursor {
-			marker = m.renderer.styles.InputPrompt.Render("› ")
-			labelOut = m.renderer.styles.InputPrompt.Bold(true).Render(mt.Label)
+			labelOut = m.renderer.styles.InputPrompt.Render(mt.Label)
 		} else {
-			labelOut = mt.Label
+			labelOut = m.renderer.styles.ActionHints.Render(mt.Label)
 		}
-		b.WriteString(marker + labelOut)
+		b.WriteString(labelOut)
 		if mt.Description != "" {
 			pad := max(labelW-lipgloss.Width(mt.Label)+2, 1)
 			b.WriteString(strings.Repeat(" ", pad) + m.renderer.styles.ActionHints.Render(mt.Description))

@@ -43,11 +43,19 @@ func (m Model) renderedView() string {
 			sep,
 		)
 	}
+	// The slash dropdown takes the status line's spot while it's open, so the
+	// list of commands sits flush under the bottom separator.
+	bottom := m.renderStatusLine()
+	if m.state == stateIdle {
+		if matches := m.visibleSlashMatches(); len(matches) > 0 {
+			bottom = m.renderSlashDropdown(matches)
+		}
+	}
 	return lipgloss.JoinVertical(lipgloss.Left,
 		m.renderHeader(m.width),
 		m.vp.View(),
 		inputSection,
-		m.renderStatusLine(),
+		bottom,
 	)
 }
 

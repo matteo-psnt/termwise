@@ -11,11 +11,6 @@ const popupHeight = 30
 // viewport's bottom separator and the status line's top separator.
 func (m Model) inputRowHeight() int {
 	switch m.state {
-	case stateIdle:
-		if matches := m.visibleSlashMatches(); len(matches) > 0 {
-			n := min(len(matches), slashDropdownMaxRows)
-			return 1 + n // dropdown rows + input line
-		}
 	case stateApproval, stateCommandProposal:
 		return 4 // 3-line command block + 1 action-hints line
 	case stateAskPicker:
@@ -35,10 +30,18 @@ func (m Model) inputRowHeight() int {
 }
 
 // totalViewHeight returns the total row count of the View() output for the
-// current state: header(1) + viewport + sep(1) + input + sep(1) + status(1).
+// current state: header(1) + viewport + sep(1) + input + sep(1) + bottom.
+// The bottom region is the status line normally, or the slash dropdown when
+// it's visible.
 func (m Model) totalViewHeight() int {
 	_, vpH := m.viewportDims()
-	return 4 + vpH + m.inputRowHeight()
+	bottomH := 1 // status line
+	if m.state == stateIdle {
+		if matches := m.visibleSlashMatches(); len(matches) > 0 {
+			bottomH = min(len(matches), slashDropdownMaxRows)
+		}
+	}
+	return 3 + vpH + m.inputRowHeight() + bottomH
 }
 
 // viewportDims calculates viewport dimensions from terminal size.
