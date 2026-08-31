@@ -159,20 +159,17 @@ func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 	}
-	stored := level
-	if level == config.DefaultEffort {
-		stored = "" // omit-when-default keeps TOML clean
-	}
-	m.effort = stored
+	m = previewEffort(m, level)
 	if m.cfgPath != "" {
 		cfg, exists, err := config.LoadConfig(m.cfgPath)
 		if err == nil && exists {
 			pc := cfg.Providers[m.providerName]
-			pc.Effort = stored
+			pc.Effort = m.effort
 			cfg.Providers[m.providerName] = pc
 			_ = config.SaveConfig(m.cfgPath, cfg)
 		}
 	}
+	m.appendThreadEntries(SystemEntry{Content: "Effort set to " + level + "."})
 	m.refreshViewport()
 	return m, nil
 }
@@ -305,26 +302,32 @@ func runModel(m Model, args []string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// previewModel applies the candidate provider/model in memory only. Errors
-// are dropped silently — the picker will keep showing the cursor and the user
-// can simply move on or cancel; a hard error would land via runModel on submit.
+// previewModel updates the displayed provider+model in memory only. The actual
+// provider client is not rebuilt — that happens on submit via runModel → applyModel —
+// keeping cursor-move latency off the LoadConfig/ResolveAuth/NewClient hot path.
+// Errors fall through silently; runModel re-validates on submit.
 func previewModel(m Model, value string) Model {
 	providerName, modelID, ok := strings.Cut(value, "/")
 	if !ok || providerName == "" || modelID == "" {
 		return m
 	}
-	if models.Find(providerName, modelID) == nil {
+	md := models.Find(providerName, modelID)
+	if md == nil {
 		return m
 	}
-	_ = m.applyModel(providerName, modelID)
+	m.providerName = providerName
+	m.modelID = modelID
+	m.contextWindow = 32_000
+	if md.Context > 0 {
+		m.contextWindow = md.Context
+	}
 	return m
 }
 
 // --- /config ---------------------------------------------------------------
 
 func runConfig(m Model, _ []string) (tea.Model, tea.Cmd) {
-	m = m.openConfigEditor()
-	return m, nil
+	return m.openConfigEditor(), nil
 }
 
 // --- /clear ----------------------------------------------------------------
@@ -335,6 +338,8 @@ func runClear(m Model, _ []string) (tea.Model, tea.Cmd) {
 	m.stdin = ""
 	m.inputTokens = 0
 	m.outputTokens = 0
+	m.histIdx = -1
+	m.histDraft = ""
 	m.clearSuggestion()
 	m.clearShellCommand()
 	if m.sessionStore != nil && m.sessionID != "" {

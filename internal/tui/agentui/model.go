@@ -271,9 +271,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// ? opens the help overlay when the user is not mid-message.
+	// ? opens the help overlay unless the user is typing a message in idle.
 	if msg.String() == "?" {
-		if m.state != stateIdle || m.input.Value() == "" {
+		typingInIdle := m.state == stateIdle && m.input.Value() != ""
+		if !typingInIdle {
 			m.showHelp = true
 			return m, nil
 		}
@@ -285,31 +286,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// modeFor returns the mode that owns key handling for the given state.
-// Returns nil for unknown states (defensive — every defined state has a mode).
-func modeFor(s tuiState) mode {
-	switch s {
-	case stateIdle:
-		return idleMode{}
-	case stateThinking, stateJudging:
-		return thinkingMode{}
-	case stateApproval:
-		return approvalMode{}
-	case stateCommandProposal:
-		return commandProposalMode{}
-	case stateCommandProposalEdit:
-		return commandProposalEditMode{}
-	case stateAskPicker:
-		return askPickerMode{}
-	case stateSlashPicker:
-		return slashPickerMode{}
-	case stateConfigEditor:
-		return configEditorMode{}
-	case stateHistSearch:
-		return histSearchMode{}
-	}
-	return nil
+// modes maps each TUI state to the mode that owns key handling for it.
+// Lookups return nil for unknown states (defensive — every defined state
+// has an entry).
+var modes = map[tuiState]mode{
+	stateIdle:                idleMode{},
+	stateThinking:            thinkingMode{},
+	stateJudging:             thinkingMode{},
+	stateApproval:            approvalMode{},
+	stateCommandProposal:     commandProposalMode{},
+	stateCommandProposalEdit: commandProposalEditMode{},
+	stateAskPicker:           askPickerMode{},
+	stateSlashPicker:         slashPickerMode{},
+	stateConfigEditor:        configEditorMode{},
+	stateHistSearch:          histSearchMode{},
 }
+
+func modeFor(s tuiState) mode { return modes[s] }
 
 // applyModel swaps the active provider client to the given provider+model
 // in memory only. Existing conversation messages are preserved. Use this for

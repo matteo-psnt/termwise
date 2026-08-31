@@ -68,6 +68,10 @@ func valuePickerOptions(def config.SettingDef) []slashOption {
 // what the value picker calls on every cursor move (live preview) and on
 // cancel (revert). Settings without an in-TUI side effect (auto_resume,
 // keybinding stored only on disk) are no-ops here; persistence is separate.
+//
+// The per-key switch is deliberate: it keeps UI-layer hooks colocated in
+// agentui without coupling the config package to any TUI types. SettingDef
+// stays a pure data registry; agentui owns the runtime-side effects.
 func applyConfigValue(m Model, def config.SettingDef, val string) Model {
 	switch def.Key {
 	case "theme":
