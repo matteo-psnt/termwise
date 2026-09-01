@@ -114,7 +114,12 @@ func (m Model) renderHelpOverlay() string {
 	if md == nil {
 		return ""
 	}
-	bindings := md.helpBindings(m)
+	// ?/ctrl+c are handled globally in Model.handleKey, so they're appended here
+	// once rather than repeated in every mode's binding list.
+	bindings := append(md.helpBindings(m),
+		binding{"?", "close help"},
+		binding{"ctrl+c", "quit"},
+	)
 
 	const keyColW = 14
 	var sb strings.Builder

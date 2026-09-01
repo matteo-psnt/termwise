@@ -419,6 +419,14 @@ func (m Model) dismissCommandProposal() (tea.Model, tea.Cmd) {
 	return m, m.startSuggestion()
 }
 
+// editCommandProposal loads the proposed command into the input for editing.
+func (m Model) editCommandProposal() (tea.Model, tea.Cmd) {
+	m.input.SetValue(m.shellCommand)
+	m.input.CursorEnd()
+	m.state = stateCommandProposalEdit
+	return m, nil
+}
+
 func workDirBasename() string {
 	wd, err := os.Getwd()
 	if err != nil {

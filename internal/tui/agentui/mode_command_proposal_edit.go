@@ -11,23 +11,35 @@ import (
 // to m.shellCommand and accepts; Esc reverts to the proposal screen.
 type commandProposalEditMode struct{}
 
+var commandProposalEditKeys = keymap{
+	{keys: []string{"enter"}, label: "↵", desc: "accept command", run: Model.acceptCommandEdit},
+	{keys: []string{"esc"}, label: "esc", desc: "back", run: Model.cancelCommandEdit},
+}
+
 func (commandProposalEditMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEnter:
-		edited := strings.TrimSpace(m.input.Value())
-		m.input.SetValue("")
-		if edited != "" {
-			m.setShellCommand(edited)
-		}
-		return m.quit()
-	case tea.KeyEsc:
-		m.input.SetValue("")
-		m.state = stateCommandProposal
-		return m, nil
+	if newM, cmd, ok := commandProposalEditKeys.handle(m, msg); ok {
+		return newM, cmd
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+// acceptCommandEdit commits the edited input as the shell command and accepts.
+func (m Model) acceptCommandEdit() (tea.Model, tea.Cmd) {
+	edited := strings.TrimSpace(m.input.Value())
+	m.input.SetValue("")
+	if edited != "" {
+		m.setShellCommand(edited)
+	}
+	return m.quit()
+}
+
+// cancelCommandEdit discards the edit and returns to the proposal screen.
+func (m Model) cancelCommandEdit() (tea.Model, tea.Cmd) {
+	m.input.SetValue("")
+	m.state = stateCommandProposal
+	return m, nil
 }
 
 func (commandProposalEditMode) renderInputRow(m Model, _ int) string {
@@ -35,10 +47,5 @@ func (commandProposalEditMode) renderInputRow(m Model, _ int) string {
 }
 
 func (commandProposalEditMode) helpBindings(_ Model) []binding {
-	return []binding{
-		{"↵", "accept command"},
-		{"esc", "back"},
-		{"?", "close help"},
-		{"ctrl+c", "quit"},
-	}
+	return commandProposalEditKeys.help()
 }

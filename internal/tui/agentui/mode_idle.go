@@ -13,6 +13,18 @@ import (
 // always-on slash dropdown by leading with "/".
 type idleMode struct{}
 
+// idleKeys are the discrete command keys for idle. They carry no label: the
+// idle help overlay is hand-written (it lists informational rows like "/" that
+// aren't bindings), so these never render. Tab and plain typing are not in the
+// table because they need the raw msg; they're handled as residual cases.
+var idleKeys = append(keymap{
+	{keys: []string{"enter"}, run: Model.submitCurrentInput},
+	{keys: []string{"up"}, run: func(m Model) (tea.Model, tea.Cmd) { return m.historyBack(), nil }},
+	{keys: []string{"down"}, run: func(m Model) (tea.Model, tea.Cmd) { return m.historyForward(), nil }},
+	{keys: []string{"esc"}, run: Model.idleEsc},
+	{keys: []string{"ctrl+r"}, run: func(m Model) (tea.Model, tea.Cmd) { return m.enterHistSearch(), nil }},
+}, scrollKeys...)
+
 func (idleMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Slash-command dropdown overrides come first so they shadow history nav,
 	// the prompt-suggestion tab handler, and Esc-stash gestures. When the
@@ -26,11 +38,9 @@ func (idleMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m = newM
 	}
 
-	switch msg.Type {
-	case tea.KeyEnter:
-		return m.submitCurrentInput()
-
-	case tea.KeyTab:
+	// Tab needs the raw msg (accept the ghost suggestion, or insert a tab), so
+	// it's handled before the table rather than as a binding.
+	if msg.Type == tea.KeyTab {
 		if s := m.visibleSuggestion(); s != "" {
 			m.input.SetValue(s)
 			m.input.CursorEnd()
@@ -38,58 +48,41 @@ func (idleMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.updateInputAndResetSlash(msg)
-
-	case tea.KeyUp:
-		return m.historyBack(), nil
-
-	case tea.KeyDown:
-		return m.historyForward(), nil
-
-	case tea.KeyPgUp:
-		m.vp.PageUp()
-		m.userScrolled = !m.vp.AtBottom()
-		return m, nil
-
-	case tea.KeyPgDown:
-		m.vp.PageDown()
-		m.userScrolled = !m.vp.AtBottom()
-		return m, nil
-
-	case tea.KeyEnd:
-		m.userScrolled = false
-		m.vp.GotoBottom()
-		return m, nil
-
-	case tea.KeyEsc:
-		if m.input.Value() == "" {
-			return m, nil
-		}
-		if !m.lastEscAt.IsZero() && time.Since(m.lastEscAt) < 500*time.Millisecond {
-			text := m.input.Value()
-			m.input.SetValue("")
-			m.input.CursorEnd()
-			m.lastEscAt = time.Time{}
-			if m.promptHistory != nil {
-				_ = m.promptHistory.Push(text)
-			}
-			return m, nil
-		}
-		m.lastEscAt = time.Now()
-		return m, tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
-			return escTimeoutMsg{}
-		})
-
-	default:
-		if msg.String() == "ctrl+r" {
-			return m.enterHistSearch(), nil
-		}
-		// Any other typing cancels history navigation.
-		if m.histIdx >= 0 {
-			m.histIdx = -1
-			m.histDraft = ""
-		}
-		return m.updateInputAndResetSlash(msg)
 	}
+
+	if newM, cmd, ok := idleKeys.handle(m, msg); ok {
+		return newM, cmd
+	}
+
+	// Any other typing cancels history navigation, then forwards to the input.
+	if m.histIdx >= 0 {
+		m.histIdx = -1
+		m.histDraft = ""
+	}
+	return m.updateInputAndResetSlash(msg)
+}
+
+// idleEsc implements the two-tap Esc gesture: the first Esc arms a 500ms timer
+// (shown in the status line), a second Esc within the window stashes the draft
+// to history and clears the input.
+func (m Model) idleEsc() (tea.Model, tea.Cmd) {
+	if m.input.Value() == "" {
+		return m, nil
+	}
+	if !m.lastEscAt.IsZero() && time.Since(m.lastEscAt) < 500*time.Millisecond {
+		text := m.input.Value()
+		m.input.SetValue("")
+		m.input.CursorEnd()
+		m.lastEscAt = time.Time{}
+		if m.promptHistory != nil {
+			_ = m.promptHistory.Push(text)
+		}
+		return m, nil
+	}
+	m.lastEscAt = time.Now()
+	return m, tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
+		return escTimeoutMsg{}
+	})
 }
 
 func (idleMode) renderInputRow(m Model, _ int) string {
@@ -111,6 +104,10 @@ func (idleMode) renderInputRow(m Model, _ int) string {
 	return prompt + input.View() + suggestion
 }
 
+// helpBindings is hand-written rather than derived from idleKeys: it lists
+// informational rows (Tab, "/") that aren't simple key→action bindings, and
+// merges ↑/↓ into one row. The global ?/ctrl+c rows are appended centrally by
+// renderHelpOverlay.
 func (idleMode) helpBindings(_ Model) []binding {
 	return []binding{
 		{"↵", "submit"},
@@ -118,8 +115,6 @@ func (idleMode) helpBindings(_ Model) []binding {
 		{"↑ / ↓", "history"},
 		{"ctrl+r", "search history"},
 		{"/", "slash commands (/help)"},
-		{"?", "close help"},
-		{"ctrl+c", "quit"},
 	}
 }
 

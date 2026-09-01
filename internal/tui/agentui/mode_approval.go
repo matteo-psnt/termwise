@@ -10,35 +10,24 @@ import (
 // approvalMode is active when a bash command is awaiting user approval.
 type approvalMode struct{}
 
+var approvalKeys = keymap{
+	{keys: []string{"enter", "1", "y"}, label: "↵", desc: "run command", run: Model.approvePendingBash},
+	{keys: []string{"esc", "2", "n"}, label: "esc", desc: "skip", run: Model.denyPendingBash},
+}
+
 func (approvalMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEnter:
-		return m.approvePendingBash()
-	case tea.KeyEsc:
-		return m.denyPendingBash()
-	}
-	switch msg.String() {
-	case "1", "y":
-		return m.approvePendingBash()
-	case "2", "n":
-		return m.denyPendingBash()
-	}
-	return m, nil
+	newM, cmd, _ := approvalKeys.handle(m, msg)
+	return newM, cmd
 }
 
 func (approvalMode) renderInputRow(m Model, vpW int) string {
 	cmd := tools.BashCommand(m.pending.toolCall)
 	return lipgloss.JoinVertical(lipgloss.Left,
 		m.renderCommandBlock("run command?", cmd, vpW),
-		m.renderer.styles.ActionHints.Render("  [↵] run   [esc] skip"),
+		approvalKeys.hints(m),
 	)
 }
 
 func (approvalMode) helpBindings(_ Model) []binding {
-	return []binding{
-		{"↵", "run command"},
-		{"esc", "skip"},
-		{"?", "close help"},
-		{"ctrl+c", "quit"},
-	}
+	return approvalKeys.help()
 }

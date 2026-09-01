@@ -10,24 +10,19 @@ import (
 // or on the LLM safety judge. Only scroll keys and Esc-to-interrupt are accepted.
 type thinkingMode struct{}
 
+var thinkingKeys = append(keymap{
+	{keys: []string{"esc"}, label: "esc", desc: "interrupt", run: Model.interruptTurn},
+}, scrollKeys...)
+
 func (thinkingMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyPgUp:
-		m.vp.PageUp()
-		m.userScrolled = !m.vp.AtBottom()
-		return m, nil
-	case tea.KeyPgDown:
-		m.vp.PageDown()
-		m.userScrolled = !m.vp.AtBottom()
-		return m, nil
-	case tea.KeyEnd:
-		m.userScrolled = false
-		m.vp.GotoBottom()
-		return m, nil
-	case tea.KeyEsc:
-		m.interruptActiveTurn()
-		return m, nil
-	}
+	newM, cmd, _ := thinkingKeys.handle(m, msg)
+	return newM, cmd
+}
+
+// interruptTurn cancels the in-flight model turn, adapting interruptActiveTurn
+// to the keymap action signature.
+func (m Model) interruptTurn() (tea.Model, tea.Cmd) {
+	m.interruptActiveTurn()
 	return m, nil
 }
 
@@ -40,9 +35,5 @@ func (thinkingMode) renderInputRow(m Model, _ int) string {
 }
 
 func (thinkingMode) helpBindings(_ Model) []binding {
-	return []binding{
-		{"esc", "interrupt"},
-		{"?", "close help"},
-		{"ctrl+c", "quit"},
-	}
+	return thinkingKeys.help()
 }
