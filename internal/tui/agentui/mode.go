@@ -1,6 +1,6 @@
 package agentui
 
-import tea "github.com/charmbracelet/bubbletea"
+import tea "charm.land/bubbletea/v2"
 
 // binding is one key + description pair shown in the help overlay.
 type binding struct {
@@ -12,7 +12,7 @@ type binding struct {
 // one TUI screen. Modes are exclusive: exactly one is active at a time,
 // selected via Model.state.
 type mode interface {
-	handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd)
+	handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 	renderInputRow(m Model, vpW int) string
 	helpBindings(m Model) []binding
 }

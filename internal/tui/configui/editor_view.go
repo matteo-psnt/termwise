@@ -4,14 +4,18 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 )
 
-func (m editorModel) View() string {
+func (m editorModel) View() tea.View {
 	box := m.styles.Outer.Render(m.renderInner())
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	content := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 func (m editorModel) renderInner() string {

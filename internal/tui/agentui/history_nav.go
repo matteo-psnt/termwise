@@ -2,6 +2,12 @@ package agentui
 
 import "strings"
 
+// cancelHistoryNav exits prompt-history browsing, discarding the saved draft.
+func (m *Model) cancelHistoryNav() {
+	m.histIdx = -1
+	m.histDraft = ""
+}
+
 // historyBack moves one step older in prompt history.
 func (m Model) historyBack() Model {
 	if m.promptHistory == nil {

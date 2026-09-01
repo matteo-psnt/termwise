@@ -1,12 +1,12 @@
 package agentui
 
-import tea "github.com/charmbracelet/bubbletea"
+import tea "charm.land/bubbletea/v2"
 
 // slashPickerMode is active while a slash-command sub-picker (e.g. /effort,
 // /theme, /model) is open. Selection runs the corresponding command.
 type slashPickerMode struct{}
 
-func (slashPickerMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (slashPickerMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.slashPicker == nil {
 		m.state = stateIdle
 		return m, nil

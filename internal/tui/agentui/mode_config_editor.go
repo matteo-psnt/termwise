@@ -3,7 +3,7 @@ package agentui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/keybinding"
@@ -14,7 +14,7 @@ import (
 // keybinding capture) then commits the change.
 type configEditorMode struct{}
 
-func (configEditorMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (configEditorMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.configEditor == nil {
 		m.state = stateIdle
 		return m, nil
@@ -30,7 +30,7 @@ func (configEditorMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	return m, nil
 }
 
-func handleConfigChooserKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func handleConfigChooserKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	updated, choice, submitted, cancelled := m.configEditor.chooser.Update(msg)
 	m.configEditor.chooser = updated
 	if cancelled {
@@ -76,13 +76,13 @@ func openConfigValuePicker(m Model, def config.SettingDef) Model {
 // Esc cancels (no change). Any other key with a canonical zsh translation is
 // captured, applied in memory, and persisted. Keys with no translation (e.g.
 // raw modifier-only events) are ignored so the user can try again.
-func handleConfigCaptureKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.Type == tea.KeyEsc {
+func handleConfigCaptureKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if msg.Code == tea.KeyEscape {
 		m = backToChooser(m)
 		m.refreshViewport()
 		return m, nil
 	}
-	zsh, ok := keybinding.KeyMsgToZsh(msg)
+	zsh, ok := keybinding.KeyMsgToZsh(msg.Key())
 	if !ok {
 		return m, nil
 	}
@@ -96,7 +96,7 @@ func handleConfigCaptureKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func handleConfigValueKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func handleConfigValueKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.configEditor.valuePicker == nil {
 		m.configEditor.phase = configPhaseChooser
 		return m, nil

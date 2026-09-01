@@ -3,7 +3,7 @@ package agentui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // commandProposalEditMode is active while the user is editing the model's
@@ -16,7 +16,7 @@ var commandProposalEditKeys = keymap{
 	{keys: []string{"esc"}, label: "esc", desc: "back", run: Model.cancelCommandEdit},
 }
 
-func (commandProposalEditMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (commandProposalEditMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if newM, cmd, ok := commandProposalEditKeys.handle(m, msg); ok {
 		return newM, cmd
 	}

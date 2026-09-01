@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"runtime"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // urlRegex matches bare http(s) URLs, stopping at whitespace, ANSI escapes,

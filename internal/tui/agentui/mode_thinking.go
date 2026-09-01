@@ -1,7 +1,7 @@
 package agentui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
 )
@@ -14,7 +14,7 @@ var thinkingKeys = append(keymap{
 	{keys: []string{"esc"}, label: "esc", desc: "interrupt", run: Model.interruptTurn},
 }, scrollKeys...)
 
-func (thinkingMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (thinkingMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	newM, cmd, _ := thinkingKeys.handle(m, msg)
 	return newM, cmd
 }

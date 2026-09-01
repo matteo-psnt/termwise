@@ -1,7 +1,9 @@
 package configui
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"image/color"
+
+	"charm.land/lipgloss/v2"
 
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
@@ -18,22 +20,26 @@ type configStyles struct {
 	Spinner  lipgloss.Style
 }
 
-func newStylesForTheme(r *lipgloss.Renderer, themeName string) configStyles {
+func newStylesForTheme(hasDarkBg bool, themeName string) configStyles {
 	palette := theme.Get(themeName)
-	accent := palette.Accent
-	green := palette.Success
-	red := palette.Error
-	border := palette.Border
+	ld := lipgloss.LightDark(hasDarkBg)
+	resolve := func(c theme.Color) color.Color {
+		return ld(lipgloss.Color(c.Light), lipgloss.Color(c.Dark))
+	}
+	accent := resolve(palette.Accent)
+	green := resolve(palette.Success)
+	red := resolve(palette.Error)
+	border := resolve(palette.Border)
 
 	return configStyles{
-		Outer:    r.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1),
-		Title:    r.NewStyle().Bold(true),
-		Selected: r.NewStyle().Foreground(accent).Bold(true),
-		Normal:   r.NewStyle(),
-		Dim:      r.NewStyle().Faint(true),
-		Success:  r.NewStyle().Foreground(green),
-		Error:    r.NewStyle().Foreground(red),
-		Hint:     r.NewStyle().Faint(true).Italic(true),
-		Spinner:  r.NewStyle().Foreground(accent),
+		Outer:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1),
+		Title:    lipgloss.NewStyle().Bold(true),
+		Selected: lipgloss.NewStyle().Foreground(accent).Bold(true),
+		Normal:   lipgloss.NewStyle(),
+		Dim:      lipgloss.NewStyle().Faint(true),
+		Success:  lipgloss.NewStyle().Foreground(green),
+		Error:    lipgloss.NewStyle().Foreground(red),
+		Hint:     lipgloss.NewStyle().Faint(true).Italic(true),
+		Spinner:  lipgloss.NewStyle().Foreground(accent),
 	}
 }

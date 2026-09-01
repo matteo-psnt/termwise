@@ -1,19 +1,18 @@
 package configui
 
 import (
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 )
 
 type editorModel struct {
-	styles configStyles
-	r      *lipgloss.Renderer
-	width  int
-	height int
-	spin   spinner.Model
+	styles    configStyles
+	hasDarkBg bool
+	width     int
+	height    int
+	spin      spinner.Model
 
 	cfgPath string
 	cfg     config.FileConfig
@@ -46,16 +45,16 @@ type editorModel struct {
 	err error
 }
 
-func newEditorModel(cfgPath string, cfg config.FileConfig, r *lipgloss.Renderer) editorModel {
+func newEditorModel(cfgPath string, cfg config.FileConfig, hasDarkBg bool) editorModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	m := editorModel{
-		styles:  newStylesForTheme(r, cfg.Settings.Theme),
-		r:       r,
-		spin:    sp,
-		cfgPath: cfgPath,
-		cfg:     cfg,
-		initial: cfg.Clone(),
+		styles:    newStylesForTheme(hasDarkBg, cfg.Settings.Theme),
+		hasDarkBg: hasDarkBg,
+		spin:      sp,
+		cfgPath:   cfgPath,
+		cfg:       cfg,
+		initial:   cfg.Clone(),
 	}
 	m.buildRows()
 	return m

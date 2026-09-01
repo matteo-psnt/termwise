@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -46,7 +46,7 @@ func (m modelPickerModel) Init() tea.Cmd {
 	return tea.Batch(m.spin.Tick, m.fetchCmd())
 }
 
-func (m modelPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m modelPickerModel) Update(msg tea.Msg) (modelPickerModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd

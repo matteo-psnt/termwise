@@ -107,7 +107,7 @@ func activateSetting(m editorModel, settingIdx int) editorModel {
 			def.Set(&m.cfg, "On")
 		}
 	case config.KindTheme:
-		tp := newThemePicker(def.Get(m.cfg), m.r, m.styles)
+		tp := newThemePicker(def.Get(m.cfg), m.hasDarkBg, m.styles)
 		m.themePicker = &tp
 		m.activeSettingIdx = settingIdx
 	case config.KindKeybinding:

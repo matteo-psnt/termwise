@@ -1,8 +1,8 @@
 package configui
 
 import (
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/theme"
@@ -14,7 +14,7 @@ import (
 
 func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// ctrl+c always quits without saving — intercepted before any sub-model sees it.
-	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "ctrl+c" {
+	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "ctrl+c" {
 		return m, tea.Quit
 	}
 
@@ -54,7 +54,7 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleNormalKey(msg)
 	}
 
@@ -66,8 +66,7 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // ---------------------------------------------------------------------------
 
 func (m editorModel) updateModelPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
-	newModel, cmd := m.modelPicker.Update(msg)
-	mp := newModel.(modelPickerModel)
+	mp, cmd := m.modelPicker.Update(msg)
 	m.modelPicker = &mp
 	if mp.done {
 		m.modelPicker = nil
@@ -84,8 +83,7 @@ func (m editorModel) updateModelPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m editorModel) updateAuthEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
-	newModel, cmd := m.authEditor.Update(msg)
-	ae := newModel.(authEditorModel)
+	ae, cmd := m.authEditor.Update(msg)
 	m.authEditor = &ae
 	if ae.done {
 		m.authEditor = nil
@@ -101,8 +99,7 @@ func (m editorModel) updateAuthEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m editorModel) updateKeybinding(msg tea.Msg) (tea.Model, tea.Cmd) {
-	newModel, cmd := m.keybinding.Update(msg)
-	kb := newModel.(keybindingModel)
+	kb, cmd := m.keybinding.Update(msg)
 	m.keybinding = &kb
 	if kb.done {
 		m.keybinding = nil
@@ -115,26 +112,24 @@ func (m editorModel) updateKeybinding(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m editorModel) updateThemePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	prevPreview := m.themePicker.PreviewName()
-	newModel, cmd := m.themePicker.Update(msg)
-	tp := newModel.(themePickerModel)
+	tp, cmd := m.themePicker.Update(msg)
 	m.themePicker = &tp
 	if tp.done {
 		m.themePicker = nil
 		if !tp.cancelled {
 			config.Settings[m.activeSettingIdx].Set(&m.cfg, tp.result)
-			m.styles = newStylesForTheme(m.r, tp.result)
+			m.styles = newStylesForTheme(m.hasDarkBg, tp.result)
 		} else {
-			m.styles = newStylesForTheme(m.r, tp.prev)
+			m.styles = newStylesForTheme(m.hasDarkBg, tp.prev)
 		}
 	} else if tp.PreviewName() != prevPreview {
-		m.styles = newStylesForTheme(m.r, tp.PreviewName())
+		m.styles = newStylesForTheme(m.hasDarkBg, tp.PreviewName())
 	}
 	return m, cmd
 }
 
 func (m editorModel) updateEnumPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
-	newModel, cmd := m.enumPicker.Update(msg)
-	ep := newModel.(enumPickerModel)
+	ep, cmd := m.enumPicker.Update(msg)
 	m.enumPicker = &ep
 	if !ep.done {
 		return m, cmd
@@ -184,7 +179,7 @@ func (m editorModel) updateAddWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 // Normal state key handling
 // ---------------------------------------------------------------------------
 
-func (m editorModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m editorModel) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q":
 		return m.saveAndQuit()
@@ -204,7 +199,7 @@ func (m editorModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // editor opened. The editor stays open; nothing is written to disk.
 func (m editorModel) revertToSnapshot() (tea.Model, tea.Cmd) {
 	m.cfg = m.initial.Clone()
-	m.styles = newStylesForTheme(m.r, m.cfg.Settings.Theme)
+	m.styles = newStylesForTheme(m.hasDarkBg, m.cfg.Settings.Theme)
 	m.buildRows()
 	m.resetConnectivity()
 	return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
@@ -255,7 +250,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		for name := range m.cfg.Providers {
 			exclude[name] = true
 		}
-		wiz := newWizardModel(m.r, theme.Normalize(m.cfg.Settings.Theme))
+		wiz := newWizardModel(m.hasDarkBg, theme.Normalize(m.cfg.Settings.Theme))
 		wiz.exclude = exclude
 		m.addWizard = &wiz
 		return m, m.addWizard.Init()

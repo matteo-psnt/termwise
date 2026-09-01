@@ -1,8 +1,8 @@
 package agentui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // commandProposalMode is active when the agent has proposed a final shell
@@ -15,7 +15,7 @@ var commandProposalKeys = append(keymap{
 	{keys: []string{"3", "e"}, label: "e", desc: "edit command", run: Model.editCommandProposal},
 }, scrollKeys...)
 
-func (commandProposalMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (commandProposalMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	newM, cmd, _ := commandProposalKeys.handle(m, msg)
 	return newM, cmd
 }

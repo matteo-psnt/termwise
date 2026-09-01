@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	providerpkg "github.com/matteo-psnt/termwise/internal/provider"
@@ -96,7 +96,7 @@ func (m authEditorModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m authEditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m authEditorModel) Update(msg tea.Msg) (authEditorModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -117,7 +117,7 @@ func (m authEditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.done = true
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch m.step {
 		case authStepPickMethod:
 			return m.handlePickMethod(msg)
@@ -134,7 +134,7 @@ func (m authEditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m authEditorModel) handlePickMethod(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m authEditorModel) handlePickMethod(msg tea.KeyPressMsg) (authEditorModel, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "b":
 		m.cancelled = true
@@ -179,7 +179,7 @@ func (m authEditorModel) handlePickMethod(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m authEditorModel) handleEnterValue(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m authEditorModel) handleEnterValue(msg tea.KeyPressMsg) (authEditorModel, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.input.Blur()

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // Label returns a human-readable label for a stored zsh bindkey string.
@@ -37,26 +37,23 @@ func ToBash(kb string) string {
 	return kb
 }
 
-// zshLabelMap is built at init from keySeqTable + keyTypeLabel.
+// zshLabelMap is built at init from keySeqTable + codeLabel.
 var zshLabelMap map[string]string
 
+// key identifies a non-printable key by its v2 key code and exact modifier set.
 type key struct {
-	t   tea.KeyType
-	alt bool
+	code rune
+	mod  tea.KeyMod
 }
 
 func init() {
 	zshLabelMap = make(map[string]string, len(keySeqTable)+8)
 	for k, seq := range keySeqTable {
-		base, ok := keyTypeLabel[k.t]
+		base, ok := codeLabel[k.code]
 		if !ok {
 			continue
 		}
-		label := base
-		if k.alt {
-			label = "Alt+" + base
-		}
-		zshLabelMap[seq] = label
+		zshLabelMap[seq] = modLabel(k.mod) + base
 	}
 	// Ctrl-range special characters not covered by the ^X pattern.
 	zshLabelMap["^@"] = "Ctrl+@"
@@ -67,234 +64,225 @@ func init() {
 	zshLabelMap["^?"] = "Ctrl+?"
 }
 
-// keyTypeLabel maps a KeyType to its base human label (no modifier prefix).
-var keyTypeLabel = map[tea.KeyType]string{
-	// Arrows
-	tea.KeyUp:    "Up",
-	tea.KeyDown:  "Down",
-	tea.KeyRight: "Right",
-	tea.KeyLeft:  "Left",
+// modLabel renders a modifier prefix in the canonical Ctrl+Alt+Shift order.
+func modLabel(mod tea.KeyMod) string {
+	var s string
+	if mod.Contains(tea.ModCtrl) {
+		s += "Ctrl+"
+	}
+	if mod.Contains(tea.ModAlt) {
+		s += "Alt+"
+	}
+	if mod.Contains(tea.ModShift) {
+		s += "Shift+"
+	}
+	return s
+}
 
-	tea.KeyShiftUp:    "Shift+Up",
-	tea.KeyShiftDown:  "Shift+Down",
-	tea.KeyShiftRight: "Shift+Right",
-	tea.KeyShiftLeft:  "Shift+Left",
-
-	tea.KeyCtrlUp:    "Ctrl+Up",
-	tea.KeyCtrlDown:  "Ctrl+Down",
-	tea.KeyCtrlRight: "Ctrl+Right",
-	tea.KeyCtrlLeft:  "Ctrl+Left",
-
-	tea.KeyCtrlShiftUp:    "Ctrl+Shift+Up",
-	tea.KeyCtrlShiftDown:  "Ctrl+Shift+Down",
-	tea.KeyCtrlShiftRight: "Ctrl+Shift+Right",
-	tea.KeyCtrlShiftLeft:  "Ctrl+Shift+Left",
-
-	// Home / End
-	tea.KeyHome:          "Home",
-	tea.KeyEnd:           "End",
-	tea.KeyCtrlHome:      "Ctrl+Home",
-	tea.KeyCtrlEnd:       "Ctrl+End",
-	tea.KeyShiftHome:     "Shift+Home",
-	tea.KeyShiftEnd:      "Shift+End",
-	tea.KeyCtrlShiftHome: "Ctrl+Shift+Home",
-	tea.KeyCtrlShiftEnd:  "Ctrl+Shift+End",
-
-	// Page
-	tea.KeyPgUp:       "PgUp",
-	tea.KeyPgDown:     "PgDown",
-	tea.KeyCtrlPgUp:   "Ctrl+PgUp",
-	tea.KeyCtrlPgDown: "Ctrl+PgDown",
-
-	// Insert / Delete
+// codeLabel maps a special key code to its base human label (no modifiers).
+var codeLabel = map[rune]string{
+	tea.KeyUp:     "Up",
+	tea.KeyDown:   "Down",
+	tea.KeyRight:  "Right",
+	tea.KeyLeft:   "Left",
+	tea.KeyHome:   "Home",
+	tea.KeyEnd:    "End",
+	tea.KeyPgUp:   "PgUp",
+	tea.KeyPgDown: "PgDown",
 	tea.KeyInsert: "Insert",
 	tea.KeyDelete: "Delete",
+	tea.KeyTab:    "Tab",
+	tea.KeyF1:     "F1",
+	tea.KeyF2:     "F2",
+	tea.KeyF3:     "F3",
+	tea.KeyF4:     "F4",
+	tea.KeyF5:     "F5",
+	tea.KeyF6:     "F6",
+	tea.KeyF7:     "F7",
+	tea.KeyF8:     "F8",
+	tea.KeyF9:     "F9",
+	tea.KeyF10:    "F10",
+	tea.KeyF11:    "F11",
+	tea.KeyF12:    "F12",
+	tea.KeyF13:    "F13",
+	tea.KeyF14:    "F14",
+	tea.KeyF15:    "F15",
+	tea.KeyF16:    "F16",
+	tea.KeyF17:    "F17",
+	tea.KeyF18:    "F18",
+	tea.KeyF19:    "F19",
+	tea.KeyF20:    "F20",
+}
 
-	// Tab
-	tea.KeyShiftTab: "Shift+Tab",
-
-	// Function keys
-	tea.KeyF1:  "F1",
-	tea.KeyF2:  "F2",
-	tea.KeyF3:  "F3",
-	tea.KeyF4:  "F4",
-	tea.KeyF5:  "F5",
-	tea.KeyF6:  "F6",
-	tea.KeyF7:  "F7",
-	tea.KeyF8:  "F8",
-	tea.KeyF9:  "F9",
-	tea.KeyF10: "F10",
-	tea.KeyF11: "F11",
-	tea.KeyF12: "F12",
-	tea.KeyF13: "F13",
-	tea.KeyF14: "F14",
-	tea.KeyF15: "F15",
-	tea.KeyF16: "F16",
-	tea.KeyF17: "F17",
-	tea.KeyF18: "F18",
-	tea.KeyF19: "F19",
-	tea.KeyF20: "F20",
+// ctrlCaret returns the caret-notation character for a Ctrl-combinable code,
+// e.g. 'a' → "A", '\\' → "\\". The bool is false for codes that have no
+// ^X form.
+func ctrlCaret(code rune) (string, bool) {
+	switch {
+	case code >= 'a' && code <= 'z':
+		return string('A' + (code - 'a')), true
+	case code >= 'A' && code <= 'Z':
+		return string(code), true
+	}
+	switch code {
+	case '@', '\\', ']', '^', '_', '?':
+		return string(code), true
+	case tea.KeySpace: // Ctrl+Space → ^@ (NUL)
+		return "@", true
+	}
+	return "", false
 }
 
 // KeyMsgToZsh converts a bubbletea key event to a zsh bindkey-compatible string.
 // Returns ("", false) if the key cannot be used as a terminal keybinding.
-func KeyMsgToZsh(msg tea.KeyMsg) (string, bool) {
-	// Alt+rune (e.g. alt+f): \ef
-	if msg.Alt && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-		return `\e` + string(msg.Runes), true
-	}
+func KeyMsgToZsh(k tea.Key) (string, bool) {
+	mod := k.Mod
+	alt := mod.Contains(tea.ModAlt)
 
-	// Ctrl+A through Ctrl+Z → ^A through ^Z (type values 1–26).
-	if msg.Type >= tea.KeyCtrlA && msg.Type <= tea.KeyCtrlZ {
-		letter := byte('A' + int(msg.Type) - int(tea.KeyCtrlA))
-		if msg.Alt {
-			return `\e^` + string([]byte{letter}), true
+	// Ctrl[+Alt]+char → ^X / \e^X. Covers Ctrl+A–Z and the ctrl-range
+	// punctuation (^@ ^\ ^] ^^ ^_ ^?). Shift is excluded so combos like
+	// Ctrl+Shift+Up fall through to the sequence table.
+	if mod.Contains(tea.ModCtrl) && !mod.Contains(tea.ModShift) {
+		if c, ok := ctrlCaret(k.Code); ok {
+			if alt {
+				return `\e^` + c, true
+			}
+			return "^" + c, true
 		}
-		return "^" + string([]byte{letter}), true
 	}
 
-	// Other ctrl-range keys not in 1–26.
-	switch msg.Type {
-	case tea.KeyCtrlAt:
-		return "^@", true
-	case tea.KeyCtrlBackslash:
-		return `^\`, true
-	case tea.KeyCtrlCloseBracket:
-		return "^]", true
-	case tea.KeyCtrlCaret:
-		return "^^", true
-	case tea.KeyCtrlUnderscore:
-		return "^_", true
-	case tea.KeyCtrlQuestionMark:
-		return "^?", true
+	// Alt+printable rune (no other modifiers) → \eX.
+	if mod == tea.ModAlt && k.Code >= '!' && k.Code <= '~' {
+		return `\e` + string(k.Code), true
 	}
 
-	// Special / escape-sequence keys: look up canonical xterm sequence.
-	seq, ok := keySeqTable[key{msg.Type, msg.Alt}]
+	// Special / escape-sequence keys: look up the canonical xterm sequence.
+	seq, ok := keySeqTable[key{k.Code, mod}]
 	return seq, ok
 }
 
-// keySeqTable maps (KeyType, alt) → canonical zsh bindkey string.
-// Sequences use \e for ESC, matching what zsh bindkey expects.
+// keySeqTable maps (code, modifiers) → canonical zsh bindkey string.
+// Sequences use \e for ESC, matching what zsh bindkey expects. The modifier
+// parameter follows xterm's encoding: 1 + shift(1) + alt(2) + ctrl(4).
 var keySeqTable = map[key]string{
 	// ── Arrow keys ──────────────────────────────────────────────────────────
-	{tea.KeyUp, false}:    `\e[A`,
-	{tea.KeyDown, false}:  `\e[B`,
-	{tea.KeyRight, false}: `\e[C`,
-	{tea.KeyLeft, false}:  `\e[D`,
+	{tea.KeyUp, 0}:    `\e[A`,
+	{tea.KeyDown, 0}:  `\e[B`,
+	{tea.KeyRight, 0}: `\e[C`,
+	{tea.KeyLeft, 0}:  `\e[D`,
 
-	{tea.KeyUp, true}:    `\e[1;3A`,
-	{tea.KeyDown, true}:  `\e[1;3B`,
-	{tea.KeyRight, true}: `\e[1;3C`,
-	{tea.KeyLeft, true}:  `\e[1;3D`,
+	{tea.KeyUp, tea.ModAlt}:    `\e[1;3A`,
+	{tea.KeyDown, tea.ModAlt}:  `\e[1;3B`,
+	{tea.KeyRight, tea.ModAlt}: `\e[1;3C`,
+	{tea.KeyLeft, tea.ModAlt}:  `\e[1;3D`,
 
-	{tea.KeyShiftUp, false}:    `\e[1;2A`,
-	{tea.KeyShiftDown, false}:  `\e[1;2B`,
-	{tea.KeyShiftRight, false}: `\e[1;2C`,
-	{tea.KeyShiftLeft, false}:  `\e[1;2D`,
+	{tea.KeyUp, tea.ModShift}:    `\e[1;2A`,
+	{tea.KeyDown, tea.ModShift}:  `\e[1;2B`,
+	{tea.KeyRight, tea.ModShift}: `\e[1;2C`,
+	{tea.KeyLeft, tea.ModShift}:  `\e[1;2D`,
 
-	{tea.KeyCtrlUp, false}:    `\e[1;5A`,
-	{tea.KeyCtrlDown, false}:  `\e[1;5B`,
-	{tea.KeyCtrlRight, false}: `\e[1;5C`,
-	{tea.KeyCtrlLeft, false}:  `\e[1;5D`,
+	{tea.KeyUp, tea.ModCtrl}:    `\e[1;5A`,
+	{tea.KeyDown, tea.ModCtrl}:  `\e[1;5B`,
+	{tea.KeyRight, tea.ModCtrl}: `\e[1;5C`,
+	{tea.KeyLeft, tea.ModCtrl}:  `\e[1;5D`,
 
-	{tea.KeyCtrlUp, true}:    `\e[1;7A`,
-	{tea.KeyCtrlDown, true}:  `\e[1;7B`,
-	{tea.KeyCtrlRight, true}: `\e[1;7C`,
-	{tea.KeyCtrlLeft, true}:  `\e[1;7D`,
+	{tea.KeyUp, tea.ModCtrl | tea.ModAlt}:    `\e[1;7A`,
+	{tea.KeyDown, tea.ModCtrl | tea.ModAlt}:  `\e[1;7B`,
+	{tea.KeyRight, tea.ModCtrl | tea.ModAlt}: `\e[1;7C`,
+	{tea.KeyLeft, tea.ModCtrl | tea.ModAlt}:  `\e[1;7D`,
 
-	{tea.KeyCtrlShiftUp, false}:    `\e[1;6A`,
-	{tea.KeyCtrlShiftDown, false}:  `\e[1;6B`,
-	{tea.KeyCtrlShiftRight, false}: `\e[1;6C`,
-	{tea.KeyCtrlShiftLeft, false}:  `\e[1;6D`,
+	{tea.KeyUp, tea.ModCtrl | tea.ModShift}:    `\e[1;6A`,
+	{tea.KeyDown, tea.ModCtrl | tea.ModShift}:  `\e[1;6B`,
+	{tea.KeyRight, tea.ModCtrl | tea.ModShift}: `\e[1;6C`,
+	{tea.KeyLeft, tea.ModCtrl | tea.ModShift}:  `\e[1;6D`,
 
-	{tea.KeyCtrlShiftUp, true}:    `\e[1;8A`,
-	{tea.KeyCtrlShiftDown, true}:  `\e[1;8B`,
-	{tea.KeyCtrlShiftRight, true}: `\e[1;8C`,
-	{tea.KeyCtrlShiftLeft, true}:  `\e[1;8D`,
+	{tea.KeyUp, tea.ModCtrl | tea.ModShift | tea.ModAlt}:    `\e[1;8A`,
+	{tea.KeyDown, tea.ModCtrl | tea.ModShift | tea.ModAlt}:  `\e[1;8B`,
+	{tea.KeyRight, tea.ModCtrl | tea.ModShift | tea.ModAlt}: `\e[1;8C`,
+	{tea.KeyLeft, tea.ModCtrl | tea.ModShift | tea.ModAlt}:  `\e[1;8D`,
 
-	{tea.KeyShiftUp, true}:    `\e[1;4A`,
-	{tea.KeyShiftDown, true}:  `\e[1;4B`,
-	{tea.KeyShiftRight, true}: `\e[1;4C`,
-	{tea.KeyShiftLeft, true}:  `\e[1;4D`,
+	{tea.KeyUp, tea.ModShift | tea.ModAlt}:    `\e[1;4A`,
+	{tea.KeyDown, tea.ModShift | tea.ModAlt}:  `\e[1;4B`,
+	{tea.KeyRight, tea.ModShift | tea.ModAlt}: `\e[1;4C`,
+	{tea.KeyLeft, tea.ModShift | tea.ModAlt}:  `\e[1;4D`,
 
 	// ── Home / End ──────────────────────────────────────────────────────────
-	{tea.KeyHome, false}: `\e[H`,
-	{tea.KeyEnd, false}:  `\e[F`,
-	{tea.KeyHome, true}:  `\e[1;3H`,
-	{tea.KeyEnd, true}:   `\e[1;3F`,
+	{tea.KeyHome, 0}:          `\e[H`,
+	{tea.KeyEnd, 0}:           `\e[F`,
+	{tea.KeyHome, tea.ModAlt}: `\e[1;3H`,
+	{tea.KeyEnd, tea.ModAlt}:  `\e[1;3F`,
 
-	{tea.KeyCtrlHome, false}: `\e[1;5H`,
-	{tea.KeyCtrlEnd, false}:  `\e[1;5F`,
-	{tea.KeyCtrlHome, true}:  `\e[1;7H`,
-	{tea.KeyCtrlEnd, true}:   `\e[1;7F`,
+	{tea.KeyHome, tea.ModCtrl}:              `\e[1;5H`,
+	{tea.KeyEnd, tea.ModCtrl}:               `\e[1;5F`,
+	{tea.KeyHome, tea.ModCtrl | tea.ModAlt}: `\e[1;7H`,
+	{tea.KeyEnd, tea.ModCtrl | tea.ModAlt}:  `\e[1;7F`,
 
-	{tea.KeyShiftHome, false}: `\e[1;2H`,
-	{tea.KeyShiftEnd, false}:  `\e[1;2F`,
-	{tea.KeyShiftHome, true}:  `\e[1;4H`,
-	{tea.KeyShiftEnd, true}:   `\e[1;4F`,
+	{tea.KeyHome, tea.ModShift}:              `\e[1;2H`,
+	{tea.KeyEnd, tea.ModShift}:               `\e[1;2F`,
+	{tea.KeyHome, tea.ModShift | tea.ModAlt}: `\e[1;4H`,
+	{tea.KeyEnd, tea.ModShift | tea.ModAlt}:  `\e[1;4F`,
 
-	{tea.KeyCtrlShiftHome, false}: `\e[1;6H`,
-	{tea.KeyCtrlShiftEnd, false}:  `\e[1;6F`,
-	{tea.KeyCtrlShiftHome, true}:  `\e[1;8H`,
-	{tea.KeyCtrlShiftEnd, true}:   `\e[1;8F`,
+	{tea.KeyHome, tea.ModCtrl | tea.ModShift}:              `\e[1;6H`,
+	{tea.KeyEnd, tea.ModCtrl | tea.ModShift}:               `\e[1;6F`,
+	{tea.KeyHome, tea.ModCtrl | tea.ModShift | tea.ModAlt}: `\e[1;8H`,
+	{tea.KeyEnd, tea.ModCtrl | tea.ModShift | tea.ModAlt}:  `\e[1;8F`,
 
 	// ── Page Up / Down ──────────────────────────────────────────────────────
-	{tea.KeyPgUp, false}:   `\e[5~`,
-	{tea.KeyPgDown, false}: `\e[6~`,
-	{tea.KeyPgUp, true}:    `\e[5;3~`,
-	{tea.KeyPgDown, true}:  `\e[6;3~`,
+	{tea.KeyPgUp, 0}:            `\e[5~`,
+	{tea.KeyPgDown, 0}:          `\e[6~`,
+	{tea.KeyPgUp, tea.ModAlt}:   `\e[5;3~`,
+	{tea.KeyPgDown, tea.ModAlt}: `\e[6;3~`,
 
-	{tea.KeyCtrlPgUp, false}:   `\e[5;5~`,
-	{tea.KeyCtrlPgDown, false}: `\e[6;5~`,
-	{tea.KeyCtrlPgUp, true}:    `\e[5;7~`,
-	{tea.KeyCtrlPgDown, true}:  `\e[6;7~`,
+	{tea.KeyPgUp, tea.ModCtrl}:                `\e[5;5~`,
+	{tea.KeyPgDown, tea.ModCtrl}:              `\e[6;5~`,
+	{tea.KeyPgUp, tea.ModCtrl | tea.ModAlt}:   `\e[5;7~`,
+	{tea.KeyPgDown, tea.ModCtrl | tea.ModAlt}: `\e[6;7~`,
 
 	// ── Insert / Delete ─────────────────────────────────────────────────────
-	{tea.KeyInsert, false}: `\e[2~`,
-	{tea.KeyDelete, false}: `\e[3~`,
-	{tea.KeyInsert, true}:  `\e[2;3~`,
-	{tea.KeyDelete, true}:  `\e[3;3~`,
+	{tea.KeyInsert, 0}:          `\e[2~`,
+	{tea.KeyDelete, 0}:          `\e[3~`,
+	{tea.KeyInsert, tea.ModAlt}: `\e[2;3~`,
+	{tea.KeyDelete, tea.ModAlt}: `\e[3;3~`,
 
 	// ── Shift+Tab ───────────────────────────────────────────────────────────
-	{tea.KeyShiftTab, false}: `\e[Z`,
+	{tea.KeyTab, tea.ModShift}: `\e[Z`,
 
 	// ── Function keys (xterm/vt100 canonical sequences) ─────────────────────
-	{tea.KeyF1, false}:  `\eOP`,
-	{tea.KeyF2, false}:  `\eOQ`,
-	{tea.KeyF3, false}:  `\eOR`,
-	{tea.KeyF4, false}:  `\eOS`,
-	{tea.KeyF5, false}:  `\e[15~`,
-	{tea.KeyF6, false}:  `\e[17~`,
-	{tea.KeyF7, false}:  `\e[18~`,
-	{tea.KeyF8, false}:  `\e[19~`,
-	{tea.KeyF9, false}:  `\e[20~`,
-	{tea.KeyF10, false}: `\e[21~`,
-	{tea.KeyF11, false}: `\e[23~`,
-	{tea.KeyF12, false}: `\e[24~`,
-	{tea.KeyF13, false}: `\e[1;2P`,
-	{tea.KeyF14, false}: `\e[1;2Q`,
-	{tea.KeyF15, false}: `\e[1;2R`,
-	{tea.KeyF16, false}: `\e[1;2S`,
-	{tea.KeyF17, false}: `\e[15;2~`,
-	{tea.KeyF18, false}: `\e[17;2~`,
-	{tea.KeyF19, false}: `\e[18;2~`,
-	{tea.KeyF20, false}: `\e[19;2~`,
+	{tea.KeyF1, 0}:  `\eOP`,
+	{tea.KeyF2, 0}:  `\eOQ`,
+	{tea.KeyF3, 0}:  `\eOR`,
+	{tea.KeyF4, 0}:  `\eOS`,
+	{tea.KeyF5, 0}:  `\e[15~`,
+	{tea.KeyF6, 0}:  `\e[17~`,
+	{tea.KeyF7, 0}:  `\e[18~`,
+	{tea.KeyF8, 0}:  `\e[19~`,
+	{tea.KeyF9, 0}:  `\e[20~`,
+	{tea.KeyF10, 0}: `\e[21~`,
+	{tea.KeyF11, 0}: `\e[23~`,
+	{tea.KeyF12, 0}: `\e[24~`,
+	{tea.KeyF13, 0}: `\e[1;2P`,
+	{tea.KeyF14, 0}: `\e[1;2Q`,
+	{tea.KeyF15, 0}: `\e[1;2R`,
+	{tea.KeyF16, 0}: `\e[1;2S`,
+	{tea.KeyF17, 0}: `\e[15;2~`,
+	{tea.KeyF18, 0}: `\e[17;2~`,
+	{tea.KeyF19, 0}: `\e[18;2~`,
+	{tea.KeyF20, 0}: `\e[19;2~`,
 
-	{tea.KeyF1, true}:  `\e[1;3P`,
-	{tea.KeyF2, true}:  `\e[1;3Q`,
-	{tea.KeyF3, true}:  `\e[1;3R`,
-	{tea.KeyF4, true}:  `\e[1;3S`,
-	{tea.KeyF5, true}:  `\e[15;3~`,
-	{tea.KeyF6, true}:  `\e[17;3~`,
-	{tea.KeyF7, true}:  `\e[18;3~`,
-	{tea.KeyF8, true}:  `\e[19;3~`,
-	{tea.KeyF9, true}:  `\e[20;3~`,
-	{tea.KeyF10, true}: `\e[21;3~`,
-	{tea.KeyF11, true}: `\e[23;3~`,
-	{tea.KeyF12, true}: `\e[24;3~`,
-	{tea.KeyF13, true}: `\e[25;3~`,
-	{tea.KeyF14, true}: `\e[26;3~`,
-	{tea.KeyF15, true}: `\e[28;3~`,
-	{tea.KeyF16, true}: `\e[29;3~`,
+	{tea.KeyF1, tea.ModAlt}:  `\e[1;3P`,
+	{tea.KeyF2, tea.ModAlt}:  `\e[1;3Q`,
+	{tea.KeyF3, tea.ModAlt}:  `\e[1;3R`,
+	{tea.KeyF4, tea.ModAlt}:  `\e[1;3S`,
+	{tea.KeyF5, tea.ModAlt}:  `\e[15;3~`,
+	{tea.KeyF6, tea.ModAlt}:  `\e[17;3~`,
+	{tea.KeyF7, tea.ModAlt}:  `\e[18;3~`,
+	{tea.KeyF8, tea.ModAlt}:  `\e[19;3~`,
+	{tea.KeyF9, tea.ModAlt}:  `\e[20;3~`,
+	{tea.KeyF10, tea.ModAlt}: `\e[21;3~`,
+	{tea.KeyF11, tea.ModAlt}: `\e[23;3~`,
+	{tea.KeyF12, tea.ModAlt}: `\e[24;3~`,
+	{tea.KeyF13, tea.ModAlt}: `\e[25;3~`,
+	{tea.KeyF14, tea.ModAlt}: `\e[26;3~`,
+	{tea.KeyF15, tea.ModAlt}: `\e[28;3~`,
+	{tea.KeyF16, tea.ModAlt}: `\e[29;3~`,
 }

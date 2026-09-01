@@ -3,7 +3,7 @@ package agentui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // keyAction binds one or more keys to a handler, plus the display metadata used
@@ -30,7 +30,7 @@ type keymap []keyAction
 // handle runs the first action whose keys match msg. The bool reports whether a
 // binding matched, so callers can fall through to residual handling (typing,
 // suggestions, etc.) when it didn't.
-func (km keymap) handle(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+func (km keymap) handle(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	s := msg.String()
 	for _, a := range km {
 		for _, k := range a.keys {

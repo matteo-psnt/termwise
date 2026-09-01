@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	agenttools "github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/config"
@@ -135,11 +135,10 @@ func readProgramStdin() (string, bool, error) {
 func openProgram(cfg openProgramConfig) (string, error) {
 
 	// Determine program input. When stdin is piped we need to reopen the TTY
-	// so bubbletea can receive keyboard events.
-	// WithMouseCellMotion enables mouse wheel forwarding so the viewport can
-	// scroll on wheel events. The tradeoff in inline mode is that the
-	// terminal's native scrollback wheel is captured while the TUI is open.
-	programOpts := []tea.ProgramOption{tea.WithMouseCellMotion()}
+	// so bubbletea can receive keyboard events. Mouse capture (for viewport
+	// wheel scrolling and selection) is requested per-frame via View.MouseMode
+	// in v2, not as a program option.
+	var programOpts []tea.ProgramOption
 	outputFile := os.Stdout
 	// Queried before NewProgram so the DSR reply doesn't end up in bubbletea's input queue.
 	inputFile := os.Stdin
@@ -167,12 +166,11 @@ func openProgram(cfg openProgramConfig) (string, error) {
 		initialCursorRow = row
 	}
 
-	// bubbletea's init() already pre-queried lipgloss.HasDarkBackground() on
-	// the global renderer before the program started. Read that cached value
-	// and pin it on our custom renderer so AdaptiveColor never sends a second
-	// OSC 11 query (which would leave unread bytes in the tty buffer).
-	r := lipgloss.NewRenderer(outputFile)
-	r.SetHasDarkBackground(lipgloss.HasDarkBackground())
+	// Detect the terminal background once, before the program starts, so the
+	// light/dark palette and glamour theme are chosen correctly. Querying here
+	// (like the cursor-row query above) keeps the OSC 11 reply out of
+	// bubbletea's input queue.
+	hasDarkBg := lipgloss.HasDarkBackground(inputFile, outputFile)
 
 	themeName := theme.DefaultName
 	var llmJudge bool
@@ -214,7 +212,7 @@ func openProgram(cfg openProgramConfig) (string, error) {
 	}
 
 	system := systemprompt.Agent(agenttools.Defs)
-	m := newModel(cfg.providerName, cfg.provider, cfg.modelID, system, cfg.stdin, r, llmJudge, suggestions, effort, cfg.cfgPath, cfg.initialDraft, cfg.initialPrompt, themeName, closeKey,
+	m := newModel(cfg.providerName, cfg.provider, cfg.modelID, system, cfg.stdin, hasDarkBg, llmJudge, suggestions, effort, cfg.cfgPath, cfg.initialDraft, cfg.initialPrompt, themeName, closeKey,
 		promptHistory, sessionStore, cfg.sessionID, initialSession, initialCursorRow)
 
 	// Surface any config warnings as a SystemEntry so they remain visible (and

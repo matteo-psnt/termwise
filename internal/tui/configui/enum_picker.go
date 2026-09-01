@@ -3,7 +3,7 @@ package configui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 type enumPickerModel struct {
@@ -35,8 +35,8 @@ func newEnumPicker(label, current string, options []string, styles configStyles)
 
 func (enumPickerModel) Init() tea.Cmd { return nil }
 
-func (m enumPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	key, ok := msg.(tea.KeyMsg)
+func (m enumPickerModel) Update(msg tea.Msg) (enumPickerModel, tea.Cmd) {
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
 	}

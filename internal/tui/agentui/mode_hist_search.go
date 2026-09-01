@@ -3,7 +3,7 @@ package agentui
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // histSearchMode is active during Ctrl+R reverse search through the prompt
@@ -19,12 +19,12 @@ var histSearchKeys = keymap{
 	{keys: []string{"ctrl+r"}, run: Model.histSearchCycle},
 }
 
-func (histSearchMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (histSearchMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if newM, cmd, ok := histSearchKeys.handle(m, msg); ok {
 		return newM, cmd
 	}
 
-	switch msg.Type {
+	switch msg.Code {
 	case tea.KeyBackspace, tea.KeyDelete:
 		q := m.histSearch.query
 		if len(q) > 0 {
@@ -33,8 +33,8 @@ func (histSearchMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setHistQuery(q)
 	default:
 		// Printable character: extend the search query.
-		if len(msg.Runes) > 0 {
-			m.setHistQuery(m.histSearch.query + string(msg.Runes))
+		if msg.Text != "" {
+			m.setHistQuery(m.histSearch.query + msg.Text)
 		}
 	}
 	return m, nil

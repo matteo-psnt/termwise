@@ -1,12 +1,12 @@
 package agentui
 
-import tea "github.com/charmbracelet/bubbletea"
+import tea "charm.land/bubbletea/v2"
 
 // askPickerMode is active when the agent's `ask` tool has surfaced a
 // multiple-choice question and the user is choosing an answer.
 type askPickerMode struct{}
 
-func (askPickerMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (askPickerMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.pending.picker == nil {
 		return m, nil
 	}

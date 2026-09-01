@@ -9,11 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/history"
@@ -71,7 +69,7 @@ func newModel(
 	modelID string,
 	system string,
 	stdin string,
-	r *lipgloss.Renderer,
+	hasDarkBg bool,
 	llmJudge bool,
 	suggestions bool,
 	effort string,
@@ -86,14 +84,17 @@ func newModel(
 	initialSession *history.Session,
 	initialCursorRow int,
 ) Model {
-	ti := textinput.New()
-	ti.Prompt = ""
-	ti.Placeholder = ""
-	ti.Cursor.Style = r.NewStyle()
-	ti.Cursor.TextStyle = r.NewStyle()
-	ti.Cursor.SetMode(cursor.CursorStatic)
-	ti.SetValue(initialDraft)
-	ti.Focus()
+	ta := textarea.New()
+	ta.Prompt = ""
+	ta.ShowLineNumbers = false
+	ta.Placeholder = ""
+	// Grow with the content (Shift/Alt+Enter and \-Enter insert newlines) up to
+	// a cap, then scroll internally.
+	ta.DynamicHeight = true
+	ta.MinHeight = 1
+	ta.MaxHeight = maxInputRows
+	ta.SetValue(initialDraft)
+	ta.Focus()
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -117,14 +118,14 @@ func newModel(
 		effort:           effort,
 		initialPrompt:    initialPrompt,
 		stdin:            stdin,
-		input:            ti,
+		input:            ta,
 		spin:             sp,
 		ctx:              ctx,
 		cancel:           cancel,
 		suggestionCtx:    suggestionCtx,
 		suggestionCancel: suggestionCancel,
-		renderer:         newRenderer(r, theme.Get(themeName), glamourStyle(r)),
-		lipglossRenderer: r,
+		renderer:         newRenderer(hasDarkBg, theme.Get(themeName)),
+		hasDarkBg:        hasDarkBg,
 		themeName:        themeName,
 		closeKey:         closeKey,
 		promptHistory:    promptHistory,
@@ -139,7 +140,7 @@ func newModel(
 	if initialCursorRow < 0 {
 		sh.tuiTopRow = math.MaxInt32
 	}
-	sh.input.PlaceholderStyle = sh.renderer.styles.Suggestion
+	sh.input.SetStyles(inputStyles(hasDarkBg, sh.renderer.styles.Suggestion))
 
 	if initialSession != nil && len(initialSession.Messages) > 0 {
 		sh.messages = initialSession.Messages
@@ -190,7 +191,7 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.copyToastUntil = time.Time{}
 		m.copyToastMsg = ""
 		return m, nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	case tea.MouseMsg:
 		if handled, newM, cmd := m.handleMouseMsg(msg); handled {
@@ -253,12 +254,12 @@ func (m Model) exitShellCommand() string {
 }
 
 // handleKey handles all keyboard input based on current state.
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.Type == tea.KeyCtrlC {
+func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
 		return m.quit()
 	}
 	if m.closeKey != "" {
-		if zsh, ok := keybinding.KeyMsgToZsh(msg); ok && zsh == m.closeKey {
+		if zsh, ok := keybinding.KeyMsgToZsh(msg.Key()); ok && zsh == m.closeKey {
 			return m.quit()
 		}
 	}
@@ -367,10 +368,8 @@ func (m *Model) persistActiveModel() {
 // applyTheme rebuilds the renderer with the given theme name.
 func (m *Model) applyTheme(name string) {
 	m.themeName = name
-	if m.lipglossRenderer != nil {
-		m.renderer = newRenderer(m.lipglossRenderer, theme.Get(name), glamourStyle(m.lipglossRenderer))
-		m.input.PlaceholderStyle = m.renderer.styles.Suggestion
-	}
+	m.renderer = newRenderer(m.hasDarkBg, theme.Get(name))
+	m.input.SetStyles(inputStyles(m.hasDarkBg, m.renderer.styles.Suggestion))
 }
 
 // openSlashPicker activates the slash-picker sub-TUI for the given command.
@@ -390,6 +389,14 @@ func (m Model) handleInitialPrompt(prompt string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) submitCurrentInput() (tea.Model, tea.Cmd) {
+	// Backslash-Enter is the portable newline fallback: a trailing "\" turns
+	// Enter into a line break instead of a submit, for terminals that can't
+	// report a real Shift+Enter.
+	if v := m.input.Value(); strings.HasSuffix(v, "\\") {
+		m.input.SetValue(v[:len(v)-1] + "\n")
+		m.input.MoveToEnd()
+		return m, nil
+	}
 	text := strings.TrimSpace(m.input.Value())
 	if text == "" {
 		return m, nil

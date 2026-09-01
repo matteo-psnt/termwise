@@ -1,8 +1,8 @@
 package agentui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
 )
@@ -15,7 +15,7 @@ var approvalKeys = keymap{
 	{keys: []string{"esc", "2", "n"}, label: "esc", desc: "skip", run: Model.denyPendingBash},
 }
 
-func (approvalMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (approvalMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	newM, cmd, _ := approvalKeys.handle(m, msg)
 	return newM, cmd
 }

@@ -3,7 +3,7 @@ package configui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/keybinding"
 )
@@ -25,8 +25,8 @@ func newKeybindingCapture(current string, styles configStyles) keybindingModel {
 
 func (keybindingModel) Init() tea.Cmd { return nil }
 
-func (m keybindingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	key, ok := msg.(tea.KeyMsg)
+func (m keybindingModel) Update(msg tea.Msg) (keybindingModel, tea.Cmd) {
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
 	}
@@ -39,7 +39,7 @@ func (m keybindingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.result = m.captured
 			m.done = true
 		default:
-			if binding, ok := keybinding.KeyMsgToZsh(key); ok {
+			if binding, ok := keybinding.KeyMsgToZsh(key.Key()); ok {
 				m.captured = binding
 			}
 		}
@@ -50,7 +50,7 @@ func (m keybindingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancelled = true
 		m.done = true
 	default:
-		if binding, ok := keybinding.KeyMsgToZsh(key); ok {
+		if binding, ok := keybinding.KeyMsgToZsh(key.Key()); ok {
 			m.captured = binding
 			m.confirming = true
 		}

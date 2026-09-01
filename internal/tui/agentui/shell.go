@@ -4,10 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
 
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -39,7 +38,7 @@ type shell struct {
 
 	// Always-on components
 	vp    viewport.Model
-	input textinput.Model
+	input textarea.Model
 	spin  spinner.Model
 
 	// Layout
@@ -64,9 +63,9 @@ type shell struct {
 	activeSuggestion uint64
 
 	// Rendering
-	renderer         Renderer
-	lipglossRenderer *lipgloss.Renderer
-	themeName        string
+	renderer  Renderer
+	hasDarkBg bool // detected terminal background; used to rebuild styles on theme change
+	themeName string
 
 	// Lifecycle / exit
 	closeKey     string

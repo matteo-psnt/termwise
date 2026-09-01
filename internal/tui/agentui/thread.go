@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/glamour/ansi"
-	"github.com/charmbracelet/glamour/styles"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/glamour/v2"
+	"charm.land/glamour/v2/styles"
 
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
@@ -20,19 +18,17 @@ type Renderer struct {
 	glamour *glamour.TermRenderer
 }
 
-func newRenderer(r *lipgloss.Renderer, palette theme.Palette, glamourStyle string) Renderer {
-	var cfg ansi.StyleConfig
-	if glamourStyle == "dark" {
+func newRenderer(hasDarkBg bool, palette theme.Palette) Renderer {
+	cfg := styles.LightStyleConfig
+	if hasDarkBg {
 		cfg = styles.DarkStyleConfig
-	} else {
-		cfg = styles.LightStyleConfig
 	}
 	var zero uint
 	cfg.Document.Margin = &zero
 
 	gr, _ := glamour.NewTermRenderer(glamour.WithStyles(cfg), glamour.WithWordWrap(0))
 	return Renderer{
-		styles:  newStyles(r, palette),
+		styles:  newStyles(hasDarkBg, palette),
 		glamour: gr,
 	}
 }

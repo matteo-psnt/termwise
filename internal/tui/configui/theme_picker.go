@@ -1,31 +1,32 @@
 package configui
 
 import (
+	"image/color"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
 type themePickerModel struct {
-	styles configStyles
-	r      *lipgloss.Renderer
-	cursor int
-	prev   string // original theme name, restored on cancel
+	styles    configStyles
+	hasDarkBg bool
+	cursor    int
+	prev      string // original theme name, restored on cancel
 
 	result    string
 	done      bool
 	cancelled bool
 }
 
-func newThemePicker(current string, r *lipgloss.Renderer, styles configStyles) themePickerModel {
+func newThemePicker(current string, hasDarkBg bool, styles configStyles) themePickerModel {
 	return themePickerModel{
-		styles: styles,
-		r:      r,
-		cursor: themeIndex(current),
-		prev:   theme.Normalize(current),
+		styles:    styles,
+		hasDarkBg: hasDarkBg,
+		cursor:    themeIndex(current),
+		prev:      theme.Normalize(current),
 	}
 }
 
@@ -40,8 +41,8 @@ func (m themePickerModel) PreviewName() string {
 
 func (themePickerModel) Init() tea.Cmd { return nil }
 
-func (m themePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	key, ok := msg.(tea.KeyMsg)
+func (m themePickerModel) Update(msg tea.Msg) (themePickerModel, tea.Cmd) {
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
 	}
@@ -53,12 +54,12 @@ func (m themePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
-			m.styles = newStylesForTheme(m.r, palettes[m.cursor].Name)
+			m.styles = newStylesForTheme(m.hasDarkBg, palettes[m.cursor].Name)
 		}
 	case "down", "j":
 		if m.cursor < len(palettes)-1 {
 			m.cursor++
-			m.styles = newStylesForTheme(m.r, palettes[m.cursor].Name)
+			m.styles = newStylesForTheme(m.hasDarkBg, palettes[m.cursor].Name)
 		}
 	case "enter", " ":
 		m.result = palettes[m.cursor].Name
@@ -74,7 +75,7 @@ func (m themePickerModel) View() string {
 	var b strings.Builder
 	b.WriteString("Theme palette:\n\n")
 	for i, p := range palettes {
-		line := paletteSwatches(m.r, p) + " " + p.Label
+		line := paletteSwatches(m.hasDarkBg, p) + " " + p.Label
 		if p.Name == selected {
 			line += " " + m.styles.Dim.Render("(selected)")
 		}
@@ -85,7 +86,7 @@ func (m themePickerModel) View() string {
 		}
 	}
 	b.WriteString("\n")
-	b.WriteString(renderThemePreview(m.r, palettes[m.cursor]))
+	b.WriteString(renderThemePreview(m.hasDarkBg, palettes[m.cursor]))
 	b.WriteString("\n\n" + m.styles.Dim.Render("↑/↓ preview   enter select   esc cancel"))
 	return b.String()
 }
@@ -100,8 +101,12 @@ func themeIndex(name string) int {
 	return 0
 }
 
-func paletteSwatches(r *lipgloss.Renderer, palette theme.Palette) string {
-	colors := []lipgloss.AdaptiveColor{
+func paletteSwatches(hasDarkBg bool, palette theme.Palette) string {
+	ld := lipgloss.LightDark(hasDarkBg)
+	resolve := func(c theme.Color) color.Color {
+		return ld(lipgloss.Color(c.Light), lipgloss.Color(c.Dark))
+	}
+	colors := []theme.Color{
 		palette.Accent,
 		palette.Success,
 		palette.Error,
@@ -109,20 +114,24 @@ func paletteSwatches(r *lipgloss.Renderer, palette theme.Palette) string {
 	}
 	var out strings.Builder
 	for _, c := range colors {
-		out.WriteString(r.NewStyle().Foreground(c).Render("●"))
+		out.WriteString(lipgloss.NewStyle().Foreground(resolve(c)).Render("●"))
 		out.WriteString(" ")
 	}
 	return strings.TrimSpace(out.String())
 }
 
-func renderThemePreview(r *lipgloss.Renderer, palette theme.Palette) string {
-	accent := r.NewStyle().Foreground(palette.Accent).Bold(true)
-	success := r.NewStyle().Foreground(palette.Success)
-	errorStyle := r.NewStyle().Foreground(palette.Error)
-	muted := r.NewStyle().Foreground(palette.Muted)
-	box := r.NewStyle().
+func renderThemePreview(hasDarkBg bool, palette theme.Palette) string {
+	ld := lipgloss.LightDark(hasDarkBg)
+	resolve := func(c theme.Color) color.Color {
+		return ld(lipgloss.Color(c.Light), lipgloss.Color(c.Dark))
+	}
+	accent := lipgloss.NewStyle().Foreground(resolve(palette.Accent)).Bold(true)
+	success := lipgloss.NewStyle().Foreground(resolve(palette.Success))
+	errorStyle := lipgloss.NewStyle().Foreground(resolve(palette.Error))
+	muted := lipgloss.NewStyle().Foreground(resolve(palette.Muted))
+	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(palette.Border).
+		BorderForeground(resolve(palette.Border)).
 		Padding(0, 1)
 
 	var b strings.Builder

@@ -3,8 +3,8 @@ package agentui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // slashOption is one row in a slashPicker. Label is the primary text shown
@@ -57,8 +57,8 @@ func newSlashPicker(cmd, title, subtitle string, options []slashOption, current 
 }
 
 // Update returns (updated, chosenValue, submitted, cancelled).
-func (p slashPicker) Update(msg tea.KeyMsg) (slashPicker, string, bool, bool) {
-	switch msg.Type {
+func (p slashPicker) Update(msg tea.KeyPressMsg) (slashPicker, string, bool, bool) {
+	switch msg.Code {
 	case tea.KeyUp:
 		if p.cursor > 0 {
 			p.cursor--
@@ -72,7 +72,7 @@ func (p slashPicker) Update(msg tea.KeyMsg) (slashPicker, string, bool, bool) {
 			return p, "", false, true
 		}
 		return p, p.options[p.cursor].Value, true, false
-	case tea.KeyEsc:
+	case tea.KeyEscape:
 		return p, "", false, true
 	}
 	switch msg.String() {

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // idleMode is the default mode: no modal screen is open, the user can type a
@@ -17,15 +17,59 @@ type idleMode struct{}
 // idle help overlay is hand-written (it lists informational rows like "/" that
 // aren't bindings), so these never render. Tab and plain typing are not in the
 // table because they need the raw msg; they're handled as residual cases.
+// maxInputRows caps how tall the prompt input grows before it scrolls
+// internally. Multi-line input is entered with Shift+Enter, Alt+Enter, or a
+// trailing backslash before Enter.
+const maxInputRows = 10
+
 var idleKeys = append(keymap{
 	{keys: []string{"enter"}, run: Model.submitCurrentInput},
-	{keys: []string{"up"}, run: func(m Model) (tea.Model, tea.Cmd) { return m.historyBack(), nil }},
-	{keys: []string{"down"}, run: func(m Model) (tea.Model, tea.Cmd) { return m.historyForward(), nil }},
+	{keys: []string{"shift+enter", "alt+enter"}, run: Model.insertInputNewline},
+	{keys: []string{"up"}, run: Model.idleUp},
+	{keys: []string{"down"}, run: Model.idleDown},
 	{keys: []string{"esc"}, run: Model.idleEsc},
 	{keys: []string{"ctrl+r"}, run: func(m Model) (tea.Model, tea.Cmd) { return m.enterHistSearch(), nil }},
 }, scrollKeys...)
 
-func (idleMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// insertInputNewline inserts a literal newline at the cursor. Bound to
+// Shift+Enter / Alt+Enter (a real Shift+Enter only reaches us on terminals
+// that speak the Kitty keyboard protocol; the backslash-Enter path in
+// submitCurrentInput is the portable fallback).
+func (m Model) insertInputNewline() (tea.Model, tea.Cmd) {
+	m.cancelHistoryNav()
+	m.input.InsertString("\n")
+	return m, nil
+}
+
+// idleUp moves the cursor up one line inside the input, falling through to
+// prompt-history navigation only when already on the first line.
+func (m Model) idleUp() (tea.Model, tea.Cmd) {
+	if m.input.Line() > 0 {
+		m.input.CursorUp()
+		return m, nil
+	}
+	return m.historyBack(), nil
+}
+
+// idleDown mirrors idleUp: move down a line, else step forward through history.
+func (m Model) idleDown() (tea.Model, tea.Cmd) {
+	if m.input.Line() < strings.Count(m.input.Value(), "\n") {
+		m.input.CursorDown()
+		return m, nil
+	}
+	return m.historyForward(), nil
+}
+
+// inputCursorAtEnd reports whether the cursor sits at the very end of the input
+// text (last line, end of that line). Used by the slash dropdown to decide
+// whether Right accepts a completion or just moves the cursor.
+func (m Model) inputCursorAtEnd() bool {
+	onLastLine := m.input.Line() == strings.Count(m.input.Value(), "\n")
+	li := m.input.LineInfo()
+	return onLastLine && li.CharOffset >= li.CharWidth
+}
+
+func (idleMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// Slash-command dropdown overrides come first so they shadow history nav,
 	// the prompt-suggestion tab handler, and Esc-stash gestures. When the
 	// override doesn't fully handle the key (e.g. Enter accepts the highlight
@@ -40,7 +84,7 @@ func (idleMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Tab needs the raw msg (accept the ghost suggestion, or insert a tab), so
 	// it's handled before the table rather than as a binding.
-	if msg.Type == tea.KeyTab {
+	if msg.Code == tea.KeyTab {
 		if s := m.visibleSuggestion(); s != "" {
 			m.input.SetValue(s)
 			m.input.CursorEnd()
@@ -56,8 +100,7 @@ func (idleMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Any other typing cancels history navigation, then forwards to the input.
 	if m.histIdx >= 0 {
-		m.histIdx = -1
-		m.histDraft = ""
+		m.cancelHistoryNav()
 	}
 	return m.updateInputAndResetSlash(msg)
 }
@@ -101,7 +144,21 @@ func (idleMode) renderInputRow(m Model, _ int) string {
 		}
 	}
 
-	return prompt + input.View() + suggestion
+	// textarea pads every line to its full width with (now-unstyled) spaces;
+	// trim that so the prompt sits flush and the ghost suggestion doesn't get
+	// pushed past the edge and wrap. The prompt prefixes the first line;
+	// continuation lines align under the text.
+	indent := strings.Repeat(" ", lipgloss.Width(prompt))
+	lines := strings.Split(input.View(), "\n")
+	for i, ln := range lines {
+		ln = strings.TrimRight(ln, " ")
+		if i == 0 {
+			lines[i] = prompt + ln
+		} else {
+			lines[i] = indent + ln
+		}
+	}
+	return strings.Join(lines, "\n") + suggestion
 }
 
 // helpBindings is hand-written rather than derived from idleKeys: it lists
@@ -111,6 +168,7 @@ func (idleMode) renderInputRow(m Model, _ int) string {
 func (idleMode) helpBindings(_ Model) []binding {
 	return []binding{
 		{"↵", "submit"},
+		{"shift+↵", "newline (or \\↵)"},
 		{"tab", "accept suggestion"},
 		{"↑ / ↓", "history"},
 		{"ctrl+r", "search history"},

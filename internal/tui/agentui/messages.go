@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
@@ -39,13 +39,13 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.height = msg.Height
 	vpW, vpH := m.viewportDims()
 	if !m.ready {
-		m.vp = viewport.New(vpW, vpH)
+		m.vp = viewport.New(viewport.WithWidth(vpW), viewport.WithHeight(vpH))
 		m.ready = true
 	} else {
-		m.vp.Width = vpW
-		m.vp.Height = vpH
+		m.vp.SetWidth(vpW)
+		m.vp.SetHeight(vpH)
 	}
-	m.input.Width = vpW - 4
+	m.input.SetWidth(vpW - 4)
 	m.refreshViewport()
 	return m, nil
 }

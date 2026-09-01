@@ -25,6 +25,9 @@ func (m Model) inputRowHeight() int {
 		if m.configEditor != nil {
 			return strings.Count(configEditorMode{}.renderInputRow(m, 0), "\n") + 1
 		}
+	case stateIdle:
+		// The idle prompt is a textarea that grows with multi-line input.
+		return strings.Count(idleMode{}.renderInputRow(m, 0), "\n") + 1
 	}
 	return 1
 }

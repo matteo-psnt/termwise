@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -60,12 +60,12 @@ func TestHandleThinkingKeyEscInterruptsRequest(t *testing.T) {
 			ctx:              ctx,
 			cancel:           cancel,
 			activeGeneration: 7,
-			vp:               viewport.New(80, 10),
+			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
 		state: stateThinking,
 	}
 
-	gotModel, _ := thinkingMode{}.handleKey(m, tea.KeyMsg{Type: tea.KeyEsc})
+	gotModel, _ := thinkingMode{}.handleKey(m, tea.KeyPressMsg{Code: tea.KeyEscape})
 	got := gotModel.(Model)
 
 	if got.state != stateIdle {
@@ -92,7 +92,7 @@ func TestHandleResponseEventIgnoresStaleResponse(t *testing.T) {
 	m := Model{
 		shell: shell{
 			activeGeneration: 2,
-			vp:               viewport.New(80, 10),
+			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
 		state: stateIdle,
 	}
@@ -115,7 +115,7 @@ func TestHandleResponseEventIgnoresCanceledActiveRequest(t *testing.T) {
 	m := Model{
 		shell: shell{
 			activeGeneration: 3,
-			vp:               viewport.New(80, 10),
+			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
 		state: stateThinking,
 	}
@@ -138,7 +138,7 @@ func TestHandleToolExecutedEventIgnoresStaleGeneration(t *testing.T) {
 	m := Model{
 		shell: shell{
 			activeGeneration: 2,
-			vp:               viewport.New(80, 10),
+			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
 	}
 
@@ -168,7 +168,7 @@ func TestHandleInitialPromptSubmitsPrompt(t *testing.T) {
 			cancel:           cancel,
 			suggestionCtx:    suggestionCtx,
 			suggestionCancel: suggestionCancel,
-			vp:               viewport.New(80, 10),
+			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 			initialPrompt:    "inspect the repo",
 			contextWindow:    32_000,
 		},
@@ -199,13 +199,13 @@ func TestHandleIdleKeyTabAcceptsSuggestion(t *testing.T) {
 	m := Model{
 		shell: shell{
 			suggestion: "run the tests",
-			input:      textinput.New(),
-			vp:         viewport.New(80, 10),
+			input:      textarea.New(),
+			vp:         viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
 		state: stateIdle,
 	}
 
-	gotModel, _ := idleMode{}.handleKey(m, tea.KeyMsg{Type: tea.KeyTab})
+	gotModel, _ := idleMode{}.handleKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
 	got := gotModel.(Model)
 
 	if got.input.Value() != "run the tests" {
@@ -252,7 +252,7 @@ func TestShouldFilterSuggestion(t *testing.T) {
 func TestHandleRespondEventStoresShellCommand(t *testing.T) {
 	m := Model{
 		shell: shell{
-			vp: viewport.New(80, 10),
+			vp: viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
 		state: stateThinking,
 	}
@@ -279,7 +279,7 @@ func TestSubmitMessageClearsPendingShellCommand(t *testing.T) {
 			cancel:           cancel,
 			suggestionCtx:    suggestionCtx,
 			suggestionCancel: suggestionCancel,
-			vp:               viewport.New(80, 10),
+			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 			contextWindow:    32_000,
 			shellCommand:     "go test ./...",
 		},
@@ -297,7 +297,7 @@ func TestSubmitMessageClearsPendingShellCommand(t *testing.T) {
 func TestHandleResponseEventWithoutToolsClearsShellCommand(t *testing.T) {
 	m := Model{
 		shell: shell{
-			vp:           viewport.New(80, 10),
+			vp:           viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 			shellCommand: "go test ./...",
 		},
 		state: stateThinking,

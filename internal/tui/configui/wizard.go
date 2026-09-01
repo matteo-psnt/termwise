@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -72,7 +72,7 @@ type wizardModel struct {
 	errBack wizardStep
 }
 
-func newWizardModel(r *lipgloss.Renderer, themeName string) wizardModel {
+func newWizardModel(hasDarkBg bool, themeName string) wizardModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
@@ -80,7 +80,7 @@ func newWizardModel(r *lipgloss.Renderer, themeName string) wizardModel {
 	ti.CharLimit = 256
 
 	return wizardModel{
-		styles: newStylesForTheme(r, themeName),
+		styles: newStylesForTheme(hasDarkBg, themeName),
 		spin:   sp,
 		input:  ti,
 		step:   wizPickProvider,
@@ -147,7 +147,7 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.step = wizPickModel
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 
@@ -161,7 +161,7 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m wizardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch m.step {
 	case wizPickProvider:
 		return m.handlePickProviderKey(msg)
@@ -181,7 +181,7 @@ func (m wizardModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m wizardModel) handlePickProviderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m wizardModel) handlePickProviderKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	providers := m.availableProviders()
 
 	switch msg.String() {
@@ -217,7 +217,7 @@ func (m wizardModel) handlePickProviderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	return m, nil
 }
 
-func (m wizardModel) handlePickAuthKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m wizardModel) handlePickAuthKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.done = true
@@ -248,7 +248,7 @@ func (m wizardModel) handlePickAuthKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m wizardModel) handleEnterValueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m wizardModel) handleEnterValueKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		m.done = true
@@ -278,7 +278,7 @@ func (m wizardModel) handleEnterValueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m wizardModel) handlePickModelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m wizardModel) handlePickModelKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.done = true
@@ -304,7 +304,7 @@ func (m wizardModel) handlePickModelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m wizardModel) handleErrKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m wizardModel) handleErrKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.done = true
@@ -399,10 +399,13 @@ func (m *wizardModel) saveConfig() {
 // View
 // ---------------------------------------------------------------------------
 
-func (m wizardModel) View() string {
+func (m wizardModel) View() tea.View {
 	inner := m.renderInner()
 	box := m.styles.Outer.Render(inner)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	content := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 func (m wizardModel) renderInner() string {

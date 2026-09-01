@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // picker is the sub-model for the ask tool UI.
@@ -36,8 +36,8 @@ func (p picker) onOther() bool { return p.cursor == len(p.options) }
 
 // Update handles keyboard input for the picker.
 // Returns (updatedPicker, result, submitted, cancelled).
-func (p picker) Update(msg tea.KeyMsg) (picker, string, bool, bool) {
-	switch msg.Type {
+func (p picker) Update(msg tea.KeyPressMsg) (picker, string, bool, bool) {
+	switch msg.Code {
 	case tea.KeyUp:
 		if p.cursor > 0 {
 			p.cursor--
@@ -76,17 +76,18 @@ func (p picker) Update(msg tea.KeyMsg) (picker, string, bool, bool) {
 			return p, strings.Join(results, ", "), true, false
 		}
 
-	case tea.KeyEsc:
+	case tea.KeyEscape:
 		return p, "User cancelled", false, true
-
-	case tea.KeyRunes:
-		if p.onOther() {
-			p.otherText += string(msg.Runes)
-		}
 
 	case tea.KeyBackspace:
 		if p.onOther() && len(p.otherText) > 0 {
 			p.otherText = p.otherText[:len(p.otherText)-1]
+		}
+
+	default:
+		// Printable input while editing the "Other" field.
+		if p.onOther() && msg.Text != "" {
+			p.otherText += msg.Text
 		}
 	}
 

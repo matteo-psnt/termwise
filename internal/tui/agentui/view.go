@@ -5,11 +5,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
-// View implements tea.Model.
-func (m Model) View() string {
+// View implements tea.Model. MouseMode is set per-frame (v2 moved mouse and
+// keyboard setup off program options onto the view); basic Kitty keyboard
+// disambiguation — which delivers a distinct Shift+Enter on capable terminals —
+// is enabled by bubbletea automatically.
+func (m Model) View() tea.View {
+	v := tea.NewView(m.render())
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
+}
+
+// render composes the TUI string for the current state.
+func (m Model) render() string {
 	if m.quitting {
 		return ""
 	}
