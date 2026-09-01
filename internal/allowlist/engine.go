@@ -23,19 +23,14 @@ var engine = sync.OnceValue(func() *ruleEngine {
 //go:embed allowlist.yaml
 var builtinAllowlistYAML []byte
 
-// Parse parses an allow-list rule string into a Rule.
-func Parse(s string) (Rule, bool) {
-	return parseRule(s)
-}
-
 // Matches reports whether rule allows the given shell command.
 func Matches(rule Rule, command string) bool {
 	return engine().matches(rule, command)
 }
 
 // NeedsApproval reports whether the command must be confirmed by the user.
-func NeedsApproval(userRules []string, command string) bool {
-	return engine().needsApproval(userRules, command)
+func NeedsApproval(command string) bool {
+	return engine().needsApproval(command)
 }
 
 // BuildRuleFromCommand derives a sensible rule string from a shell command.
@@ -59,7 +54,7 @@ func (e *ruleEngine) matches(rule Rule, command string) bool {
 	return e.matchRule(rule, segments[0])
 }
 
-func (e *ruleEngine) needsApproval(userRules []string, command string) bool {
+func (e *ruleEngine) needsApproval(command string) bool {
 	command = strings.TrimSpace(command)
 	if command == "" {
 		return true
@@ -70,9 +65,8 @@ func (e *ruleEngine) needsApproval(userRules []string, command string) bool {
 		return true
 	}
 
-	extraRules := compileRules(userRules)
 	for _, seg := range segments {
-		if !e.matchesAny(extraRules, seg) {
+		if !e.matchesBuiltin(seg) {
 			return true
 		}
 	}
@@ -118,18 +112,6 @@ func (e *ruleEngine) matchRule(rule Rule, cmd parsedCommand) bool {
 	}
 
 	return true
-}
-
-func (e *ruleEngine) matchesAny(userRules []Rule, cmd parsedCommand) bool {
-	if e.matchesBuiltin(cmd) {
-		return true
-	}
-	for _, rule := range userRules {
-		if e.matchRule(rule, cmd) {
-			return true
-		}
-	}
-	return false
 }
 
 func (e *ruleEngine) matchesBuiltin(cmd parsedCommand) bool {

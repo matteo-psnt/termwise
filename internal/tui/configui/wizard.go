@@ -204,7 +204,7 @@ func (m wizardModel) handlePickProviderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 
 		m.provider = selected.Name
 		m.cursor = 0
-		if m.provider == "ollama" {
+		if provider.HasNoAuth(m.provider) {
 			m.authMethod = "env"
 			m.setupEnterValue()
 			m.step = wizEnterValue
@@ -256,7 +256,7 @@ func (m wizardModel) handleEnterValueKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.input.Blur()
 		m.cursor = 0
-		if m.provider == "ollama" {
+		if provider.HasNoAuth(m.provider) {
 			m.step = wizPickProvider
 		} else {
 			m.step = wizPickAuth

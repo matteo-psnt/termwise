@@ -11,7 +11,12 @@ type Info struct {
 	Name          string
 	DisplayName   string
 	DefaultEnvVar string // empty for providers that need no API key (e.g. Ollama)
-	Factory       Factory
+	// NoAuth reports that the provider doesn't authenticate via credentials;
+	// its only user-facing config knob is a base URL. UI flows skip the
+	// auth-method picker and prompt for a URL directly. True for self-hosted
+	// endpoints like Ollama.
+	NoAuth  bool
+	Factory Factory
 }
 
 var (
@@ -40,6 +45,13 @@ func Register(info Info) {
 func Lookup(name string) (Info, bool) {
 	info, ok := registry[name]
 	return info, ok
+}
+
+// HasNoAuth reports whether the named provider runs without credentials.
+// Returns false for unknown providers.
+func HasNoAuth(name string) bool {
+	info, ok := Lookup(name)
+	return ok && info.NoAuth
 }
 
 // Catalog returns all registered providers in registration order.

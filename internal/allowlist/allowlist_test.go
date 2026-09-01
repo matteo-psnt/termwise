@@ -614,7 +614,7 @@ func TestNeedsApprovalStructuredShellParsing(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := NeedsApproval(nil, tc.command); got != tc.want {
+			if got := NeedsApproval(tc.command); got != tc.want {
 				t.Fatalf("NeedsApproval(%q) = %v, want %v", tc.command, got, tc.want)
 			}
 		})
@@ -662,7 +662,7 @@ func TestNeedsApprovalRejectsSymlinkEscapeFromTempDir(t *testing.T) {
 	}
 
 	command := `printf ok > "` + filepath.Join(link, "out.txt") + `"`
-	if !NeedsApproval(nil, command) {
+	if !NeedsApproval(command) {
 		t.Fatalf("expected symlinked temp directory redirect to require approval: %q", command)
 	}
 }
@@ -682,7 +682,7 @@ func TestNeedsApprovalRejectsSymlinkedTempFile(t *testing.T) {
 	}
 
 	command := `printf ok > "` + link + `"`
-	if !NeedsApproval(nil, command) {
+	if !NeedsApproval(command) {
 		t.Fatalf("expected symlinked temp file redirect to require approval: %q", command)
 	}
 }

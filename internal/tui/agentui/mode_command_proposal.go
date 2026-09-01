@@ -12,7 +12,7 @@ type commandProposalMode struct{}
 func (commandProposalMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
-		return m.acceptCommandProposal()
+		return m.quit()
 	case tea.KeyEsc:
 		return m.dismissCommandProposal()
 	case tea.KeyPgUp:
@@ -30,7 +30,7 @@ func (commandProposalMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cm
 	}
 	switch msg.String() {
 	case "1":
-		return m.acceptCommandProposal()
+		return m.quit()
 	case "2":
 		return m.dismissCommandProposal()
 	case "3", "e":

@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/matteo-psnt/termwise/internal/config"
+	providerpkg "github.com/matteo-psnt/termwise/internal/provider"
 )
 
 type authStep int
@@ -76,8 +77,9 @@ func newAuthEditor(provider string, pc config.ProviderConfig, isActive bool, con
 		methodCursor: methodCursor,
 	}
 
-	// Ollama skips the method picker — go straight to URL entry.
-	if provider == "ollama" {
+	// Providers without auth credentials skip the method picker and go
+	// straight to URL entry.
+	if providerpkg.HasNoAuth(provider) {
 		m.method = "env"
 		m.setupInput()
 		m.step = authStepEnterValue
@@ -182,7 +184,7 @@ func (m authEditorModel) handleEnterValue(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.input.Blur()
 		m.inputErr = ""
-		if m.provider == "ollama" {
+		if providerpkg.HasNoAuth(m.provider) {
 			m.cancelled = true
 			m.done = true
 		} else {
@@ -217,7 +219,7 @@ func (m *authEditorModel) setupInput() {
 	m.input.EchoMode = cfg.EchoMode
 
 	switch {
-	case m.provider == "ollama":
+	case providerpkg.HasNoAuth(m.provider):
 		m.input.SetValue(m.existing.BaseURL)
 	case m.method == "env":
 		m.input.SetValue(m.existing.EnvVar)

@@ -15,7 +15,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/matteo-psnt/termwise/internal/allowlist"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/keybinding"
@@ -413,20 +412,11 @@ func (m Model) denyPendingBash() (tea.Model, tea.Cmd) {
 	return m.resumePendingToolLoop(m.pending.result("User denied this command.", true))
 }
 
-func (m Model) acceptCommandProposal() (tea.Model, tea.Cmd) {
-	return m.quit()
-}
-
 func (m Model) dismissCommandProposal() (tea.Model, tea.Cmd) {
 	m.clearShellCommand()
 	m.state = stateIdle
 	m.refreshViewport()
 	return m, m.startSuggestion()
-}
-
-// needsApproval returns true if the bash command must be confirmed by the user.
-func (Model) needsApproval(cmd string) bool {
-	return allowlist.NeedsApproval(nil, cmd)
 }
 
 func workDirBasename() string {

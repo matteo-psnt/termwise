@@ -11,6 +11,7 @@ import (
 
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
+	"github.com/matteo-psnt/termwise/internal/allowlist"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
@@ -93,7 +94,7 @@ func (m Model) handleResponseEvent(msg agent.ResponseEvent) (tea.Model, tea.Cmd)
 	}
 
 	m.refreshViewport()
-	return m, m.wrapActiveGeneration(ProcessToolsCmd(m.ctx, resp.ToolCalls, nil, m.needsApproval))
+	return m, m.wrapActiveGeneration(ProcessToolsCmd(m.ctx, resp.ToolCalls, nil, allowlist.NeedsApproval))
 }
 
 func (m Model) handleToolExecutedEvent(msg agent.ToolExecutedEvent) (tea.Model, tea.Cmd) {
@@ -103,7 +104,7 @@ func (m Model) handleToolExecutedEvent(msg agent.ToolExecutedEvent) (tea.Model, 
 		ToolResultEntry{Content: display, IsError: msg.Result.IsError},
 	)
 	m.refreshViewport()
-	return m, m.wrapActiveGeneration(ProcessToolsCmd(m.ctx, msg.Remaining, msg.Collected, m.needsApproval))
+	return m, m.wrapActiveGeneration(ProcessToolsCmd(m.ctx, msg.Remaining, msg.Collected, allowlist.NeedsApproval))
 }
 
 func (m Model) handleNeedsApprovalEvent(msg agent.NeedsApprovalEvent) (tea.Model, tea.Cmd) {

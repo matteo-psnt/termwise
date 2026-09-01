@@ -6,6 +6,7 @@ import (
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/keybinding"
 	"github.com/matteo-psnt/termwise/internal/models"
+	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
@@ -192,7 +193,7 @@ func (m editorModel) sortedProviders() []string {
 }
 
 func describeAuth(providerName string, pc config.ProviderConfig) string {
-	if providerName == "ollama" {
+	if provider.HasNoAuth(providerName) {
 		if pc.BaseURL == "" {
 			return "base URL · (default)"
 		}

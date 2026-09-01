@@ -25,7 +25,9 @@ type allowlistFile struct {
 	Rules []Rule `yaml:"rules"`
 }
 
-func parseRule(s string) (Rule, bool) {
+// Parse parses an allow-list rule string into a Rule. The second return is
+// false when the input is empty or unparseable.
+func Parse(s string) (Rule, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return Rule{}, false
@@ -57,17 +59,6 @@ func parseRule(s string) (Rule, bool) {
 	}
 
 	return rule, true
-}
-
-func compileRules(userRules []string) []Rule {
-	rules := make([]Rule, 0, len(userRules))
-	for _, raw := range userRules {
-		rule, ok := parseRule(raw)
-		if ok {
-			rules = append(rules, rule)
-		}
-	}
-	return rules
 }
 
 func matchesAllowedSubcommand(rule Rule, args []string) bool {

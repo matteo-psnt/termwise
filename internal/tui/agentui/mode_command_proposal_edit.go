@@ -19,7 +19,7 @@ func (commandProposalEditMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, te
 		if edited != "" {
 			m.setShellCommand(edited)
 		}
-		return m.acceptCommandProposal()
+		return m.quit()
 	case tea.KeyEsc:
 		m.input.SetValue("")
 		m.state = stateCommandProposal

@@ -1,10 +1,13 @@
 package configui
 
-import "github.com/matteo-psnt/termwise/internal/config"
+import (
+	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/provider"
+)
 
 const defaultOllamaBaseURL = "http://localhost:11434"
 
-func buildProviderConfigFromAuthInput(provider, method, inputVal, fallback string) config.ProviderConfig {
+func buildProviderConfigFromAuthInput(providerName, method, inputVal, fallback string) config.ProviderConfig {
 	val := inputVal
 	if val == "" {
 		val = fallback
@@ -12,7 +15,7 @@ func buildProviderConfigFromAuthInput(provider, method, inputVal, fallback strin
 
 	pc := config.ProviderConfig{Auth: method}
 	switch {
-	case provider == "ollama":
+	case provider.HasNoAuth(providerName):
 		pc.Auth = "env"
 		if val != "" && val != defaultOllamaBaseURL {
 			pc.BaseURL = val

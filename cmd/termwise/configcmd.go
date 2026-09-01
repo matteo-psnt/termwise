@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/tui/configui"
 )
 
@@ -484,8 +485,8 @@ func runDoctor(cfgPath string) bool {
 	}
 
 	// Auth credentials.
-	if cfg.SelectedProvider == "ollama" {
-		pass("Auth: not required for Ollama")
+	if provider.HasNoAuth(cfg.SelectedProvider) {
+		pass("Auth: not required")
 	} else {
 		authDesc := authSummary(cfg.SelectedProvider, pc)
 		_, authErr := config.ResolveAuth(cfg.SelectedProvider, pc)
@@ -591,7 +592,7 @@ func buildAuthJSON(name string, pc config.ProviderConfig) showAuthJSON {
 
 // authSummary returns a compact human-readable auth description.
 func authSummary(providerName string, pc config.ProviderConfig) string {
-	if providerName == "ollama" {
+	if provider.HasNoAuth(providerName) {
 		return "(no auth)"
 	}
 	method := pc.Auth
