@@ -15,6 +15,14 @@ import (
 
 const maxBashOutputBytes = 64 * 1024 // 64KB per stream
 
+func init() {
+	stepFns[BashDef.Name] = func(tc provider.ToolCall) Step {
+		return Step{Kind: StepGatedExecutor, GateCommand: BashCommand(tc), Execute: ExecuteBash}
+	}
+	detailFns[BashDef.Name] = BashCommand
+	displayFns[BashDef.Name] = FormatDisplay
+}
+
 var BashDef = provider.ToolDef{
 	Name:        "bash",
 	Description: "Execute a shell command. Returns stdout, stderr, and exit code as JSON.",
@@ -28,6 +36,18 @@ var BashDef = provider.ToolDef{
 		},
 		"required": []string{"command"},
 	},
+}
+
+// BashCommand returns the command argument for a bash tool call.
+func BashCommand(tc provider.ToolCall) string {
+	c, _ := tc.Input["command"].(string)
+	return c
+}
+
+// ExecuteBash runs the bash tool for a tool call and packages the result.
+func ExecuteBash(ctx context.Context, tc provider.ToolCall) provider.ToolResult {
+	content, isErr := Bash(ctx, tc.Input)
+	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
 }
 
 // BashResult is the structured output returned by the bash tool.

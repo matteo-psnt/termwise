@@ -3,6 +3,8 @@ package agentui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/matteo-psnt/termwise/internal/agent/tools"
 )
 
 // approvalMode is active when a bash command is awaiting user approval.
@@ -25,7 +27,7 @@ func (approvalMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (approvalMode) renderInputRow(m Model, vpW int) string {
-	cmd, _ := m.pending.toolCall.Input["command"].(string)
+	cmd := tools.BashCommand(m.pending.toolCall)
 	return lipgloss.JoinVertical(lipgloss.Left,
 		m.renderCommandBlock("run command?", cmd, vpW),
 		m.renderer.styles.ActionHints.Render("  [↵] run   [esc] skip"),

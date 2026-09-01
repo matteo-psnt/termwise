@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/matteo-psnt/termwise/internal/agent"
+	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
@@ -64,7 +65,7 @@ func ProcessToolsCmd(ctx context.Context, toolCalls []provider.ToolCall, collect
 // ExecuteBashCmd executes a bash command after the user has approved it.
 func ExecuteBashCmd(ctx context.Context, tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) tea.Cmd {
 	return func() tea.Msg {
-		result := agent.ExecuteBash(ctx, tc)
+		result := tools.ExecuteBash(ctx, tc)
 		return agent.ToolExecutedEvent{
 			ToolCall:     tc,
 			Result:       result,

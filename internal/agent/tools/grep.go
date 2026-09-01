@@ -24,6 +24,26 @@ const (
 	ripgrepMaxColumns    = "500"
 )
 
+func init() {
+	stepFns[GrepDef.Name] = func(_ provider.ToolCall) Step {
+		return Step{Kind: StepExecutor, Execute: ExecuteGrep}
+	}
+	detailFns[GrepDef.Name] = grepDetail
+}
+
+func grepDetail(tc provider.ToolCall) string {
+	return patternInPath(GrepPattern(tc), GrepPath(tc))
+}
+
+// patternInPath formats a "<pattern> in <path>" detail line, dropping the
+// suffix when path is empty. Shared by grep and glob.
+func patternInPath(pattern, path string) string {
+	if path != "" {
+		return pattern + " in " + path
+	}
+	return pattern
+}
+
 var GrepDef = provider.ToolDef{
 	Name: "grep",
 	Description: `A search tool built on ripgrep.
@@ -96,6 +116,24 @@ Usage:
 		},
 		"required": []string{"pattern"},
 	},
+}
+
+// GrepPattern returns the pattern argument for a grep tool call.
+func GrepPattern(tc provider.ToolCall) string {
+	p, _ := tc.Input["pattern"].(string)
+	return p
+}
+
+// GrepPath returns the path argument for a grep tool call (empty if unset).
+func GrepPath(tc provider.ToolCall) string {
+	p, _ := tc.Input["path"].(string)
+	return p
+}
+
+// ExecuteGrep runs the grep tool for a tool call and packages the result.
+func ExecuteGrep(ctx context.Context, tc provider.ToolCall) provider.ToolResult {
+	content, isErr := Grep(ctx, tc.Input)
+	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
 }
 
 // Grep runs ripgrep with arguments derived from input and returns a formatted

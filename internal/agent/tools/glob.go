@@ -12,6 +12,17 @@ import (
 
 const defaultGlobLimit = 100
 
+func init() {
+	stepFns[GlobDef.Name] = func(_ provider.ToolCall) Step {
+		return Step{Kind: StepExecutor, Execute: ExecuteGlob}
+	}
+	detailFns[GlobDef.Name] = globDetail
+}
+
+func globDetail(tc provider.ToolCall) string {
+	return patternInPath(GlobPattern(tc), GlobPath(tc))
+}
+
 var GlobDef = provider.ToolDef{
 	Name: "glob",
 	Description: `Fast file pattern matching backed by ripgrep.
@@ -36,6 +47,24 @@ Usage:
 		},
 		"required": []string{"pattern"},
 	},
+}
+
+// GlobPattern returns the pattern argument for a glob tool call.
+func GlobPattern(tc provider.ToolCall) string {
+	p, _ := tc.Input["pattern"].(string)
+	return p
+}
+
+// GlobPath returns the path argument for a glob tool call (empty if unset).
+func GlobPath(tc provider.ToolCall) string {
+	p, _ := tc.Input["path"].(string)
+	return p
+}
+
+// ExecuteGlob runs the glob tool for a tool call and packages the result.
+func ExecuteGlob(ctx context.Context, tc provider.ToolCall) provider.ToolResult {
+	content, isErr := Glob(ctx, tc.Input)
+	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
 }
 
 // Glob lists files matching a glob pattern, sorted by modification time.

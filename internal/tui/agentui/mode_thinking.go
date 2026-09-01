@@ -1,6 +1,10 @@
 package agentui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/matteo-psnt/termwise/internal/agent/tools"
+)
 
 // thinkingMode covers stateThinking and stateJudging — waiting on the model
 // or on the LLM safety judge. Only scroll keys and Esc-to-interrupt are accepted.
@@ -29,7 +33,7 @@ func (thinkingMode) handleKey(m Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (thinkingMode) renderInputRow(m Model, _ int) string {
 	if m.state == stateJudging {
-		cmd, _ := m.pending.toolCall.Input["command"].(string)
+		cmd := tools.BashCommand(m.pending.toolCall)
 		return " " + m.renderer.styles.Spinner.Render(m.spin.View()) + " " + cmd
 	}
 	return " " + m.renderer.styles.Spinner.Render(m.spin.View()) + " thinking..."

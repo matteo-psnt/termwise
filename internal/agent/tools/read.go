@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,10 +11,25 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
+// ExecuteRead runs the read tool for a tool call and packages the result.
+// The ctx argument is unused; it's present to give read the same signature as
+// other executors so they can plug into Step.Execute uniformly.
+func ExecuteRead(_ context.Context, tc provider.ToolCall) provider.ToolResult {
+	content, isErr := Read(tc.Input)
+	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
+}
+
 const (
 	maxReadLines      = 2000
 	maxDirListEntries = 500
 )
+
+func init() {
+	stepFns[ReadDef.Name] = func(_ provider.ToolCall) Step {
+		return Step{Kind: StepExecutor, Execute: ExecuteRead}
+	}
+	detailFns[ReadDef.Name] = ReadPath
+}
 
 var ReadDef = provider.ToolDef{
 	Name:        "read",
@@ -36,6 +52,12 @@ var ReadDef = provider.ToolDef{
 		},
 		"required": []string{"path"},
 	},
+}
+
+// ReadPath returns the path argument for a read tool call.
+func ReadPath(tc provider.ToolCall) string {
+	p, _ := tc.Input["path"].(string)
+	return p
 }
 
 // Read executes the read tool. When path points at a directory, it returns a

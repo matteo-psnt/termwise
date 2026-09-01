@@ -41,15 +41,16 @@ Rules:
 - Return text responses directly without using any tool.
 - Be concise in your responses
 - When showing results, use markdown for readability. Supported: inline ` + "`code`" + `, fenced code blocks, **bold**, *italic*, - bullet lists, 1. numbered lists, tables, blockquotes, task lists ([x] / [ ]), and strikethrough (~~text~~). Headings: only # — ## and beyond render with the literal "##" / "###" punctuation visible, so use **bold** lines for subsections instead. Avoid raw HTML and images.
-- %s
 - Prefer using tools to find answers over asking the user
-
+%s
 Available tools: %s
 
 Environment:
 - OS: %s
 - Shell: %s
 - Working directory: %s`
+
+const headlessExtraRule = "- This run is non-interactive: do not ask follow-up questions. If clarification would help, explain the ambiguity in your final response.\n"
 
 // SingleShot returns the single-shot system prompt with environment context injected.
 // isTTY controls whether the output context is "terminal" or "piped".
@@ -61,24 +62,24 @@ func SingleShot(isTTY bool) string {
 	return fmt.Sprintf(singleShotTemplate, osName(), shellPath(), output)
 }
 
-// Agent returns the agent-mode system prompt with environment context injected.
-// The available tool list is derived from the provided tool definitions.
+// Agent returns the system prompt for the interactive agent TUI. Tools that
+// elicit user input (e.g. ask) are usable; per-tool guidance lives in each
+// tool's Description.
 func Agent(toolDefs []provider.ToolDef) string {
-	return agentWithTools(provider.ToolNames(toolDefs))
+	return formatAgentTemplate(toolDefs, "")
 }
 
-func agentWithTools(toolNames []string) string {
+// AgentHeadless returns the system prompt for non-interactive agent runs
+// (e.g. `tw "..."`). It adds a rule telling the model not to emit follow-up
+// questions, since there's no channel to receive answers.
+func AgentHeadless(toolDefs []provider.ToolDef) string {
+	return formatAgentTemplate(toolDefs, headlessExtraRule)
+}
+
+func formatAgentTemplate(toolDefs []provider.ToolDef, extraRule string) string {
 	cwd, _ := os.Getwd()
-	return fmt.Sprintf(agentTemplate, askToolGuidance(toolNames), strings.Join(toolNames, ", "), osName(), shellPath(), cwd)
-}
-
-func askToolGuidance(toolNames []string) string {
-	for _, name := range toolNames {
-		if name == "ask" {
-			return "Use the ask tool when there are multiple valid paths and the user's preference matters"
-		}
-	}
-	return "If user clarification would help, explain the ambiguity in your final response instead of asking follow-up questions"
+	names := provider.ToolNames(toolDefs)
+	return fmt.Sprintf(agentTemplate, extraRule, strings.Join(names, ", "), osName(), shellPath(), cwd)
 }
 
 func osName() string {

@@ -19,7 +19,7 @@ type judgmentMsg struct {
 }
 
 func (m Model) judgeCmd(tc provider.ToolCall) tea.Cmd {
-	cmd, _ := tc.Input["command"].(string)
+	cmd := tools.BashCommand(tc)
 	client := m.provider
 	modelID := m.modelID
 	return func() tea.Msg {
@@ -97,12 +97,9 @@ func (m Model) handleResponseEvent(msg agent.ResponseEvent) (tea.Model, tea.Cmd)
 }
 
 func (m Model) handleToolExecutedEvent(msg agent.ToolExecutedEvent) (tea.Model, tea.Cmd) {
-	display := msg.Result.Content
-	if msg.ToolCall.Name == "bash" {
-		display = tools.FormatDisplay(msg.Result.Content)
-	}
+	display := tools.DisplayResult(msg.ToolCall.Name, msg.Result.Content)
 	m.appendThreadEntries(
-		ToolCallEntry{Name: msg.ToolCall.Name, Detail: toolDetail(msg.ToolCall)},
+		ToolCallEntry{Name: msg.ToolCall.Name, Detail: tools.Detail(msg.ToolCall)},
 		ToolResultEntry{Content: display, IsError: msg.Result.IsError},
 	)
 	m.refreshViewport()

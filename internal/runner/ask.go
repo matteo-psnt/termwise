@@ -38,7 +38,7 @@ func newAskHeadlessConfig(rt runtimeContext, prompt string) agent.HeadlessConfig
 	return agent.HeadlessConfig{
 		Client:        rt.client,
 		Model:         rt.modelID,
-		System:        systemprompt.Agent(agenttools.HeadlessDefs),
+		System:        systemprompt.AgentHeadless(agenttools.HeadlessDefs),
 		Prompt:        prompt,
 		Tools:         agenttools.HeadlessDefs,
 		Effort:        config.EffectiveEffort(rt.providerName, rt.modelID, rt.providerCfg.Effort),
@@ -85,5 +85,5 @@ func headlessApprovalResult(ctx context.Context, rt runtimeContext, step agent.T
 			IsError:    true,
 		}
 	}
-	return agent.ExecuteBash(ctx, step.ToolCall)
+	return agenttools.ExecuteBash(ctx, step.ToolCall)
 }

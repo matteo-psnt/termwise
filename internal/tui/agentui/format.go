@@ -19,29 +19,3 @@ func providerErrMsg(err error) string {
 	}
 	return err.Error()
 }
-
-// toolDetail returns the display string for a tool call (command or path).
-func toolDetail(tc provider.ToolCall) string {
-	switch tc.Name {
-	case "bash":
-		cmd, _ := tc.Input["command"].(string)
-		return cmd
-	case "read":
-		path, _ := tc.Input["path"].(string)
-		return path
-	case "grep":
-		pattern, _ := tc.Input["pattern"].(string)
-		if path, _ := tc.Input["path"].(string); path != "" {
-			return pattern + " in " + path
-		}
-		return pattern
-	case "glob":
-		pattern, _ := tc.Input["pattern"].(string)
-		if path, _ := tc.Input["path"].(string); path != "" {
-			return pattern + " in " + path
-		}
-		return pattern
-	default:
-		return ""
-	}
-}
