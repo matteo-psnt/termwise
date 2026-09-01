@@ -52,7 +52,7 @@ func TestRunHeadlessAgentUsesHeadlessDefsAndCommand(t *testing.T) {
 	if output.Type != "command" || output.Content != "git status" {
 		t.Fatalf("unexpected output: %#v", output)
 	}
-	if got, want := strings.Join(toolNames, ","), "read,bash,command"; got != want {
+	if got, want := strings.Join(toolNames, ","), "read,bash,grep,glob,command"; got != want {
 		t.Fatalf("expected headless tools %q, got %q", want, got)
 	}
 }
@@ -60,8 +60,8 @@ func TestRunHeadlessAgentUsesHeadlessDefsAndCommand(t *testing.T) {
 func TestRunHeadlessAgentFallsBackToBareText(t *testing.T) {
 	client := fakeAgentClient{
 		chatFn: func(_ context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
-			if len(req.Tools) != 3 {
-				t.Fatalf("expected 3 headless tools, got %d", len(req.Tools))
+			if len(req.Tools) != 5 {
+				t.Fatalf("expected 5 headless tools, got %d", len(req.Tools))
 			}
 			return &provider.ChatResponse{Content: "answer"}, nil
 		},

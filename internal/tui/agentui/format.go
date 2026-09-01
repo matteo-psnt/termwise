@@ -29,6 +29,18 @@ func toolDetail(tc provider.ToolCall) string {
 	case "read":
 		path, _ := tc.Input["path"].(string)
 		return path
+	case "grep":
+		pattern, _ := tc.Input["pattern"].(string)
+		if path, _ := tc.Input["path"].(string); path != "" {
+			return pattern + " in " + path
+		}
+		return pattern
+	case "glob":
+		pattern, _ := tc.Input["pattern"].(string)
+		if path, _ := tc.Input["path"].(string); path != "" {
+			return pattern + " in " + path
+		}
+		return pattern
 	default:
 		return ""
 	}

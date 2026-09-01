@@ -34,6 +34,28 @@ func NextToolStep(ctx context.Context, toolCalls []provider.ToolCall, collected 
 				AutoAccepted: true,
 			}
 
+		case "grep":
+			result := ExecuteGrep(ctx, tc)
+			return ToolStep{
+				Kind:         ToolStepExecuted,
+				ToolCall:     tc,
+				Result:       result,
+				Remaining:    toolCalls[i+1:],
+				Collected:    append(collected, result),
+				AutoAccepted: true,
+			}
+
+		case "glob":
+			result := ExecuteGlob(ctx, tc)
+			return ToolStep{
+				Kind:         ToolStepExecuted,
+				ToolCall:     tc,
+				Result:       result,
+				Remaining:    toolCalls[i+1:],
+				Collected:    append(collected, result),
+				AutoAccepted: true,
+			}
+
 		case "bash":
 			cmd, _ := tc.Input["command"].(string)
 			if needsApproval(cmd) {
@@ -98,5 +120,17 @@ func ExecuteRead(tc provider.ToolCall) provider.ToolResult {
 // ExecuteBash executes a bash tool call and returns the tool result.
 func ExecuteBash(ctx context.Context, tc provider.ToolCall) provider.ToolResult {
 	content, isErr := tools.Bash(ctx, tc.Input)
+	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
+}
+
+// ExecuteGrep executes a grep tool call and returns the tool result.
+func ExecuteGrep(ctx context.Context, tc provider.ToolCall) provider.ToolResult {
+	content, isErr := tools.Grep(ctx, tc.Input)
+	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
+}
+
+// ExecuteGlob executes a glob tool call and returns the tool result.
+func ExecuteGlob(ctx context.Context, tc provider.ToolCall) provider.ToolResult {
+	content, isErr := tools.Glob(ctx, tc.Input)
 	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
 }

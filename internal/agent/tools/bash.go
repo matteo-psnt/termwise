@@ -9,9 +9,26 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 const maxBashOutputBytes = 64 * 1024 // 64KB per stream
+
+var BashDef = provider.ToolDef{
+	Name:        "bash",
+	Description: "Execute a shell command. Returns stdout, stderr, and exit code as JSON.",
+	InputSchema: map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"command": map[string]any{
+				"type":        "string",
+				"description": "Shell command to execute.",
+			},
+		},
+		"required": []string{"command"},
+	},
+}
 
 // BashResult is the structured output returned by the bash tool.
 type BashResult struct {

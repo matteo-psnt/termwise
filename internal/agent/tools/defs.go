@@ -2,84 +2,8 @@ package tools
 
 import "github.com/matteo-psnt/termwise/internal/provider"
 
-var (
-	ReadDef = provider.ToolDef{
-		Name:        "read",
-		Description: "Read a file's contents. Supports offset and limit for large files.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path": map[string]any{
-					"type":        "string",
-					"description": "Absolute or relative path to the file.",
-				},
-				"offset": map[string]any{
-					"type":        "integer",
-					"description": "Line number to start from (default: 0).",
-				},
-				"limit": map[string]any{
-					"type":        "integer",
-					"description": "Max lines to return (default: 2000, max: 2000).",
-				},
-			},
-			"required": []string{"path"},
-		},
-	}
-	BashDef = provider.ToolDef{
-		Name:        "bash",
-		Description: "Execute a shell command. Returns stdout, stderr, and exit code as JSON.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"command": map[string]any{
-					"type":        "string",
-					"description": "Shell command to execute.",
-				},
-			},
-			"required": []string{"command"},
-		},
-	}
-	AskDef = provider.ToolDef{
-		Name:        "ask",
-		Description: "Ask the user a structured question with a list of options.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"question": map[string]any{
-					"type":        "string",
-					"description": "The question to present to the user.",
-				},
-				"options": map[string]any{
-					"type":        "array",
-					"items":       map[string]any{"type": "string"},
-					"description": "Options for the user to choose from.",
-				},
-				"multi_select": map[string]any{
-					"type":        "boolean",
-					"description": "Allow selecting multiple options. Default: false.",
-				},
-			},
-			"required": []string{"question", "options"},
-		},
-	}
-	CommandDef = provider.ToolDef{
-		Name:        "command",
-		Description: "Propose a shell command for the user to review and run.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"content": map[string]any{
-					"type":        "string",
-					"description": "The shell command to propose.",
-				},
-			},
-			"required": []string{"content"},
-		},
-	}
-)
-
 // Defs are the tool definitions sent to the model in the interactive agent TUI.
-var Defs = []provider.ToolDef{ReadDef, BashDef, AskDef, CommandDef}
+var Defs = []provider.ToolDef{ReadDef, BashDef, GrepDef, GlobDef, AskDef, CommandDef}
 
 // HeadlessDefs are the tool definitions available to non-interactive agent runs.
-var HeadlessDefs = []provider.ToolDef{ReadDef, BashDef, CommandDef}
+var HeadlessDefs = []provider.ToolDef{ReadDef, BashDef, GrepDef, GlobDef, CommandDef}
