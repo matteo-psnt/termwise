@@ -24,8 +24,16 @@ func init() {
 }
 
 var BashDef = provider.ToolDef{
-	Name:        "bash",
-	Description: "Execute a shell command. Returns stdout, stderr, and exit code as JSON.",
+	Name: "bash",
+	Description: `Execute a read-only shell command to find something out. Returns stdout, stderr, and exit code as JSON.
+
+This is how you check facts instead of guessing. Reach for it before proposing anything you are not certain of:
+- Does a package exist, and what is it called?  brew search <name> / npm view <name> version
+- Where did a binary come from?                 which -a <cmd>
+- What is actually running / listening?         lsof -i :<port> / ps aux | grep <name>
+- What is the repo state?                       git status --porcelain / git log --oneline -5
+
+Read-only commands run automatically. Anything that modifies files, git state, processes, or system state is gated behind user approval and will interrupt them — so do not use bash to perform actions. Propose those with the command tool instead.`,
 	InputSchema: map[string]any{
 		"type": "object",
 		"properties": map[string]any{

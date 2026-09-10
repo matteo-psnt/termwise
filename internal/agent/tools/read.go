@@ -32,8 +32,12 @@ func init() {
 }
 
 var ReadDef = provider.ToolDef{
-	Name:        "read",
-	Description: "Read a file's contents, or list a directory's immediate entries. Supports offset and limit for large files.",
+	Name: "read",
+	Description: `Read a file's contents, or list a directory's immediate entries.
+
+Pass a directory path to list its immediate children; pass a file path to read it. Use offset and limit to page through a large file rather than reading it whole — the default limit is 2000 lines and output above that is truncated.
+
+Prefer this over ` + "`bash cat`" + ` or ` + "`bash ls`" + `: it is not gated, the output is already formatted for you, and it will not surprise the user with an approval prompt.`,
 	InputSchema: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
