@@ -10,28 +10,40 @@ Full AI agents (Claude Code, Cursor, etc.) are powerful but heavy. Spinning one 
 
 ## How It Works
 
+Describe what you want. It checks before it answers, then proposes a command for
+you to review — it never runs it for you.
+
+![The interactive loop](assets/agent.gif)
+
+### Ctrl+T — from your shell prompt
+
+Type the intent where you would have typed the command, press **Ctrl+T**, and
+the finished command comes back in your buffer, ready to edit or run.
+
+![The shell widget](assets/widget.gif)
+
+### `tw ask` — headless
+
+One shot, straight to stdout, no TUI. Good for piping and for quick lookups.
+
+![Headless ask](assets/ask.gif)
+
+### Settings live in the session
+
+`/theme`, `/model`, `/effort` and `/config` apply as you move through them.
+
+![Theme picker](assets/config.gif)
+
 ```bash
-# Open the TUI with an initial prompt already sent
-tw "undo last commit but keep changes"
-
-# Headless — prints only the final response
-tw ask "undo last commit but keep changes"
-# → git reset --soft HEAD~1
-
-tw ask "what port is my dev server using"
-
-# Ctrl+T in your shell — open the TUI with the current buffer prefilled
-$ restart the docker containers<Ctrl+T>
+tw                      # open the TUI
+tw "undo my last commit but keep the changes"
+tw ask "how do I run the dev server here"
 ```
 
-Open the TUI for back-and-forth when you need to figure something out:
-
-```bash
-tw
-# Interactive agent with file reading, command execution, and conversation
-```
-
-Every entry point runs the same agent loop. It reads files, searches code, and runs read-only commands to check facts before answering. Commands that change anything are **proposed, not executed** — you review them, optionally edit them, and push them into your shell buffer.
+Every entry point runs the same agent loop. It reads files, searches code, and
+runs read-only commands to check facts before answering. Commands that change
+anything are **proposed, not executed** — you review them, optionally edit them,
+and push them into your shell buffer.
 
 ## Principles
 
