@@ -84,3 +84,23 @@ func TestWrapToWidthLeavesShortLinesAlone(t *testing.T) {
 		t.Errorf("wrapToWidth() = %q", got)
 	}
 }
+
+// glamour's stock style configs prefix H2-H6 with their literal markdown, which
+// used to leak "## " into the rendered thread and forced a workaround into the
+// system prompt.
+func TestMarkdownHeadingsRenderWithoutLiteralHashes(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		r := newRenderer(dark, theme.Get("forest"))
+		out := stripANSI(renderMarkdown("# One\n\n## Two\n\n### Three\n\nbody\n", r.glamour))
+		for _, bad := range []string{"## ", "### "} {
+			if strings.Contains(out, bad) {
+				t.Errorf("dark=%v: rendered markdown still contains %q:\n%s", dark, bad, out)
+			}
+		}
+		for _, want := range []string{"One", "Two", "Three", "body"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("dark=%v: heading text %q was lost:\n%s", dark, want, out)
+			}
+		}
+	}
+}

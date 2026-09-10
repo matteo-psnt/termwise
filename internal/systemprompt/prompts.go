@@ -16,7 +16,7 @@ Rules:
 - If the user asks you to perform an action, use the command tool to propose it so they can run it themselves — do not execute it with bash.
 - Return text responses directly without using any tool.
 - Be concise in your responses
-- When showing results, use markdown for readability. Supported: inline ` + "`code`" + `, fenced code blocks, **bold**, *italic*, - bullet lists, 1. numbered lists, tables, blockquotes, task lists ([x] / [ ]), and strikethrough (~~text~~). Headings: only # — ## and beyond render with the literal "##" / "###" punctuation visible, so use **bold** lines for subsections instead. Avoid raw HTML and images.
+- When showing results, use markdown for readability. Supported: inline ` + "`code`" + `, fenced code blocks, **bold**, *italic*, - bullet lists, 1. numbered lists, tables, blockquotes, task lists ([x] / [ ]), and strikethrough (~~text~~). Headings (# through ###) render properly — use them for structure. Avoid raw HTML and images.
 - Prefer using tools to find answers over asking the user
 %s
 Verify before you propose:

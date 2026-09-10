@@ -26,6 +26,17 @@ func newRenderer(hasDarkBg bool, palette theme.Palette) Renderer {
 	var zero uint
 	cfg.Document.Margin = &zero
 
+	// glamour's default style configs prefix H2-H6 with their literal markdown
+	// ("## ", "### "), which renders as visible punctuation in the thread. The
+	// system prompt used to work around this by telling the model to avoid
+	// anything below H1; clearing the prefixes fixes it at the source. Weight
+	// and colour still separate the levels.
+	cfg.H2.Prefix = ""
+	cfg.H3.Prefix = ""
+	cfg.H4.Prefix = ""
+	cfg.H5.Prefix = ""
+	cfg.H6.Prefix = ""
+
 	gr, _ := glamour.NewTermRenderer(glamour.WithStyles(cfg), glamour.WithWordWrap(0))
 	return Renderer{
 		styles:  newStyles(hasDarkBg, palette),
