@@ -12,7 +12,13 @@ const popupHeight = 30
 func (m Model) inputRowHeight() int {
 	switch m.state {
 	case stateApproval, stateCommandProposal:
-		return 4 // 3-line command block + 1 action-hints line
+		// The command block wraps to the viewport width and approval adds a
+		// reason line, so both are variable height — measure rather than assume.
+		if md := modeFor(m.state); md != nil {
+			vpW, _ := m.viewportDims()
+			return strings.Count(md.renderInputRow(m, vpW), "\n") + 1
+		}
+		return 4
 	case stateAskPicker:
 		if m.pending.picker != nil {
 			return strings.Count(m.pending.picker.View(m.renderer), "\n") + 1
@@ -62,7 +68,8 @@ func (m Model) viewportDims() (width, height int) {
 // refreshViewport re-renders the thread, updates viewport content, and
 // re-indexes URL positions for click-to-open handling.
 func (m *Model) refreshViewport() {
-	content := m.renderer.RenderThread(m.thread)
+	vpW, _ := m.viewportDims()
+	content := m.renderer.RenderThread(m.thread, vpW)
 	if content == "" {
 		content = m.emptyStateHint()
 	}
