@@ -19,34 +19,6 @@ func indentOf(line string) int {
 	return len(plain) - len(strings.TrimLeft(plain, " "))
 }
 
-// A new user message opens a new turn and gets a divider; the first one does not.
-func TestThreadSeparatesTurnsButNotTheFirst(t *testing.T) {
-	r := testRenderer()
-
-	single := r.RenderThread([]ThreadEntry{
-		UserEntry{Content: "first"},
-		AssistantEntry{Content: "answer"},
-	}, 72)
-	if strings.Contains(stripANSI(single), "╌") {
-		t.Errorf("a divider was drawn before the first turn:\n%s", stripANSI(single))
-	}
-
-	two := r.RenderThread([]ThreadEntry{
-		UserEntry{Content: "first"},
-		AssistantEntry{Content: "answer"},
-		UserEntry{Content: "second"},
-	}, 72)
-	dividers := 0
-	for _, ln := range strings.Split(stripANSI(two), "\n") {
-		if t := strings.TrimSpace(ln); t != "" && strings.Trim(t, "╌") == "" {
-			dividers++
-		}
-	}
-	if dividers != 1 {
-		t.Errorf("expected exactly one divider line between two turns, found %d:\n%s", dividers, stripANSI(two))
-	}
-}
-
 // Tool activity must sit deeper than the turn it belongs to, so the answer is
 // what the eye lands on.
 func TestToolActivityIsIndentedBelowTheTurn(t *testing.T) {
@@ -96,19 +68,6 @@ func TestMultiLineEntriesHangFromTheGutter(t *testing.T) {
 	for i, ln := range lines[1:] {
 		if got := indentOf(ln); got != gutterWidth {
 			t.Errorf("continuation line %d indent = %d, want %d (%q)", i+1, got, gutterWidth, ln)
-		}
-	}
-}
-
-func TestTurnSeparatorFitsNarrowPanes(t *testing.T) {
-	r := testRenderer()
-	for _, w := range []int{10, 20, 72, 200} {
-		sep := stripANSI(r.turnSeparator(w))
-		if len([]rune(sep)) > max(w, 8) {
-			t.Errorf("width %d: separator is %d wide", w, len([]rune(sep)))
-		}
-		if len([]rune(sep)) < 8 {
-			t.Errorf("width %d: separator collapsed to %d", w, len([]rune(sep)))
 		}
 	}
 }
@@ -172,5 +131,27 @@ func TestAutoAcceptedToolCallIsAnnounced(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Errorf("auto-accepted call announced %d times, want 1", calls)
+	}
+}
+
+// Turns are separated by space, not by a drawn rule. The input area already
+// has two full-width rules directly below the thread; a third one between
+// every turn made the pane read as a stack of boxes.
+func TestTurnsAreSeparatedWithoutARule(t *testing.T) {
+	out := testRenderer().RenderThread([]ThreadEntry{
+		UserEntry{Content: "first"},
+		AssistantEntry{Content: "answer"},
+		UserEntry{Content: "second"},
+	}, 72)
+	plain := stripANSI(out)
+
+	for _, rule := range []string{"╌", "───", "---"} {
+		if strings.Contains(plain, rule) {
+			t.Errorf("a rule (%q) was drawn between turns:\n%s", rule, plain)
+		}
+	}
+	// A new turn still gets air above it.
+	if !strings.Contains(plain, "\n\n") {
+		t.Errorf("no blank line separating turns:\n%q", plain)
 	}
 }

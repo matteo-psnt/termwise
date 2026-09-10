@@ -46,10 +46,11 @@ func newRenderer(hasDarkBg bool, palette theme.Palette) Renderer {
 
 // RenderThread renders all thread entries into the scrollback.
 //
-// Every entry hangs off a fixed gutter, and each new user message opens a
-// visibly separated turn, so a long session can be scanned turn-by-turn
-// instead of line-by-line.
-func (r Renderer) RenderThread(entries []ThreadEntry, width int) string {
+// Every entry hangs off a fixed gutter, and a new user message opens a new turn
+// with a blank line above it. Space alone does the separating — a drawn rule
+// between turns competes with the two the input area already has, and the
+// gutter sigils mark the boundary well enough on their own.
+func (r Renderer) RenderThread(entries []ThreadEntry, _ int) string {
 	if len(entries) == 0 {
 		return ""
 	}
@@ -57,7 +58,7 @@ func (r Renderer) RenderThread(entries []ThreadEntry, width int) string {
 	for i, e := range entries {
 		if i > 0 {
 			if _, startsTurn := e.(UserEntry); startsTurn {
-				b.WriteString("\n\n" + r.turnSeparator(width) + "\n\n")
+				b.WriteString("\n\n")
 			} else {
 				b.WriteString("\n")
 			}
@@ -65,14 +66,6 @@ func (r Renderer) RenderThread(entries []ThreadEntry, width int) string {
 		b.WriteString(e.render(r))
 	}
 	return b.String()
-}
-
-// turnSeparator is a short recessive rule marking the boundary between turns.
-// It is deliberately narrower than the pane so it reads as a divider inside the
-// conversation rather than another frame around it.
-func (r Renderer) turnSeparator(width int) string {
-	n := min(max(width-gutterWidth, 8), 28)
-	return r.styles.Separator.Render(strings.Repeat("╌", n))
 }
 
 // ThreadEntry is any displayable item in the conversation thread.
