@@ -102,8 +102,14 @@ func (m Model) handleResponseEvent(msg agent.ResponseEvent) (tea.Model, tea.Cmd)
 
 func (m Model) handleToolExecutedEvent(msg agent.ToolExecutedEvent) (tea.Model, tea.Cmd) {
 	display := tools.DisplayResult(msg.ToolCall.Name, msg.Result.Content)
+
+	// A gated call was already announced by handleNeedsApprovalEvent — whether
+	// the user approved it or the judge did. Re-announcing it here printed the
+	// same command twice with one result hanging off the pair.
+	if msg.AutoAccepted {
+		m.appendThreadEntries(ToolCallEntry{Name: msg.ToolCall.Name, Detail: tools.Detail(msg.ToolCall)})
+	}
 	m.appendThreadEntries(
-		ToolCallEntry{Name: msg.ToolCall.Name, Detail: tools.Detail(msg.ToolCall)},
 		ToolResultEntry{Content: display, IsError: msg.Result.IsError},
 	)
 	m.refreshViewport()

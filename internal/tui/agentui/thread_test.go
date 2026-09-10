@@ -4,6 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/viewport"
+
+	"github.com/matteo-psnt/termwise/internal/agent"
+	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
@@ -112,5 +116,61 @@ func TestTurnSeparatorFitsNarrowPanes(t *testing.T) {
 func TestEmptyThreadRendersNothing(t *testing.T) {
 	if got := testRenderer().RenderThread(nil, 72); got != "" {
 		t.Errorf("RenderThread(nil) = %q", got)
+	}
+}
+
+// A gated bash command is announced once, when it is put up for approval.
+// Executing it afterwards must not announce it again — the LLM judge path made
+// every auto-approved command appear twice in the thread.
+func TestGatedToolCallIsAnnouncedOnlyOnce(t *testing.T) {
+	tc := provider.ToolCall{ID: "1", Name: "bash", Input: map[string]any{"command": "find src -name '*.js'"}}
+
+	m := Model{}
+	m.renderer = testRenderer()
+	m.vp = viewport.New()
+
+	// Put it up for approval, then execute it the way the approval path does.
+	gotModel, _ := m.handleNeedsApprovalEvent(agent.NeedsApprovalEvent{ToolCall: tc, Command: "find src -name '*.js'"})
+	m = gotModel.(Model)
+	m.llmJudge = false
+	gotModel, _ = m.handleToolExecutedEvent(agent.ToolExecutedEvent{
+		ToolCall:     tc,
+		Result:       provider.ToolResult{ToolCallID: "1", Content: "src/server.js"},
+		AutoAccepted: false,
+	})
+	m = gotModel.(Model)
+
+	calls := 0
+	for _, e := range m.thread {
+		if _, ok := e.(ToolCallEntry); ok {
+			calls++
+		}
+	}
+	if calls != 1 {
+		t.Errorf("gated command announced %d times, want 1", calls)
+	}
+}
+
+// An ungated call is never pre-announced, so executing it must announce it.
+func TestAutoAcceptedToolCallIsAnnounced(t *testing.T) {
+	m := Model{}
+	m.renderer = testRenderer()
+	m.vp = viewport.New()
+
+	gotModel, _ := m.handleToolExecutedEvent(agent.ToolExecutedEvent{
+		ToolCall:     provider.ToolCall{ID: "1", Name: "read", Input: map[string]any{"path": "go.mod"}},
+		Result:       provider.ToolResult{ToolCallID: "1", Content: "module x"},
+		AutoAccepted: true,
+	})
+	m = gotModel.(Model)
+
+	calls := 0
+	for _, e := range m.thread {
+		if _, ok := e.(ToolCallEntry); ok {
+			calls++
+		}
+	}
+	if calls != 1 {
+		t.Errorf("auto-accepted call announced %d times, want 1", calls)
 	}
 }
