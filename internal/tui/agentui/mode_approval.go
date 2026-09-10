@@ -5,6 +5,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
+	"github.com/matteo-psnt/termwise/internal/allowlist"
 )
 
 // approvalMode is active when a bash command is awaiting user approval.
@@ -22,10 +23,15 @@ func (approvalMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 
 func (approvalMode) renderInputRow(m Model, vpW int) string {
 	cmd := tools.BashCommand(m.pending.toolCall)
-	return lipgloss.JoinVertical(lipgloss.Left,
-		m.renderCommandBlock("run command?", cmd, vpW),
-		approvalKeys.hints(m),
-	)
+
+	rows := []string{m.renderCommandBlock("run command?", cmd, vpW)}
+	// Say why this one stopped, so approving is a judgement rather than a reflex.
+	if reason := allowlist.ApprovalReason(cmd); reason != "" {
+		rows = append(rows, m.renderer.styles.ActionHints.Render("   "+reason))
+	}
+	rows = append(rows, approvalKeys.hints(m))
+
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
 func (approvalMode) helpBindings(_ Model) []binding {

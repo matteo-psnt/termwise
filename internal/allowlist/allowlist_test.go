@@ -3,6 +3,7 @@ package allowlist
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -684,5 +685,43 @@ func TestNeedsApprovalRejectsSymlinkedTempFile(t *testing.T) {
 	command := `printf ok > "` + link + `"`
 	if !NeedsApproval(command) {
 		t.Fatalf("expected symlinked temp file redirect to require approval: %q", command)
+	}
+}
+
+func TestApprovalReasonNamesTheOffendingCommand(t *testing.T) {
+	cases := map[string]string{
+		"git commit -m x": "git",
+		"rm -rf /tmp/x":   "rm",
+		"ls -la":          "",
+		"git status":      "",
+		"":                "the command is empty",
+		"ls && git push":  "git",
+		"ls; rm x":        "it is more than one statement, or could not be parsed",
+	}
+	for cmd, want := range cases {
+		got := ApprovalReason(cmd)
+		if want == "" {
+			if got != "" {
+				t.Errorf("ApprovalReason(%q) = %q, want no reason", cmd, got)
+			}
+			continue
+		}
+		if !strings.Contains(got, want) {
+			t.Errorf("ApprovalReason(%q) = %q, want it to mention %q", cmd, got, want)
+		}
+	}
+}
+
+// Reason and decision must never disagree.
+func TestApprovalReasonAgreesWithNeedsApproval(t *testing.T) {
+	for _, cmd := range []string{
+		"ls", "git status", "cat go.mod", "grep -rn x .",
+		"git commit -m x", "rm file", "curl https://x", "npm install", "",
+	} {
+		needs := NeedsApproval(cmd)
+		reason := ApprovalReason(cmd)
+		if needs != (reason != "") {
+			t.Errorf("%q: NeedsApproval=%v but reason=%q", cmd, needs, reason)
+		}
 	}
 }
