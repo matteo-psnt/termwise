@@ -100,22 +100,82 @@ func (m Model) renderInputRow(vpW int) string {
 //
 //	╭─ label ────────────────────────────────────────────────╮
 //	│  content                                               │
+//	│    continued when it does not fit                      │
 //	╰────────────────────────────────────────────────────────╯
+//
+// Content may contain newlines and may be wider than the box; both are wrapped
+// to the inner width. Proposed commands are routinely long pipelines, and an
+// unwrapped one used to push the right border off the end of the box.
 func (m Model) renderCommandBlock(label, content string, w int) string {
+	const pad = 2 // spaces between the border and the content
+
 	style := m.renderer.styles.CommandBox
-	inner := w - 2
+	inner := max(w-2, 1)
+	body := max(inner-pad, 1)
 
 	labelPart := "─ " + label + " "
 	fillCount := max(inner-lipgloss.Width(labelPart), 1)
 	top := "╭" + labelPart + strings.Repeat("─", fillCount) + "╮"
 
-	contentStr := "  " + content
-	padCount := max(inner-lipgloss.Width(contentStr), 0)
-	mid := "│" + contentStr + strings.Repeat(" ", padCount) + "│"
+	lines := []string{top}
+	for _, raw := range strings.Split(content, "\n") {
+		for _, seg := range wrapToWidth(raw, body) {
+			gap := max(inner-lipgloss.Width(seg)-pad, 0)
+			lines = append(lines, "│"+strings.Repeat(" ", pad)+seg+strings.Repeat(" ", gap)+"│")
+		}
+	}
+	lines = append(lines, "╰"+strings.Repeat("─", inner)+"╯")
 
-	bot := "╰" + strings.Repeat("─", inner) + "╯"
+	return style.Render(strings.Join(lines, "\n"))
+}
 
-	return style.Render(strings.Join([]string{top, mid, bot}, "\n"))
+// wrapToWidth breaks a single line into segments no wider than width, breaking
+// at a space where one is available and hard-breaking a long unbroken token
+// (a URL, a base64 blob) otherwise. Continuation segments are indented so a
+// wrapped command still reads as one command. Always returns at least one
+// segment, so an empty line still renders a row.
+func wrapToWidth(s string, width int) []string {
+	const contIndent = "  "
+
+	if width <= 0 {
+		return []string{s}
+	}
+	if lipgloss.Width(s) <= width {
+		return []string{s}
+	}
+
+	var out []string
+	runes := []rune(s)
+	indent := ""
+	for len(runes) > 0 {
+		limit := width - len([]rune(indent))
+		if limit < 1 {
+			limit = 1
+		}
+		if len(runes) <= limit {
+			out = append(out, indent+string(runes))
+			break
+		}
+		// Prefer the last space inside the limit so words stay intact.
+		cut := -1
+		for i := limit; i > 0; i-- {
+			if runes[i-1] == ' ' {
+				cut = i
+				break
+			}
+		}
+		if cut <= 0 {
+			cut = limit // one long token: hard-break it
+		}
+		out = append(out, indent+strings.TrimRight(string(runes[:cut]), " "))
+		runes = runes[cut:]
+		// Drop leading spaces on the next segment; the indent supplies the offset.
+		for len(runes) > 0 && runes[0] == ' ' {
+			runes = runes[1:]
+		}
+		indent = contIndent
+	}
+	return out
 }
 
 // renderHelpOverlay renders a contextual key-binding reference. The active
