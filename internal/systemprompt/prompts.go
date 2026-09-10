@@ -2,35 +2,11 @@ package systemprompt
 
 import (
 	"fmt"
-	"os"
-	"runtime"
 	"strings"
 
+	"github.com/matteo-psnt/termwise/internal/envcontext"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
-
-const singleShotTemplate = `You are a terminal assistant. You help with command generation and quick questions about CLI tools, terminal workflows, and project-related topics.
-
-Return ONLY the requested output wrapped in a type tag.
-
-Response format:
-- Shell commands: <command>your command here</command>
-- Answers, explanations, information: <text>your response here</text>
-
-Rules:
-- No preamble or commentary outside the tags
-- Only one tag per response
-- If the user describes an intent or asks "how do I...", return a <command>
-- If the user asks a question, return a <text> answer — keep it concise
-- For commands, return the raw command inside the tag — no markdown
-- For text output, use markdown formatting when it improves readability
-- When output is piped, never use markdown inside <text> — plain text only
-- If the user provides input context (piped stdin), use it to inform your response
-
-Environment:
-- OS: %s
-- Shell: %s
-- Output: %s`
 
 const agentTemplate = `You are a terminal assistant with access to tools. Help the user by reading files, searching code, and running commands.
 
@@ -43,59 +19,35 @@ Rules:
 - When showing results, use markdown for readability. Supported: inline ` + "`code`" + `, fenced code blocks, **bold**, *italic*, - bullet lists, 1. numbered lists, tables, blockquotes, task lists ([x] / [ ]), and strikethrough (~~text~~). Headings: only # — ## and beyond render with the literal "##" / "###" punctuation visible, so use **bold** lines for subsections instead. Avoid raw HTML and images.
 - Prefer using tools to find answers over asking the user
 %s
+Verify before you propose:
+- Never guess a package name, a binary's install source, or a path. A single read-only bash check costs one turn and is always cheaper than a wrong command.
+- Before proposing an install, confirm the package exists: ` + "`brew search <name>`" + `, ` + "`npm view <name> version`" + `, ` + "`apt-cache search <name>`" + `. Propose the name you confirmed, not the name the user said.
+- Before proposing an uninstall, find out how it was installed — ` + "`which -a <cmd>`" + ` and the path it resolves to. A binary under /opt/homebrew or /usr/local/Cellar is Homebrew's; one under a node_modules, .nvm, or .bun path belongs to that tool. Uninstalling with the wrong manager silently does nothing.
+- When a command failed, read the actual error before proposing a fix.
+- Do not use the ask tool for anything a read-only command could answer. Ask only when the answer depends on the user's intent, never when it depends on a fact about their machine. Guessing twice and then asking is the worst outcome.
+
 Available tools: %s
 
 Environment:
-- OS: %s
-- Shell: %s
-- Working directory: %s`
+%s`
 
 const headlessExtraRule = "- This run is non-interactive: do not ask follow-up questions. If clarification would help, explain the ambiguity in your final response.\n"
-
-// SingleShot returns the single-shot system prompt with environment context injected.
-// isTTY controls whether the output context is "terminal" or "piped".
-func SingleShot(isTTY bool) string {
-	output := "terminal"
-	if !isTTY {
-		output = "piped"
-	}
-	return fmt.Sprintf(singleShotTemplate, osName(), shellPath(), output)
-}
 
 // Agent returns the system prompt for the interactive agent TUI. Tools that
 // elicit user input (e.g. ask) are usable; per-tool guidance lives in each
 // tool's Description.
-func Agent(toolDefs []provider.ToolDef) string {
-	return formatAgentTemplate(toolDefs, "")
+func Agent(toolDefs []provider.ToolDef, env envcontext.Context) string {
+	return formatAgentTemplate(toolDefs, env, "")
 }
 
 // AgentHeadless returns the system prompt for non-interactive agent runs
-// (e.g. `tw "..."`). It adds a rule telling the model not to emit follow-up
+// (e.g. `tw ask`). It adds a rule telling the model not to emit follow-up
 // questions, since there's no channel to receive answers.
-func AgentHeadless(toolDefs []provider.ToolDef) string {
-	return formatAgentTemplate(toolDefs, headlessExtraRule)
+func AgentHeadless(toolDefs []provider.ToolDef, env envcontext.Context) string {
+	return formatAgentTemplate(toolDefs, env, headlessExtraRule)
 }
 
-func formatAgentTemplate(toolDefs []provider.ToolDef, extraRule string) string {
-	cwd, _ := os.Getwd()
+func formatAgentTemplate(toolDefs []provider.ToolDef, env envcontext.Context, extraRule string) string {
 	names := provider.ToolNames(toolDefs)
-	return fmt.Sprintf(agentTemplate, extraRule, strings.Join(names, ", "), osName(), shellPath(), cwd)
-}
-
-func osName() string {
-	switch runtime.GOOS {
-	case "darwin":
-		return "macOS"
-	case "linux":
-		return "Linux"
-	default:
-		return runtime.GOOS
-	}
-}
-
-func shellPath() string {
-	if s := os.Getenv("SHELL"); s != "" {
-		return s
-	}
-	return "/bin/sh"
+	return fmt.Sprintf(agentTemplate, extraRule, strings.Join(names, ", "), env.Render())
 }

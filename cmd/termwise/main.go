@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -11,7 +10,6 @@ import (
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
 	_ "github.com/matteo-psnt/termwise/internal/provider/builtin"
-	"github.com/matteo-psnt/termwise/internal/runner"
 	"github.com/matteo-psnt/termwise/internal/tui/agentui"
 )
 
@@ -49,17 +47,9 @@ func main() {
 	root.AddCommand(configCmd)
 
 	if err := root.Execute(); err != nil {
-		// ExitCode is a sentinel — use the embedded code, print nothing.
-		var ec runner.ExitCode
-		if errors.As(err, &ec) {
-			os.Exit(ec.Code)
-		}
 		fmt.Fprintf(os.Stderr, "tw: %s\n", err)
 		os.Exit(1)
 	}
-
-	// Check if last command returned an ExitCode through normal return path.
-	// (cobra swallows non-nil errors; RunE errors land in the Execute() return above.)
 }
 
 func openTUI(sessionID string, forceResume bool) error {

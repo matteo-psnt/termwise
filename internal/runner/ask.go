@@ -2,12 +2,14 @@ package runner
 
 import (
 	"context"
+	"path/filepath"
 	"time"
 
 	"github.com/matteo-psnt/termwise/internal/agent"
 	agenttools "github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/allowlist"
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/systemprompt"
 )
@@ -28,17 +30,18 @@ func Ask(ctx context.Context, prompt string) error {
 	}
 
 	output, err := agent.RunHeadless(ctx, newAskHeadlessConfig(rt, prompt))
+	logAskExchange(rt, prompt, output, err)
 	if err != nil {
 		return err
 	}
-	return writeFinalOutput(output, rt.isTTY, nil)
+	return writeFinalOutput(output, rt.isTTY)
 }
 
 func newAskHeadlessConfig(rt runtimeContext, prompt string) agent.HeadlessConfig {
 	return agent.HeadlessConfig{
 		Client:        rt.client,
 		Model:         rt.modelID,
-		System:        systemprompt.AgentHeadless(agenttools.HeadlessDefs),
+		System:        systemprompt.AgentHeadless(agenttools.HeadlessDefs, rt.env),
 		Prompt:        prompt,
 		Tools:         agenttools.HeadlessDefs,
 		Effort:        config.EffectiveEffort(rt.providerName, rt.modelID, rt.providerCfg.Effort),
@@ -86,4 +89,27 @@ func headlessApprovalResult(ctx context.Context, rt runtimeContext, step agent.T
 		}
 	}
 	return agenttools.ExecuteBash(ctx, step.ToolCall)
+}
+
+// logAskExchange records the turn so headless output can be reviewed later,
+// the same way the TUI records its own. Best-effort: never blocks the result.
+func logAskExchange(rt runtimeContext, prompt string, output agent.FinalResponse, runErr error) {
+	cfgPath, err := config.DefaultConfigPath()
+	if err != nil {
+		return
+	}
+	e := history.Exchange{
+		Prompt:   prompt,
+		Kind:     history.ExchangeKindText,
+		Response: output.Content,
+		Provider: rt.providerName,
+		Model:    rt.modelID,
+	}
+	if runErr != nil {
+		e.Kind = history.ExchangeKindError
+		e.Response = runErr.Error()
+	} else if output.Type == "command" {
+		e.Kind = history.ExchangeKindCommand
+	}
+	_ = history.NewExchangeLog(filepath.Dir(cfgPath)).Append(e)
 }

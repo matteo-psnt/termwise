@@ -1,6 +1,7 @@
 package agentui
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	agenttools "github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/envcontext"
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/systemprompt"
@@ -174,6 +176,7 @@ func openProgram(cfg openProgramConfig) (string, error) {
 
 	themeName := theme.DefaultName
 	var llmJudge bool
+	var shellContext bool
 	var closeKey string
 	var autoResume bool
 	suggestions := true
@@ -187,6 +190,7 @@ func openProgram(cfg openProgramConfig) (string, error) {
 			closeKey = cfgFile.Settings.Keybinding
 			autoResume = config.ResolveBoolSetting(cfgFile, "auto_resume")
 			suggestions = config.ResolveBoolSetting(cfgFile, "suggestions")
+			shellContext = config.ResolveBoolSetting(cfgFile, "shell_context")
 			effort = cfgFile.Providers[cfg.providerName].Effort
 		}
 		configDir = filepath.Dir(cfg.cfgPath)
@@ -195,12 +199,15 @@ func openProgram(cfg openProgramConfig) (string, error) {
 	// Set up persistent history and session stores.
 	var promptHistory *history.PromptHistory
 	var sessionStore *history.SessionStore
+	var exchangeLog *history.ExchangeLog
 	if configDir != "" {
 		promptHistory = history.NewPromptHistory(configDir)
 		promptHistory.Load() //nolint:errcheck // Empty or unreadable history should not block the TUI.
 
 		sessionStore = history.NewSessionStore(configDir)
 		sessionStore.PruneOld()
+
+		exchangeLog = history.NewExchangeLog(configDir)
 	}
 
 	// Load prior session if requested.
@@ -211,9 +218,11 @@ func openProgram(cfg openProgramConfig) (string, error) {
 		}
 	}
 
-	system := systemprompt.Agent(agenttools.Defs)
+	system := systemprompt.Agent(agenttools.Defs, envcontext.Detect(context.Background(), envcontext.Options{ShellHistory: shellContext}))
 	m := newModel(cfg.providerName, cfg.provider, cfg.modelID, system, cfg.stdin, hasDarkBg, llmJudge, suggestions, effort, cfg.cfgPath, cfg.initialDraft, cfg.initialPrompt, themeName, closeKey,
 		promptHistory, sessionStore, cfg.sessionID, initialSession, initialCursorRow)
+	// Set separately rather than as a 20th positional argument to newModel.
+	m.exchanges = exchangeLog
 
 	// Surface any config warnings as a SystemEntry so they remain visible (and
 	// terminal-selectable) inside the TUI — stderr text is wiped by the alt-screen.

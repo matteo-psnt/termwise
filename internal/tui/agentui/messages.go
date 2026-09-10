@@ -12,6 +12,7 @@ import (
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/allowlist"
+	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
@@ -85,6 +86,7 @@ func (m Model) handleResponseEvent(msg agent.ResponseEvent) (tea.Model, tea.Cmd)
 	}
 
 	if len(resp.ToolCalls) == 0 {
+		m.logExchange(history.ExchangeKindText, resp.Content)
 		m.clearShellCommand()
 		m.finishGeneration()
 		m.state = stateIdle
@@ -142,6 +144,7 @@ func (m Model) handleAskEvent(msg agent.AskEvent) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleRespondEvent(msg agent.RespondEvent) (tea.Model, tea.Cmd) {
+	m.logExchange(history.ExchangeKindCommand, msg.Content)
 	m.setShellCommand(msg.Content)
 	m.appendThreadEntries(CommandEntry{Content: msg.Content})
 	m.appendToolResultsMessage(msg.Collected)

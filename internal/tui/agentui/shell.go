@@ -82,6 +82,9 @@ type shell struct {
 	sessionStore *history.SessionStore
 	sessionID    string
 
+	// Append-only record of completed turns, for judging output quality later.
+	exchanges *history.ExchangeLog
+
 	// Paths
 	cfgPath string
 	workDir string

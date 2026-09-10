@@ -5,23 +5,19 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 
 	"charm.land/glamour/v2"
 
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/envcontext"
 	"github.com/matteo-psnt/termwise/internal/provider"
-	"github.com/matteo-psnt/termwise/internal/systemprompt"
 	"github.com/matteo-psnt/termwise/internal/tty"
 )
 
-var (
-	commandRe = regexp.MustCompile(`(?s)<command>(.*?)</command>`)
-	textRe    = regexp.MustCompile(`(?s)<text>(.*?)</text>`)
-)
-
+// runtimeContext is the resolved per-invocation environment shared by every
+// non-TUI entry point.
 type runtimeContext struct {
 	client       provider.AgentClient
 	providerName string
@@ -29,36 +25,11 @@ type runtimeContext struct {
 	llmJudge     bool
 	providerCfg  config.ProviderConfig
 	isTTY        bool
+	env          envcontext.Context
 }
 
-// SingleShot runs a single-shot prompt and writes the response to stdout.
-// On a <command> response it returns nil (exit 0).
-// On a <text> response it returns ExitCode{10}.
-// If stdin is piped its contents are appended to the prompt automatically.
-func SingleShot(ctx context.Context, prompt string) error {
-	var err error
-	prompt, err = appendPromptStdin(prompt)
-	if err != nil {
-		return err
-	}
-
-	rt, err := resolveRuntime()
-	if err != nil {
-		return err
-	}
-
-	resp, err := rt.client.Complete(ctx, provider.CompleteRequest{
-		Model:  rt.modelID,
-		System: systemprompt.SingleShot(rt.isTTY),
-		Prompt: prompt,
-	})
-	if err != nil {
-		return err
-	}
-
-	return writeFinalOutput(parseTaggedOutput(resp.Content), rt.isTTY, ExitCode{10})
-}
-
+// appendPromptStdin appends piped stdin to the prompt. A terminal stdin or an
+// empty pipe leaves the prompt untouched.
 func appendPromptStdin(prompt string) (string, error) {
 	if tty.IsTerminal(os.Stdin) {
 		return prompt, nil
@@ -74,20 +45,6 @@ func appendPromptStdin(prompt string) (string, error) {
 	return prompt + "\n\n" + strings.TrimRight(string(stdin), "\n"), nil
 }
 
-func parseTaggedOutput(content string) agent.FinalResponse {
-	if m := commandRe.FindStringSubmatch(content); m != nil {
-		return agent.FinalResponse{Type: "command", Content: strings.TrimSpace(m[1])}
-	}
-
-	var text string
-	if m := textRe.FindStringSubmatch(content); m != nil {
-		text = strings.TrimSpace(m[1])
-	} else {
-		text = strings.TrimSpace(content)
-	}
-	return agent.FinalResponse{Type: "text", Content: text}
-}
-
 func writeRenderedText(text string, isTTY bool) {
 	if isTTY {
 		rendered, err := glamour.Render(text, "auto")
@@ -99,17 +56,19 @@ func writeRenderedText(text string, isTTY bool) {
 	fmt.Println(text)
 }
 
-// writeFinalOutput writes a final response and optionally returns textExitErr for text responses.
-func writeFinalOutput(output agent.FinalResponse, isTTY bool, textExitErr error) error {
+// writeFinalOutput prints a final agent response. Commands go out raw so they
+// can be piped or pasted; text is rendered as markdown on a terminal.
+func writeFinalOutput(output agent.FinalResponse, isTTY bool) error {
 	if output.Type == "command" {
 		fmt.Println(output.Content)
 		return nil
 	}
 	writeRenderedText(output.Content, isTTY)
-	return textExitErr
+	return nil
 }
 
-// resolveRuntime loads config and returns the runtime client, model, output mode, and llm_judge setting.
+// resolveRuntime loads config and returns the client, model, output mode, and
+// llm_judge setting for this invocation.
 func resolveRuntime() (runtimeContext, error) {
 	cfgPath, err := config.DefaultConfigPath()
 	if err != nil {
@@ -130,5 +89,6 @@ func resolveRuntime() (runtimeContext, error) {
 		llmJudge:     config.ResolveBoolSetting(cfg, "llm_judge"),
 		providerCfg:  cfg.Providers[rc.ProviderName],
 		isTTY:        tty.IsTerminal(os.Stdout),
+		env:          envcontext.Detect(context.Background(), envcontext.Options{ShellHistory: config.ResolveBoolSetting(cfg, "shell_context")}),
 	}, nil
 }
