@@ -27,7 +27,7 @@ func (m Model) updateInputAndResetSlash(msg tea.Msg) (tea.Model, tea.Cmd) {
 // visibleSlashMatches returns the dropdown rows to render now, or nil if the
 // dropdown should be hidden (no leading slash, no matches, or user-dismissed).
 func (m Model) visibleSlashMatches() []slashMatch {
-	if m.slashClosed {
+	if m.slashClosed || m.histIdx >= 0 {
 		return nil
 	}
 	matches, _ := computeSlashMatches(m, m.input.Value())
