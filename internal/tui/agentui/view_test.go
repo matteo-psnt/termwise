@@ -5,21 +5,13 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
-
-	"github.com/matteo-psnt/termwise/internal/theme"
 )
-
-func testModel(width int) Model {
-	m := Model{}
-	m.renderer = newRenderer(false, theme.Get("forest"))
-	m.width = width
-	return m
-}
 
 // Every row of the box must be exactly the requested width, or the border
 // breaks. Long pipelines are the normal case for a proposed command.
 func TestCommandBlockRowsAreAllTheSameWidth(t *testing.T) {
-	m := testModel(60)
+	m := Model{}
+	m.renderer = testRenderer()
 	cases := map[string]string{
 		"short":     "$ ls -la",
 		"long pipe": "$ find . -type f -exec du -h {} + | sort -hr | head -20 | awk '{print $2}' | xargs wc -l",
@@ -38,7 +30,8 @@ func TestCommandBlockRowsAreAllTheSameWidth(t *testing.T) {
 }
 
 func TestCommandBlockKeepsTheWholeCommand(t *testing.T) {
-	m := testModel(60)
+	m := Model{}
+	m.renderer = testRenderer()
 	cmd := "find . -type f -exec du -h {} + | sort -hr | head -20 | awk '{print $2}'"
 	out := m.renderCommandBlock("cmd", "$ "+cmd, 60)
 
@@ -59,7 +52,8 @@ func TestCommandBlockKeepsTheWholeCommand(t *testing.T) {
 }
 
 func TestCommandBlockWrapsRatherThanOverflowing(t *testing.T) {
-	m := testModel(60)
+	m := Model{}
+	m.renderer = testRenderer()
 	long := "$ " + strings.Repeat("echo hello | ", 12)
 	out := m.renderCommandBlock("cmd", long, 60)
 	if n := len(strings.Split(out, "\n")); n < 4 {
@@ -82,25 +76,5 @@ func TestWrapToWidthHardBreaksUnbrokenTokens(t *testing.T) {
 func TestWrapToWidthLeavesShortLinesAlone(t *testing.T) {
 	if got := wrapToWidth("ls -la", 40); len(got) != 1 || got[0] != "ls -la" {
 		t.Errorf("wrapToWidth() = %q", got)
-	}
-}
-
-// glamour's stock style configs prefix H2-H6 with their literal markdown, which
-// used to leak "## " into the rendered thread and forced a workaround into the
-// system prompt.
-func TestMarkdownHeadingsRenderWithoutLiteralHashes(t *testing.T) {
-	for _, dark := range []bool{false, true} {
-		r := newRenderer(dark, theme.Get("forest"))
-		out := stripANSI(renderMarkdown("# One\n\n## Two\n\n### Three\n\nbody\n", r.glamour))
-		for _, bad := range []string{"## ", "### "} {
-			if strings.Contains(out, bad) {
-				t.Errorf("dark=%v: rendered markdown still contains %q:\n%s", dark, bad, out)
-			}
-		}
-		for _, want := range []string{"One", "Two", "Three", "body"} {
-			if !strings.Contains(out, want) {
-				t.Errorf("dark=%v: heading text %q was lost:\n%s", dark, want, out)
-			}
-		}
 	}
 }

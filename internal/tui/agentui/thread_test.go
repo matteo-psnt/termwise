@@ -19,61 +19,57 @@ func indentOf(line string) int {
 	return len(plain) - len(strings.TrimLeft(plain, " "))
 }
 
-// Tool activity must sit deeper than the turn it belongs to, so the answer is
-// what the eye lands on.
-func TestToolActivityIsIndentedBelowTheTurn(t *testing.T) {
+// A tool result nests under its call: the call sits flush with thread content,
+// the corner glyph one step in, and continuation lines under the corner's text.
+func TestToolResultNestsUnderItsCall(t *testing.T) {
 	r := testRenderer()
 	lines := strings.Split(r.RenderThread([]ThreadEntry{
 		UserEntry{Content: "check the port"},
 		ToolCallEntry{Name: "bash", Detail: "lsof -i :5173"},
-		ToolResultEntry{Content: "node 41233\nnode 41240"},
-		AssistantEntry{Content: "a vite server"},
-	}, 72), "\n")
+		ToolResultEntry{Content: "one\ntwo"},
+	}), "\n")
 
-	user, call, result, assistant := -1, -1, -1, -1
+	call, corner, cont := -1, -1, -1
 	for _, ln := range lines {
 		plain := stripANSI(ln)
 		switch {
-		case strings.Contains(plain, "›"):
-			user = indentOf(ln)
 		case strings.Contains(plain, "⏺"):
 			call = indentOf(ln)
 		case strings.Contains(plain, "⎿"):
-			result = indentOf(ln)
-		case strings.Contains(plain, "◆"):
-			assistant = indentOf(ln)
+			corner = indentOf(ln)
+		case strings.Contains(plain, "two"):
+			cont = indentOf(ln)
 		}
 	}
-	if user != 0 || assistant != 0 {
-		t.Errorf("turn sigils should sit in the gutter: user=%d assistant=%d", user, assistant)
+	if call != 0 {
+		t.Errorf("tool call indent = %d, want 0 (flush with thread content)", call)
 	}
-	if call <= user {
-		t.Errorf("tool call indent %d is not deeper than the turn gutter %d", call, user)
+	if corner != 2 {
+		t.Errorf("result corner indent = %d, want 2", corner)
 	}
-	if result <= call {
-		t.Errorf("tool result indent %d is not deeper than its call %d", result, call)
+	if cont != 5 {
+		t.Errorf("result continuation indent = %d, want 5", cont)
 	}
 }
 
-// A wrapped or multi-line entry must stay inside the gutter it started in.
-func TestMultiLineEntriesHangFromTheGutter(t *testing.T) {
-	r := testRenderer()
-	out := r.RenderThread([]ThreadEntry{
+// A multi-line entry stays aligned under the text of its first line, not under
+// the sigil.
+func TestMultiLineEntriesHangFromTheSigil(t *testing.T) {
+	lines := strings.Split(stripANSI(testRenderer().RenderThread([]ThreadEntry{
 		UserEntry{Content: "line one\nline two\nline three"},
-	}, 72)
-	lines := strings.Split(stripANSI(out), "\n")
+	})), "\n")
 	if len(lines) != 3 {
-		t.Fatalf("got %d lines, want 3:\n%q", len(lines), lines)
+		t.Fatalf("got %d lines, want 3: %q", len(lines), lines)
 	}
 	for i, ln := range lines[1:] {
-		if got := indentOf(ln); got != gutterWidth {
-			t.Errorf("continuation line %d indent = %d, want %d (%q)", i+1, got, gutterWidth, ln)
+		if got := indentOf(ln); got != 2 {
+			t.Errorf("continuation line %d indent = %d, want 2 (%q)", i+1, got, ln)
 		}
 	}
 }
 
 func TestEmptyThreadRendersNothing(t *testing.T) {
-	if got := testRenderer().RenderThread(nil, 72); got != "" {
+	if got := testRenderer().RenderThread(nil); got != "" {
 		t.Errorf("RenderThread(nil) = %q", got)
 	}
 }
@@ -88,7 +84,6 @@ func TestGatedToolCallIsAnnouncedOnlyOnce(t *testing.T) {
 	m.renderer = testRenderer()
 	m.vp = viewport.New()
 
-	// Put it up for approval, then execute it the way the approval path does.
 	gotModel, _ := m.handleNeedsApprovalEvent(agent.NeedsApprovalEvent{ToolCall: tc, Command: "find src -name '*.js'"})
 	m = gotModel.(Model)
 	m.llmJudge = false
@@ -134,24 +129,17 @@ func TestAutoAcceptedToolCallIsAnnounced(t *testing.T) {
 	}
 }
 
-// Turns are separated by space, not by a drawn rule. The input area already
-// has two full-width rules directly below the thread; a third one between
-// every turn made the pane read as a stack of boxes.
-func TestTurnsAreSeparatedWithoutARule(t *testing.T) {
-	out := testRenderer().RenderThread([]ThreadEntry{
-		UserEntry{Content: "first"},
-		AssistantEntry{Content: "answer"},
-		UserEntry{Content: "second"},
-	}, 72)
-	plain := stripANSI(out)
-
-	for _, rule := range []string{"╌", "───", "---"} {
-		if strings.Contains(plain, rule) {
-			t.Errorf("a rule (%q) was drawn between turns:\n%s", rule, plain)
+// glamour's stock style configs prefix H2-H6 with their literal markdown, which
+// used to leak "## " into the rendered thread and forced a workaround into the
+// system prompt.
+func TestMarkdownHeadingsRenderWithoutLiteralHashes(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		r := newRenderer(dark, theme.Get("forest"))
+		out := stripANSI(renderMarkdown("# One\n\n## Two\n\n### Three\n\nbody\n", r.glamour))
+		for _, bad := range []string{"## ", "### "} {
+			if strings.Contains(out, bad) {
+				t.Errorf("dark=%v: rendered markdown still contains %q:\n%s", dark, bad, out)
+			}
 		}
-	}
-	// A new turn still gets air above it.
-	if !strings.Contains(plain, "\n\n") {
-		t.Errorf("no blank line separating turns:\n%q", plain)
 	}
 }

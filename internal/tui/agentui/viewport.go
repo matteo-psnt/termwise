@@ -68,8 +68,7 @@ func (m Model) viewportDims() (width, height int) {
 // refreshViewport re-renders the thread, updates viewport content, and
 // re-indexes URL positions for click-to-open handling.
 func (m *Model) refreshViewport() {
-	vpW, _ := m.viewportDims()
-	content := m.renderer.RenderThread(m.thread, vpW)
+	content := m.renderer.RenderThread(m.thread)
 	if content == "" {
 		content = m.emptyStateHint()
 	}
