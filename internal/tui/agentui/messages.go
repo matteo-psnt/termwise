@@ -95,6 +95,7 @@ func (m Model) handleResponseEvent(msg agent.ResponseEvent) (tea.Model, tea.Cmd)
 		return m, m.startSuggestion()
 	}
 
+	m.setActivity(resp.ToolCalls[0])
 	m.refreshViewport()
 	return m, m.wrapActiveGeneration(ProcessToolsCmd(m.ctx, resp.ToolCalls, nil, allowlist.NeedsApproval))
 }

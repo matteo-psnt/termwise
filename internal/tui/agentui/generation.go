@@ -7,6 +7,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/agent"
+	"github.com/matteo-psnt/termwise/internal/agent/tools"
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 // generationMsg wraps a downstream message with the generation token it
@@ -44,6 +46,39 @@ func (m *Model) beginGeneration() {
 	m.resetGenerationContext()
 	m.nextGeneration++
 	m.activeGeneration = m.nextGeneration
+	m.turnStartedAt = time.Now()
+	m.activity = ""
+}
+
+// setActivity records what the agent is about to do, so the thinking row can
+// say "searching for handleKey" instead of "thinking...". A tool with no
+// registered detail formatter falls back to its bare name.
+func (m *Model) setActivity(tc provider.ToolCall) {
+	if detail := tools.Detail(tc); detail != "" {
+		m.activity = activityVerb(tc.Name) + " " + detail
+		return
+	}
+	m.activity = activityVerb(tc.Name)
+}
+
+// activityVerb reads as a present participle in the status row.
+func activityVerb(tool string) string {
+	switch tool {
+	case "read":
+		return "reading"
+	case "bash":
+		return "running"
+	case "grep":
+		return "searching for"
+	case "glob":
+		return "looking for"
+	case "command":
+		return "preparing command"
+	case "ask":
+		return "asking"
+	default:
+		return tool
+	}
 }
 
 func (m *Model) resetGenerationContext() {
@@ -69,6 +104,7 @@ func (m *Model) interruptActiveTurn() {
 
 func (m *Model) finishGeneration() {
 	m.activeGeneration = 0
+	m.activity = ""
 }
 
 func (m Model) wrapActiveGeneration(cmd tea.Cmd) tea.Cmd {

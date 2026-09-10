@@ -50,6 +50,8 @@ type shell struct {
 	tuiTopRow    int
 
 	// In-flight generation
+	turnStartedAt    time.Time // when the current turn began, for the elapsed counter
+	activity         string    // what the agent is doing right now, shown while thinking
 	ctx              context.Context
 	cancel           context.CancelFunc
 	nextGeneration   uint64
