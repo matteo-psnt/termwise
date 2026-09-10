@@ -36,6 +36,9 @@ type SettingsConfig struct {
 	LLMJudge    *bool  `toml:"llm_judge,omitempty"`
 	AutoResume  *bool  `toml:"auto_resume,omitempty"`
 	Suggestions *bool  `toml:"suggestions,omitempty"`
+	// ShellContext opts into sending recent shell history to the model. Off by
+	// default: history can contain secrets typed inline.
+	ShellContext *bool `toml:"shell_context,omitempty"`
 }
 
 // Clone returns a deep copy of the config so it can be held as a snapshot
@@ -56,6 +59,10 @@ func (c FileConfig) Clone() FileConfig {
 	if c.Settings.AutoResume != nil {
 		v := *c.Settings.AutoResume
 		out.Settings.AutoResume = &v
+	}
+	if c.Settings.ShellContext != nil {
+		v := *c.Settings.ShellContext
+		out.Settings.ShellContext = &v
 	}
 	if c.Settings.Suggestions != nil {
 		v := *c.Settings.Suggestions
