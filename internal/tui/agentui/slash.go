@@ -8,6 +8,7 @@ import (
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/models"
+	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
 // slashCommand describes a single user-visible slash command.
@@ -46,6 +47,13 @@ func init() {
 			ArgOptions:  modelArgOptions,
 			Run:         runModel,
 			Preview:     previewModel,
+		},
+		{
+			Name:        "/theme",
+			Description: "switch color theme",
+			ArgOptions:  themeArgOptions,
+			Run:         runTheme,
+			Preview:     previewTheme,
 		},
 		{
 			Name:        "/config",
@@ -133,6 +141,46 @@ func (m Model) dispatchSlashCommand(text string) (tea.Model, tea.Cmd) {
 	}
 	m.appendThreadEntries(UserEntry{Content: text})
 	return cmd.Run(m, parts[1:])
+}
+
+// --- /theme ----------------------------------------------------------------
+
+func themeArgOptions(_ Model) []string { return theme.Names() }
+
+// runTheme opens the theme picker, or applies a named theme directly.
+//
+// Theme is the most visible setting there is, and it sits behind /config
+// alongside everything else — so people reach for /theme, which used to fall
+// through to the model as an ordinary prompt.
+func runTheme(m Model, args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 {
+		return m.openSlashPicker("/theme", "Theme", "Color scheme for the interface.",
+			simpleOptions(themeArgOptions(m)), m.themeName)
+	}
+	name := theme.Normalize(args[0])
+	if !theme.IsValid(name) {
+		m.appendThreadEntries(ErrorEntry{
+			Content: "Unknown theme '" + args[0] + "' — valid: " + strings.Join(theme.Names(), ", "),
+		})
+		m.refreshViewport()
+		return m, nil
+	}
+	m = previewTheme(m, name)
+	if def, ok := config.FindSetting("theme"); ok {
+		m.persistConfigValue(def, name)
+	}
+	m.appendThreadEntries(SystemEntry{Content: "Theme set to " + name + "."})
+	m.refreshViewport()
+	return m, nil
+}
+
+// previewTheme applies a theme in memory only, so moving the picker cursor
+// repaints the whole interface live and cancelling puts the old one back.
+func previewTheme(m Model, value string) Model {
+	if name := theme.Normalize(value); theme.IsValid(name) {
+		m.applyTheme(name)
+	}
+	return m
 }
 
 // --- /effort ---------------------------------------------------------------
