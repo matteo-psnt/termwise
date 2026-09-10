@@ -49,7 +49,12 @@ func (p picker) Update(msg tea.KeyPressMsg) (picker, string, bool, bool) {
 		}
 
 	case tea.KeySpace:
-		if p.multiSelect && !p.onOther() {
+		// On the "Other" row space is ordinary text, not a toggle — free-text
+		// answers are usually more than one word. Without this the key is
+		// swallowed here and never reaches the printable-input default below.
+		if p.onOther() {
+			p.otherText += " "
+		} else if p.multiSelect {
 			p.selected[p.cursor] = !p.selected[p.cursor]
 		}
 
@@ -80,8 +85,10 @@ func (p picker) Update(msg tea.KeyPressMsg) (picker, string, bool, bool) {
 		return p, "User cancelled", false, true
 
 	case tea.KeyBackspace:
-		if p.onOther() && len(p.otherText) > 0 {
-			p.otherText = p.otherText[:len(p.otherText)-1]
+		// Trim a rune, not a byte — byte slicing corrupts multi-byte input.
+		if p.onOther() && p.otherText != "" {
+			r := []rune(p.otherText)
+			p.otherText = string(r[:len(r)-1])
 		}
 
 	default:
