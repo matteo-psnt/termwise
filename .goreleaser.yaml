@@ -33,26 +33,23 @@ changelog:
       - "^chore:"
       - "^test:"
 
-homebrew_casks:
+brews:
+  # A formula rather than a cask: casks are macOS-only, and termwise builds for
+  # Linux too. goreleaser marks this deprecated in favour of homebrew_casks —
+  # accepted knowingly, because a cask would leave every Linux user without a
+  # brew install for no gain on macOS.
   - name: termwise
-    # Requires a github.com/matteo-psnt/homebrew-tap repository to exist.
-    # Without HOMEBREW_TAP_GITHUB_TOKEN the release still publishes; only this
+    # Requires a github.com/matteo-psnt/homebrew-tap repository. Without
+    # HOMEBREW_TAP_GITHUB_TOKEN the release still publishes binaries; only this
     # step is skipped.
     repository:
       owner: matteo-psnt
       name: homebrew-tap
-    binaries:
-      - termwise
     homepage: https://github.com/matteo-psnt/termwise
     description: A terminal assistant for command generation and quick answers
     license: MIT
-    hooks:
-      post:
-        # The binaries are not notarised, so Gatekeeper would quarantine them.
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/termwise"]
-          end
+    test: |
+      system "#{bin}/termwise", "--version"
     caveats: |
       Add the shell integration to your rc file:
         eval "$(termwise init zsh)"     # ~/.zshrc
