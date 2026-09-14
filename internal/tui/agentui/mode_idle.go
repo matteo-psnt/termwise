@@ -82,6 +82,17 @@ func (idleMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m = newM
 	}
 
+	// The @-dropdown is checked before the Tab handler below: with a path
+	// fragment typed there is often a pending ghost suggestion too, and Tab
+	// must complete the path the user is looking at rather than accept it.
+	if matches := m.visibleAtMatches(); len(matches) > 0 {
+		newM, handled := m.handleAtDropdownKey(msg, matches)
+		if handled {
+			return newM, nil
+		}
+		m = newM
+	}
+
 	// Tab needs the raw msg (accept the ghost suggestion, or insert a tab), so
 	// it's handled before the table rather than as a binding.
 	if msg.Code == tea.KeyTab {
@@ -138,7 +149,7 @@ func (idleMode) renderInputRow(m Model, _ int) string {
 	// makes the input line overflow m.width and wrap.
 	matches := m.visibleSlashMatches()
 	var suggestion string
-	if len(matches) == 0 {
+	if len(matches) == 0 && len(m.visibleAtMatches()) == 0 {
 		if s := m.visibleSuggestion(); s != "" {
 			suggestion = m.renderer.styles.Suggestion.Render(s)
 		}
@@ -173,6 +184,7 @@ func (idleMode) helpBindings(_ Model) []binding {
 		{"↑ / ↓", "history"},
 		{"ctrl+r", "search history"},
 		{"/", "slash commands (/help)"},
+		{"@", "complete a file path"},
 	}
 }
 
@@ -182,12 +194,12 @@ func (idleMode) helpBindings(_ Model) []binding {
 // slashDropdownMaxRows.
 const slashDropdownMaxRows = 5
 
-func (m Model) renderSlashDropdown(matches []slashMatch) string {
+func (m Model) renderSlashDropdown(matches []slashMatch, cursor int) string {
 	start := 0
 	end := len(matches)
 	if end > slashDropdownMaxRows {
-		if m.slashCursor >= slashDropdownMaxRows {
-			start = m.slashCursor - slashDropdownMaxRows + 1
+		if cursor >= slashDropdownMaxRows {
+			start = cursor - slashDropdownMaxRows + 1
 		}
 		end = start + slashDropdownMaxRows
 		if end > len(matches) {
@@ -207,7 +219,7 @@ func (m Model) renderSlashDropdown(matches []slashMatch) string {
 	var b strings.Builder
 	for i, mt := range visible {
 		var labelOut string
-		if start+i == m.slashCursor {
+		if start+i == cursor {
 			labelOut = m.renderer.styles.InputPrompt.Render(mt.Label)
 		} else {
 			labelOut = m.renderer.styles.ActionHints.Render(mt.Label)

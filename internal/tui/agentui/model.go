@@ -136,6 +136,7 @@ func newModel(
 		sessionID:        sessionID,
 		cfgPath:          cfgPath,
 		workDir:          workDirBasename(),
+		cwd:              workDirFull(),
 		tuiTopRow:        initialCursorRow,
 	}
 	// Cursor query failed; clampAnchor will pin to the bottom on first WindowSizeMsg.
@@ -434,6 +435,16 @@ func (m Model) editCommandProposal() (tea.Model, tea.Cmd) {
 	m.input.CursorEnd()
 	m.state = stateCommandProposalEdit
 	return m, nil
+}
+
+// workDirFull returns the absolute working directory, or "." when it cannot be
+// determined — ReadDir(".") then still lists something sensible.
+func workDirFull() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return wd
 }
 
 func workDirBasename() string {

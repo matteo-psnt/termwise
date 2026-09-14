@@ -46,7 +46,7 @@ func (m Model) totalViewHeight() int {
 	_, vpH := m.viewportDims()
 	bottomH := 1 // status line
 	if m.state == stateIdle {
-		if matches := m.visibleSlashMatches(); len(matches) > 0 {
+		if matches, _ := m.visibleDropdown(); len(matches) > 0 {
 			bottomH = min(len(matches), slashDropdownMaxRows)
 		}
 	}

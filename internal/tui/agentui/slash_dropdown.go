@@ -20,6 +20,8 @@ func (m Model) updateInputAndResetSlash(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.input.Value() != prev {
 		m.slashCursor = 0
 		m.slashClosed = false
+		m.atCursor = 0
+		m.atClosed = false
 	}
 	return m, cmd
 }

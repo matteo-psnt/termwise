@@ -92,10 +92,18 @@ type shell struct {
 	// Paths
 	cfgPath string
 	workDir string
+	// cwd is the full working directory, resolved once at construction. The
+	// @-dropdown lists relative to it on every keystroke, so it must not be an
+	// os.Getwd() call per key.
+	cwd string
 
 	// Always-on slash dropdown
 	slashCursor int
 	slashClosed bool
+
+	// Always-on @-path dropdown
+	atCursor int
+	atClosed bool
 
 	// Mouse / selection / copy toast (always-on widgets)
 	links          []linkPosition

@@ -28,6 +28,22 @@ One shot, straight to stdout, no TUI. Good for piping and for quick lookups.
 
 ![Headless ask](assets/ask.gif)
 
+### `@` — point at a file
+
+Type `@` in the prompt and Tab through your project. Directories complete with
+a trailing `/` and reopen on their contents, so descending a tree is one
+keystroke per level; dotfiles stay out of the way unless you type the leading
+dot yourself.
+
+```
+› explain @internal/agent/tools/bash.go
+```
+
+The `@` survives into the prompt — the agent is told that an `@`-prefixed path
+is a file you are pointing it at, so it reads the file before answering. That
+works in `tw ask` and `tw explain` too, where there is no dropdown to help you
+type it.
+
 ### Settings live in the session
 
 `/theme`, `/model`, `/effort` and `/config` apply as you move through them.
