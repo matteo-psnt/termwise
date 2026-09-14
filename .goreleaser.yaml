@@ -1,0 +1,63 @@
+# Release config. `git tag v0.1.0 && git push --tags` builds the binaries and
+# publishes the Homebrew formula.
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: termwise
+    main: ./cmd/termwise
+    binary: termwise
+    env: [CGO_ENABLED=0]
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
+
+archives:
+  - formats: [tar.gz]
+    # Keep the conventional <name>_<os>_<arch> layout Homebrew and curl scripts expect.
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^test:"
+
+homebrew_casks:
+  - name: termwise
+    # Requires a github.com/matteo-psnt/homebrew-tap repository to exist.
+    # Without HOMEBREW_TAP_GITHUB_TOKEN the release still publishes; only this
+    # step is skipped.
+    repository:
+      owner: matteo-psnt
+      name: homebrew-tap
+    binaries:
+      - termwise
+    homepage: https://github.com/matteo-psnt/termwise
+    description: A terminal assistant for command generation and quick answers
+    license: MIT
+    hooks:
+      post:
+        # The binaries are not notarised, so Gatekeeper would quarantine them.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/termwise"]
+          end
+    caveats: |
+      Add the shell integration to your rc file:
+        eval "$(termwise init zsh)"     # ~/.zshrc
+        eval "$(termwise init bash)"    # ~/.bashrc
+        termwise init fish | source     # ~/.config/fish/config.fish
+
+      Then choose a provider:
+        tw config

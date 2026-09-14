@@ -13,12 +13,32 @@ import (
 	"github.com/matteo-psnt/termwise/internal/tui/agentui"
 )
 
+// Injected at build time by goreleaser's ldflags. The defaults are what a
+// `go install` or a local `go build` reports, which is all either can honestly
+// say about where the binary came from.
+var (
+	version = "dev"
+	commit  = "none"
+)
+
+// versionString renders what `tw --version` prints. The commit is what makes a
+// bug report from a dev build actionable, so it is included whenever there is
+// one to show.
+func versionString() string {
+	if commit == "none" {
+		return version
+	}
+	return fmt.Sprintf("%s (%s)", version, commit)
+}
+
 func main() {
 	root := &cobra.Command{
 		Use:   "tw [prompt]",
 		Short: "Terminal AI assistant",
 		Long:  "tw — open the agent TUI, optionally with an initial prompt. Use `tw ask` for a headless agent response.",
-		Args:  cobra.ArbitraryArgs,
+		// Cobra turns this into --version for free.
+		Version: versionString(),
+		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sessionID, _ := cmd.Flags().GetString("session-id")
 			resume, _ := cmd.Flags().GetBool("resume")

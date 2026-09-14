@@ -1,4 +1,6 @@
-# Recorded casts are intermediates: large, full of cursor-blink noise, and
-# regenerable from the scene scripts. The scripts and the rendered GIF/MP4 are
-# what the repo needs.
-casts/
+# Only the rendered GIFs the README embeds belong here. The recording scripts,
+# the intermediate casts and the MP4s live outside the published tree, in
+# docs/demo-recording/ — see its README for how to regenerate these.
+*
+!.gitignore
+!*.gif
