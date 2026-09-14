@@ -45,6 +45,10 @@ brews:
     repository:
       owner: matteo-psnt
       name: homebrew-tap
+      # Without this goreleaser pushes with the workflow's own GITHUB_TOKEN,
+      # which has no access to a different repository — the failure is a 403
+      # "Resource not accessible by integration" at the very end of a release.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/matteo-psnt/termwise
     description: A terminal assistant for command generation and quick answers
     license: MIT
