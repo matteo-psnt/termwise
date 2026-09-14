@@ -34,11 +34,19 @@ go install github.com/matteo-psnt/termwise/cmd/termwise@latest
 
 This installs to `$(go env GOPATH)/bin` — usually `~/go/bin` — which is **not**
 on `PATH` by default. If `termwise --version` comes back "command not found",
-that is why:
+that is why. Add it once:
 
 ```bash
-export PATH="$(go env GOPATH)/bin:$PATH"    # add to your rc file
+export PATH="$HOME/go/bin:$PATH"     # ~/.zshrc or ~/.bashrc
 ```
+
+```fish
+fish_add_path ~/go/bin               # persists on its own, no rc edit
+```
+
+Then start a new shell. (`$HOME/go/bin` rather than `$(go env GOPATH)/bin`
+because an rc file runs on every shell start and that would fork `go` each
+time. If you have moved your `GOPATH`, use the real path.)
 
 Or take a binary straight from the
 [releases page](https://github.com/matteo-psnt/termwise/releases/latest) and put
