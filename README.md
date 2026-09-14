@@ -32,15 +32,28 @@ With Go 1.26+ instead:
 go install github.com/matteo-psnt/termwise/cmd/termwise@latest
 ```
 
-Or take a binary straight from the
-[releases page](https://github.com/matteo-psnt/termwise/releases/latest).
+This installs to `$(go env GOPATH)/bin` — usually `~/go/bin` — which is **not**
+on `PATH` by default. If `termwise --version` comes back "command not found",
+that is why:
 
-Any of them gives you `termwise`. The shell integration below adds `tw`, which
-is what you'll actually type.
+```bash
+export PATH="$(go env GOPATH)/bin:$PATH"    # add to your rc file
+```
+
+Or take a binary straight from the
+[releases page](https://github.com/matteo-psnt/termwise/releases/latest) and put
+it anywhere on your `PATH`.
+
+Every route installs one binary, `termwise`. `tw` arrives with the shell
+integration below.
 
 ## Shell setup
 
-The shell integration defines the `tw` function and binds the inline widget.
+`tw` is a shell function, not a second binary — it has to be, because Ctrl+T
+edits your shell's input buffer and the wrapper tags each terminal's session
+with its PID. So it does not exist until you add the integration and start a
+new shell.
+
 Add the line for your shell:
 
 ```bash
@@ -48,6 +61,15 @@ eval "$(termwise init zsh)"     # ~/.zshrc
 eval "$(termwise init bash)"    # ~/.bashrc
 termwise init fish | source     # ~/.config/fish/config.fish
 ```
+
+Then reload — `tw` will not be defined in the shell you edited the file in:
+
+```bash
+exec $SHELL
+```
+
+That gives you the `tw` function and binds Ctrl+T. `termwise` on its own works
+without any of this; you just type the longer name and lose the widget.
 
 Then pick a provider:
 
