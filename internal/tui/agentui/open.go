@@ -125,6 +125,12 @@ func OpenExplain(
 	if err != nil {
 		return err
 	}
+	// `fc -ln -1 | tw explain` has already said what to explain. Asking the user
+	// to type something first would make the pipe pointless; submitMessage
+	// appends the stdin to this, giving the same shape as the argument form.
+	if initialPrompt == "" && stdin != "" {
+		initialPrompt = "Explain this command:"
+	}
 	_, err = openProgram(openProgramConfig{
 		mode:          modeExplain,
 		providerName:  providerName,

@@ -26,6 +26,13 @@ it is given no tool to propose a command of its own.`,
 		sessionID, _ := cmd.Flags().GetString("session-id")
 		resume, _ := cmd.Flags().GetBool("resume")
 
+		// Explain and the default agent share a terminal, so they would share a
+		// session id too. Resuming one as the other would replay a transcript
+		// full of command tool calls under a prompt that has no command tool.
+		if sessionID != "" {
+			sessionID += "-explain"
+		}
+
 		rt, err := resolveTUIRuntime()
 		if err != nil {
 			return err
