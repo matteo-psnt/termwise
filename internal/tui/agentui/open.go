@@ -276,12 +276,30 @@ func openProgram(cfg openProgramConfig) (string, error) {
 
 	env := envcontext.Detect(context.Background(), envcontext.Options{ShellHistory: shellContext})
 	system, toolDefs := cfg.mode.systemAndTools(env)
-	m := newModel(cfg.providerName, cfg.provider, cfg.modelID, system, cfg.stdin, hasDarkBg, llmJudge, suggestions, effort, cfg.cfgPath, cfg.initialDraft, cfg.initialPrompt, themeName, closeKey,
-		promptHistory, sessionStore, cfg.sessionID, initialSession, initialCursorRow)
-	// Set separately rather than as further positional arguments to newModel.
-	m.exchanges = exchangeLog
-	m.toolDefs = toolDefs
-	m.mode = cfg.mode
+	m := newModel(modelConfig{
+		providerName:     cfg.providerName,
+		provider:         cfg.provider,
+		modelID:          cfg.modelID,
+		mode:             cfg.mode,
+		system:           system,
+		toolDefs:         toolDefs,
+		llmJudge:         llmJudge,
+		suggestions:      suggestions,
+		effort:           effort,
+		themeName:        themeName,
+		closeKey:         closeKey,
+		hasDarkBg:        hasDarkBg,
+		stdin:            cfg.stdin,
+		initialDraft:     cfg.initialDraft,
+		initialPrompt:    cfg.initialPrompt,
+		initialSession:   initialSession,
+		cfgPath:          cfg.cfgPath,
+		sessionID:        cfg.sessionID,
+		promptHistory:    promptHistory,
+		sessionStore:     sessionStore,
+		exchanges:        exchangeLog,
+		initialCursorRow: initialCursorRow,
+	})
 
 	// Surface any config warnings as a SystemEntry so they remain visible (and
 	// terminal-selectable) inside the TUI — stderr text is wiped by the alt-screen.

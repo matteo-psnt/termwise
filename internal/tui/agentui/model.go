@@ -13,7 +13,6 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 
-	agenttools "github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/keybinding"
@@ -63,28 +62,47 @@ type initialPromptMsg struct {
 	prompt string
 }
 
+// modelConfig is everything newModel needs to build a Model. It exists because
+// the constructor had grown to nineteen positional parameters — long enough
+// that three later additions were being assigned after construction instead,
+// which split "what a Model starts as" across two places.
+type modelConfig struct {
+	// Session
+	providerName string
+	provider     provider.AgentClient
+	modelID      string
+	mode         sessionMode
+	system       string
+	toolDefs     []provider.ToolDef
+
+	// Settings
+	llmJudge    bool
+	suggestions bool
+	effort      string
+	themeName   string
+	closeKey    string
+	hasDarkBg   bool
+
+	// Starting content
+	stdin          string
+	initialDraft   string
+	initialPrompt  string
+	initialSession *history.Session
+
+	// Persistence
+	cfgPath       string
+	sessionID     string
+	promptHistory *history.PromptHistory
+	sessionStore  *history.SessionStore
+	exchanges     *history.ExchangeLog
+
+	// Layout. -1 means the cursor row is unknown; clampAnchor pins to the
+	// bottom on the first WindowSizeMsg.
+	initialCursorRow int
+}
+
 // newModel constructs the TUI model.
-func newModel(
-	providerName string,
-	prov provider.AgentClient,
-	modelID string,
-	system string,
-	stdin string,
-	hasDarkBg bool,
-	llmJudge bool,
-	suggestions bool,
-	effort string,
-	cfgPath string,
-	initialDraft string,
-	initialPrompt string,
-	themeName string,
-	closeKey string,
-	promptHistory *history.PromptHistory,
-	sessionStore *history.SessionStore,
-	sessionID string,
-	initialSession *history.Session,
-	initialCursorRow int,
-) Model {
+func newModel(cfg modelConfig) Model {
 	ta := textarea.New()
 	ta.Prompt = ""
 	ta.ShowLineNumbers = false
@@ -94,14 +112,14 @@ func newModel(
 	ta.DynamicHeight = true
 	ta.MinHeight = 1
 	ta.MaxHeight = maxInputRows
-	ta.SetValue(initialDraft)
+	ta.SetValue(cfg.initialDraft)
 	ta.Focus()
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
 	contextWindow := 32_000
-	if md := models.Find(providerName, modelID); md != nil && md.Context > 0 {
+	if md := models.Find(cfg.providerName, cfg.modelID); md != nil && md.Context > 0 {
 		contextWindow = md.Context
 	}
 
@@ -109,48 +127,50 @@ func newModel(
 	suggestionCtx, suggestionCancel := context.WithCancel(context.Background())
 
 	sh := shell{
-		provider:         prov,
-		toolDefs:         agenttools.Defs,
-		providerName:     providerName,
-		modelID:          modelID,
-		system:           system,
+		provider:         cfg.provider,
+		providerName:     cfg.providerName,
+		modelID:          cfg.modelID,
+		mode:             cfg.mode,
+		system:           cfg.system,
+		toolDefs:         cfg.toolDefs,
 		contextWindow:    contextWindow,
-		llmJudge:         llmJudge,
-		suggestions:      suggestions,
-		effort:           effort,
-		initialPrompt:    initialPrompt,
-		stdin:            stdin,
+		llmJudge:         cfg.llmJudge,
+		suggestions:      cfg.suggestions,
+		effort:           cfg.effort,
+		initialPrompt:    cfg.initialPrompt,
+		stdin:            cfg.stdin,
 		input:            ta,
 		spin:             sp,
 		ctx:              ctx,
 		cancel:           cancel,
 		suggestionCtx:    suggestionCtx,
 		suggestionCancel: suggestionCancel,
-		renderer:         newRenderer(hasDarkBg, theme.Get(themeName)),
-		hasDarkBg:        hasDarkBg,
-		themeName:        themeName,
-		closeKey:         closeKey,
-		promptHistory:    promptHistory,
+		renderer:         newRenderer(cfg.hasDarkBg, theme.Get(cfg.themeName)),
+		hasDarkBg:        cfg.hasDarkBg,
+		themeName:        cfg.themeName,
+		closeKey:         cfg.closeKey,
+		promptHistory:    cfg.promptHistory,
 		histIdx:          -1,
-		sessionStore:     sessionStore,
-		sessionID:        sessionID,
-		cfgPath:          cfgPath,
+		sessionStore:     cfg.sessionStore,
+		sessionID:        cfg.sessionID,
+		exchanges:        cfg.exchanges,
+		cfgPath:          cfg.cfgPath,
 		workDir:          workDirBasename(),
 		cwd:              workDirFull(),
-		tuiTopRow:        initialCursorRow,
+		tuiTopRow:        cfg.initialCursorRow,
 	}
 	// Cursor query failed; clampAnchor will pin to the bottom on first WindowSizeMsg.
-	if initialCursorRow < 0 {
+	if cfg.initialCursorRow < 0 {
 		sh.tuiTopRow = math.MaxInt32
 	}
-	sh.input.SetStyles(inputStyles(hasDarkBg, sh.renderer.styles.Suggestion))
+	sh.input.SetStyles(inputStyles(cfg.hasDarkBg, sh.renderer.styles.Suggestion))
 
-	if initialSession != nil && len(initialSession.Messages) > 0 {
-		sh.messages = initialSession.Messages
-		sh.thread = deserializeThread(initialSession.Thread)
-	} else if stdin != "" {
+	if cfg.initialSession != nil && len(cfg.initialSession.Messages) > 0 {
+		sh.messages = cfg.initialSession.Messages
+		sh.thread = deserializeThread(cfg.initialSession.Thread)
+	} else if cfg.stdin != "" {
 		sh.thread = append(sh.thread, UserEntry{
-			Content: fmt.Sprintf("[stdin: %d lines]", strings.Count(stdin, "\n")+1),
+			Content: fmt.Sprintf("[stdin: %d lines]", strings.Count(cfg.stdin, "\n")+1),
 		})
 	}
 
