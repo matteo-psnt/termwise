@@ -16,14 +16,27 @@ is built for the gap between "google it" and "start an agent session."
 
 ## Install
 
-Needs Go 1.26+.
+```bash
+brew trust matteo-psnt/tap
+brew install matteo-psnt/tap/termwise
+```
+
+macOS and Linux, Intel and Apple Silicon. The `brew trust` line is not optional
+— Homebrew 7 refuses formulae from third-party taps until you trust them, and
+the error it gives without it (`invalid syntax in tap`) points at the wrong
+thing entirely.
+
+With Go 1.26+ instead:
 
 ```bash
 go install github.com/matteo-psnt/termwise/cmd/termwise@latest
 ```
 
-That gives you `termwise`. The shell integration below adds `tw`, which is what
-you'll actually type.
+Or take a binary straight from the
+[releases page](https://github.com/matteo-psnt/termwise/releases/latest).
+
+Any of them gives you `termwise`. The shell integration below adds `tw`, which
+is what you'll actually type.
 
 ## Shell setup
 
