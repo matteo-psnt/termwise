@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"github.com/matteo-psnt/termwise/internal/cliname"
 )
 
 // UseProvider sets the selected provider.
@@ -89,8 +91,8 @@ func SetProvider(cfg *FileConfig, name string, pc ProviderConfig) {
 func RemoveProvider(cfg *FileConfig, name string) error {
 	if cfg.SelectedProvider == name {
 		return fmt.Errorf(
-			"cannot remove %q — it is the selected provider\n  Run `tw config use <provider>` first",
-			name,
+			"cannot remove %q — it is the selected provider\n  Run `%s config use <provider>` first",
+			name, cliname.Name(),
 		)
 	}
 	delete(cfg.Providers, name)

@@ -59,6 +59,7 @@ func readKeybinding() string {
 
 func zshSetup(binding string) string {
 	return fmt.Sprintf(`# termwise shell integration
+export TERMWISE_INVOKED_AS=tw
 tw() {
     if [[ $# -gt 0 ]]; then
         case "$1" in
@@ -110,6 +111,7 @@ bindkey '%s' _termwise_widget
 func bashSetup(binding string) string {
 	bashKey := keybinding.ToBash(binding)
 	return fmt.Sprintf(`# termwise shell integration
+export TERMWISE_INVOKED_AS=tw
 tw() {
     case "$1" in
         ask|config|init|help|--help|-h)
@@ -159,6 +161,7 @@ func fishSetup(binding string) string {
 		fishKey = "ctrl-t"
 	}
 	return fmt.Sprintf(`# termwise shell integration
+set -gx TERMWISE_INVOKED_AS tw
 function tw --description 'termwise'
     switch "$argv[1]"
         case ask config init help --help -h

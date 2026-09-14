@@ -1,8 +1,11 @@
 package agentui
 
 import (
+	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/matteo-psnt/termwise/internal/cliname"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -323,7 +326,7 @@ func runModel(m Model, args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
 		opts := configuredModelOptions(m)
 		if len(opts) == 0 {
-			m.appendThreadEntries(ErrorEntry{Content: "No providers configured — run `tw config` to add one."})
+			m.appendThreadEntries(ErrorEntry{Content: fmt.Sprintf("No providers configured — run `%s config` to add one.", cliname.Name())})
 			m.refreshViewport()
 			return m, nil
 		}

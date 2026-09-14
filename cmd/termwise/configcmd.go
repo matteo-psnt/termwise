@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/tui/configui"
@@ -69,11 +70,11 @@ var configShowCmd = &cobra.Command{
 		}
 		cfg, exists, err := config.LoadConfig(cfgPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: %s\n  Run `tw config --edit` to repair the file.\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: %s\n  Run `%s config --edit` to repair the file.\n", err, cliname.Name())
 			return nil
 		}
 		if !exists {
-			fmt.Fprintln(os.Stderr, "No configuration file — run `tw config` to set up.")
+			fmt.Fprintf(os.Stderr, "No configuration file — run `%s config` to set up.\n", cliname.Name())
 			return nil
 		}
 		if asJSON {
@@ -90,7 +91,7 @@ var configShowCmd = &cobra.Command{
 var configUseCmd = &cobra.Command{
 	Use:          "use <provider>",
 	Short:        "Set the active provider",
-	Example:      "  tw config use anthropic\n  tw config use openai",
+	Example:      fmt.Sprintf("  %[1]s config use anthropic\n  %[1]s config use openai", cliname.Name()),
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
@@ -130,12 +131,12 @@ var configModelListCmd = &cobra.Command{
 			name = args[0]
 		}
 		if name == "" {
-			return fmt.Errorf("no provider selected — pass a provider name or run `tw config use <provider>`")
+			return fmt.Errorf("no provider selected — pass a provider name or run `%s config use <provider>`", cliname.Name())
 		}
 
 		pc, ok := cfg.Providers[name]
 		if !ok {
-			return fmt.Errorf("provider %q is not configured — run `tw config` to set it up", name)
+			return fmt.Errorf("provider %q is not configured — run `%s config` to set it up", name, cliname.Name())
 		}
 
 		fmt.Fprintf(os.Stderr, "Fetching models for %s...", name)
@@ -157,7 +158,7 @@ var configModelListCmd = &cobra.Command{
 var configModelSetCmd = &cobra.Command{
 	Use:          "set <model>",
 	Short:        "Set the model for the selected provider",
-	Example:      "  tw config model set claude-sonnet-4-6\n  tw config model set gpt-4o",
+	Example:      fmt.Sprintf("  %[1]s config model set claude-sonnet-4-6\n  %[1]s config model set gpt-4o", cliname.Name()),
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
@@ -201,7 +202,7 @@ var configAuthCmd = &cobra.Command{
 var configAuthEnvCmd = &cobra.Command{
 	Use:          "env <ENV_VAR>",
 	Short:        "Use an environment variable for auth",
-	Example:      "  tw config auth env ANTHROPIC_API_KEY",
+	Example:      fmt.Sprintf("  %[1]s config auth env ANTHROPIC_API_KEY", cliname.Name()),
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
@@ -214,7 +215,7 @@ var configAuthEnvCmd = &cobra.Command{
 var configAuthShellCmd = &cobra.Command{
 	Use:          "cmd <COMMAND>",
 	Short:        "Use a shell command to retrieve the API key",
-	Example:      "  tw config auth cmd \"op read 'op://personal/openai/api-key'\"",
+	Example:      fmt.Sprintf("  %[1]s config auth cmd \"op read 'op://personal/openai/api-key'\"", cliname.Name()),
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
@@ -227,7 +228,7 @@ var configAuthShellCmd = &cobra.Command{
 var configAuthKeychainCmd = &cobra.Command{
 	Use:          "keychain <ENTRY>",
 	Short:        "Use a macOS Keychain entry for auth",
-	Example:      "  tw config auth keychain termwise-anthropic",
+	Example:      fmt.Sprintf("  %[1]s config auth keychain termwise-anthropic", cliname.Name()),
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
@@ -256,11 +257,11 @@ var configTestCmd = &cobra.Command{
 		}
 		name := cfg.SelectedProvider
 		if name == "" {
-			return fmt.Errorf("no provider selected — run `tw config use <provider>`")
+			return fmt.Errorf("no provider selected — run `%s config use <provider>`", cliname.Name())
 		}
 		pc, ok := cfg.Providers[name]
 		if !ok {
-			return fmt.Errorf("provider %q has no config block — run `tw config` to set it up", name)
+			return fmt.Errorf("provider %q has no config block — run `%s config` to set it up", name, cliname.Name())
 		}
 
 		fmt.Fprintf(os.Stderr, "Testing %s...", name)
@@ -304,7 +305,7 @@ var configDoctorCmd = &cobra.Command{
 var configRemoveCmd = &cobra.Command{
 	Use:          "remove <provider>",
 	Short:        "Remove a provider config block",
-	Example:      "  tw config remove openai",
+	Example:      fmt.Sprintf("  %[1]s config remove openai", cliname.Name()),
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
@@ -328,7 +329,7 @@ func mutateConfig(fn func(*config.FileConfig) error) error {
 	}
 	cfg, _, err := config.LoadConfig(cfgPath)
 	if err != nil {
-		return fmt.Errorf("%w\n  Config file is invalid — run `tw config --edit` to repair it", err)
+		return fmt.Errorf("%w\n  Config file is invalid — run `%s config --edit` to repair it", err, cliname.Name())
 	}
 	if err := fn(&cfg); err != nil {
 		return err
@@ -341,7 +342,7 @@ func mutateActiveProvider(fn func(*config.FileConfig, string) error) error {
 	return mutateConfig(func(cfg *config.FileConfig) error {
 		name := cfg.SelectedProvider
 		if name == "" {
-			return fmt.Errorf("no provider selected — run `tw config use <provider>` first")
+			return fmt.Errorf("no provider selected — run `%s config use <provider>` first", cliname.Name())
 		}
 		return fn(cfg, name)
 	})
@@ -442,12 +443,12 @@ func runDoctor(cfgPath string) bool {
 	cfg, exists, parseErr := config.LoadConfig(cfgPath)
 	if parseErr != nil {
 		fail("File: " + parseErr.Error())
-		fmt.Println("    → Run `tw config --edit` to repair")
+		fmt.Printf("    → Run `%s config --edit` to repair\n", cliname.Name())
 		return false
 	}
 	if !exists {
 		fail("File: not found")
-		fmt.Println("    → Run `tw config` to create it")
+		fmt.Printf("    → Run `%s config` to create it\n", cliname.Name())
 		return false
 	}
 	pass("File: exists and valid TOML")
@@ -455,7 +456,7 @@ func runDoctor(cfgPath string) bool {
 	// selected_provider set and known.
 	if cfg.SelectedProvider == "" {
 		fail("selected_provider: not set")
-		fmt.Println("    → Run `tw config use <provider>`")
+		fmt.Printf("    → Run `%s config use <provider>`\n", cliname.Name())
 		return false
 	}
 	knownNames := config.ProviderNames()
@@ -471,7 +472,7 @@ func runDoctor(cfgPath string) bool {
 	pc, hasBlock := cfg.Providers[cfg.SelectedProvider]
 	if !hasBlock {
 		fail("[providers." + cfg.SelectedProvider + "]: no config block")
-		fmt.Println("    → Run `tw config` to configure it")
+		fmt.Printf("    → Run `%s config` to configure it\n", cliname.Name())
 		return allOk
 	}
 	pass("[providers." + cfg.SelectedProvider + "]: block found")

@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
 	_ "github.com/matteo-psnt/termwise/internal/provider/builtin"
@@ -33,9 +34,10 @@ func versionString() string {
 
 func main() {
 	root := &cobra.Command{
-		Use:   "tw [prompt]",
+		Use:   cliname.Name() + " [prompt]",
 		Short: "Terminal AI assistant",
-		Long:  "tw — open the agent TUI, optionally with an initial prompt. Use `tw ask` for a headless agent response.",
+		Long: fmt.Sprintf("%[1]s — open the agent TUI, optionally with an initial prompt. "+
+			"Use `%[1]s ask` for a headless agent response.", cliname.Name()),
 		// Cobra turns this into --version for free.
 		Version: versionString(),
 		Args:    cobra.ArbitraryArgs,
@@ -72,7 +74,7 @@ func main() {
 	root.AddCommand(configCmd)
 
 	if err := root.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "tw: %s\n", err)
+		fmt.Fprintf(os.Stderr, "%s: %s\n", cliname.Name(), err)
 		os.Exit(1)
 	}
 }
@@ -128,7 +130,7 @@ func resolveTUIRuntime() (tuiRuntime, error) {
 // scrollback (or stderr for non-interactive commands).
 func emitConfigWarnings(cfgPath string) {
 	for _, w := range config.CheckConfigWarnings(cfgPath) {
-		fmt.Fprintln(os.Stderr, "tw: warning:", w)
+		fmt.Fprintf(os.Stderr, "%s: warning: %s\n", cliname.Name(), w)
 	}
 }
 

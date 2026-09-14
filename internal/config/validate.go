@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"github.com/matteo-psnt/termwise/internal/cliname"
 )
 
 // Validate checks a FileConfig for structural correctness without making any
@@ -21,7 +23,7 @@ func Validate(cfg FileConfig) []string {
 	}
 
 	if cfg.SelectedProvider == "" {
-		errs = append(errs, "selected_provider is not set — run `tw config` to set up")
+		errs = append(errs, fmt.Sprintf("selected_provider is not set — run `%s config` to set up", cliname.Name()))
 		return errs
 	}
 
@@ -35,8 +37,8 @@ func Validate(cfg FileConfig) []string {
 	pc, ok := cfg.Providers[cfg.SelectedProvider]
 	if !ok {
 		errs = append(errs, fmt.Sprintf(
-			"provider %q is selected but has no config block\n  Add a [providers.%s] block or run `tw config`",
-			cfg.SelectedProvider, cfg.SelectedProvider,
+			"provider %q is selected but has no config block\n  Add a [providers.%s] block or run `%s config`",
+			cfg.SelectedProvider, cfg.SelectedProvider, cliname.Name(),
 		))
 		return errs
 	}

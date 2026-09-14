@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/matteo-psnt/termwise/internal/cliname"
+
 	"github.com/zalando/go-keyring"
 
 	"github.com/matteo-psnt/termwise/internal/models"
@@ -37,14 +39,14 @@ type ResolvedAuth struct {
 func Resolve(cfg FileConfig) (ResolvedConfig, error) {
 	name := cfg.SelectedProvider
 	if name == "" {
-		return ResolvedConfig{}, fmt.Errorf("no provider selected — run `tw config` to set up")
+		return ResolvedConfig{}, fmt.Errorf("no provider selected — run `%s config` to set up", cliname.Name())
 	}
 
 	pc, ok := cfg.Providers[name]
 	if !ok {
 		return ResolvedConfig{}, fmt.Errorf(
-			"provider %q has no config block\n  Add a [providers.%s] block or run `tw config`",
-			name, name,
+			"provider %q has no config block\n  Add a [providers.%s] block or run `%s config`",
+			name, name, cliname.Name(),
 		)
 	}
 
@@ -72,7 +74,7 @@ func LoadAndResolve(path string) (FileConfig, ResolvedConfig, error) {
 		var ok bool
 		cfg, ok = ZeroConfigDefaults()
 		if !ok {
-			return FileConfig{}, ResolvedConfig{}, fmt.Errorf("no configuration found — run `tw config` to set up")
+			return FileConfig{}, ResolvedConfig{}, fmt.Errorf("no configuration found — run `%s config` to set up", cliname.Name())
 		}
 	}
 	if err := ValidateForRuntime(cfg); err != nil {

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/tui/agentui"
 )
 
@@ -16,8 +18,10 @@ var explainCmd = &cobra.Command{
 With a command, the TUI opens and explains it immediately. Without one, the TUI
 opens and asks which command to explain. Either way the agent only explains —
 it is given no tool to propose a command of its own.`,
-	Example: "  tw explain 'awk -F: \"{print \\$1}\" /etc/passwd'\n  tw explain\n  fc -ln -1 | tw explain",
-	Args:    cobra.ArbitraryArgs,
+	Example: fmt.Sprintf("  %[1]s explain 'awk -F: \"{print \\$1}\" /etc/passwd'\n"+
+		"  %[1]s explain\n"+
+		"  fc -ln -1 | %[1]s explain", cliname.Name()),
+	Args: cobra.ArbitraryArgs,
 	// Explain always opens the TUI, so warnings go inline rather than to the
 	// stderr the alt-screen is about to wipe.
 	SilenceUsage:  true,

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/matteo-psnt/termwise/internal/cliname"
+
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
@@ -344,7 +346,7 @@ func (m *Model) applyModel(providerName, modelID string) error {
 	}
 	pc, ok := cfg.Providers[providerName]
 	if !ok {
-		return fmt.Errorf("provider %q has no config block — run `tw config` to add it", providerName)
+		return fmt.Errorf("provider %q has no config block — run `%s config` to add it", providerName, cliname.Name())
 	}
 	auth, err := config.ResolveAuth(providerName, pc)
 	if err != nil {

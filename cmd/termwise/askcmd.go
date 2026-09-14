@@ -2,18 +2,21 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/runner"
 )
 
 var askCmd = &cobra.Command{
-	Use:          "ask <prompt>",
-	Short:        "Run the headless agent path and print only the final response",
-	Example:      "  tw ask \"undo last commit but keep changes\"\n  tw ask \"what port is my dev server using\"",
+	Use:   "ask <prompt>",
+	Short: "Run the headless agent path and print only the final response",
+	Example: fmt.Sprintf("  %[1]s ask \"undo last commit but keep changes\"\n"+
+		"  %[1]s ask \"what port is my dev server using\"", cliname.Name()),
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
