@@ -157,12 +157,12 @@ func TestNeedsApprovalStructuredShellParsing(t *testing.T) {
 		},
 		{
 			name:    "cd and ls stays safe",
-			command: `cd /Users/matteopesenti/Projects/termwise && ls -la`,
+			command: `cd /Users/dev/Projects/termwise && ls -la`,
 			want:    false,
 		},
 		{
 			name:    "cd and grep pipeline stays safe",
-			command: `cd /Users/matteopesenti/Projects/termwise && grep -r "glamour\|goldmark" --include="*.go" internal/ | head -10`,
+			command: `cd /Users/dev/Projects/termwise && grep -r "glamour\|goldmark" --include="*.go" internal/ | head -10`,
 			want:    false,
 		},
 		{
@@ -318,7 +318,7 @@ func TestNeedsApprovalStructuredShellParsing(t *testing.T) {
 		},
 		{
 			name:    "xargs grep original failing command stays safe",
-			command: `find /Users/matteopesenti/Projects/termwise -name "*.go" -type f | xargs grep -l "WriteFile||os.Create" 2>/dev/null | head -5`,
+			command: `find /Users/dev/Projects/termwise -name "*.go" -type f | xargs grep -l "WriteFile||os.Create" 2>/dev/null | head -5`,
 			want:    false,
 		},
 		{
