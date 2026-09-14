@@ -83,6 +83,9 @@ func (m *Model) refreshViewport() {
 func (m Model) emptyStateHint() string {
 	dim := m.renderer.styles.ActionHints
 	key := m.renderer.styles.HelpKey
+	if m.mode == modeExplain {
+		return dim.Render("  What command should I explain? Paste it below.")
+	}
 	return dim.Render("  Ready. Ask anything, or type ") +
 		key.Render("/") +
 		dim.Render(" for commands.")

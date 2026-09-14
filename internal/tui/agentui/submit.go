@@ -5,7 +5,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
@@ -39,7 +38,7 @@ func (m Model) chatRequest() provider.ChatRequest {
 		Model:    m.modelID,
 		System:   m.system,
 		Messages: m.messages,
-		Tools:    tools.Defs,
+		Tools:    m.toolDefs,
 		Effort:   m.effectiveEffort(),
 	}
 }

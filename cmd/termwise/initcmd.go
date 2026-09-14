@@ -61,6 +61,11 @@ tw() {
                 command termwise "$@"
                 return
                 ;;
+            explain)
+                shift
+                command termwise explain --session-id "$$" "$@"
+                return
+                ;;
             config|init|help|--help|-h)
                 command termwise "$@"
                 return
@@ -104,6 +109,11 @@ tw() {
     case "$1" in
         ask|config|init|help|--help|-h)
             command termwise "$@"
+            return
+            ;;
+        explain)
+            shift
+            command termwise explain --session-id "$$" "$@"
             return
             ;;
     esac

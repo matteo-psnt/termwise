@@ -20,7 +20,9 @@ type shell struct {
 	provider      provider.AgentClient
 	providerName  string
 	modelID       string
+	mode          sessionMode
 	system        string
+	toolDefs      []provider.ToolDef
 	contextWindow int
 
 	// Settings

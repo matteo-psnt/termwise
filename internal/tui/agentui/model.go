@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 
+	agenttools "github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/keybinding"
@@ -109,6 +110,7 @@ func newModel(
 
 	sh := shell{
 		provider:         prov,
+		toolDefs:         agenttools.Defs,
 		providerName:     providerName,
 		modelID:          modelID,
 		system:           system,

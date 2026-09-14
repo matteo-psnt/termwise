@@ -21,7 +21,26 @@ import (
 	"github.com/matteo-psnt/termwise/internal/tty"
 )
 
+// sessionMode selects which agent the TUI runs. The default agent generates
+// commands; explain mode breaks down a command the user already has and is
+// given no command tool at all, so it cannot drift back into proposing one.
+type sessionMode int
+
+const (
+	modeAgent sessionMode = iota
+	modeExplain
+)
+
+// systemAndTools returns the system prompt and tool set for the mode.
+func (mode sessionMode) systemAndTools(env envcontext.Context) (string, []provider.ToolDef) {
+	if mode == modeExplain {
+		return systemprompt.Explain(agenttools.ExplainDefs, env), agenttools.ExplainDefs
+	}
+	return systemprompt.Agent(agenttools.Defs, env), agenttools.Defs
+}
+
 type openProgramConfig struct {
+	mode          sessionMode
 	providerName  string
 	provider      provider.AgentClient
 	modelID       string
@@ -77,6 +96,37 @@ func OpenWithPrompt(
 		return err
 	}
 	_, err = openProgram(openProgramConfig{
+		providerName:  providerName,
+		provider:      provider,
+		modelID:       modelID,
+		cfgPath:       cfgPath,
+		stdin:         stdin,
+		stdinPiped:    stdinPiped,
+		initialPrompt: initialPrompt,
+		sessionID:     sessionID,
+		forceResume:   forceResume,
+	})
+	return err
+}
+
+// OpenExplain launches the agent TUI in explain mode. An empty initialPrompt
+// opens the input box with an explain-mode hint instead of submitting, which is
+// what bare `tw explain` does.
+func OpenExplain(
+	providerName string,
+	provider provider.AgentClient,
+	modelID string,
+	cfgPath string,
+	initialPrompt string,
+	sessionID string,
+	forceResume bool,
+) error {
+	stdin, stdinPiped, err := readProgramStdin()
+	if err != nil {
+		return err
+	}
+	_, err = openProgram(openProgramConfig{
+		mode:          modeExplain,
 		providerName:  providerName,
 		provider:      provider,
 		modelID:       modelID,
@@ -218,11 +268,14 @@ func openProgram(cfg openProgramConfig) (string, error) {
 		}
 	}
 
-	system := systemprompt.Agent(agenttools.Defs, envcontext.Detect(context.Background(), envcontext.Options{ShellHistory: shellContext}))
+	env := envcontext.Detect(context.Background(), envcontext.Options{ShellHistory: shellContext})
+	system, toolDefs := cfg.mode.systemAndTools(env)
 	m := newModel(cfg.providerName, cfg.provider, cfg.modelID, system, cfg.stdin, hasDarkBg, llmJudge, suggestions, effort, cfg.cfgPath, cfg.initialDraft, cfg.initialPrompt, themeName, closeKey,
 		promptHistory, sessionStore, cfg.sessionID, initialSession, initialCursorRow)
-	// Set separately rather than as a 20th positional argument to newModel.
+	// Set separately rather than as further positional arguments to newModel.
 	m.exchanges = exchangeLog
+	m.toolDefs = toolDefs
+	m.mode = cfg.mode
 
 	// Surface any config warnings as a SystemEntry so they remain visible (and
 	// terminal-selectable) inside the TUI — stderr text is wiped by the alt-screen.

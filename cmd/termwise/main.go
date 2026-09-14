@@ -36,13 +36,18 @@ func main() {
 		SilenceErrors: true,
 	}
 
-	root.Flags().String("session-id", "", "")
-	root.Flags().Lookup("session-id").Hidden = true
+	// session-id and resume are persistent so TUI subcommands (explain) can take
+	// them after the subcommand name, which is the only position the shell
+	// wrapper can put them in. shell-widget stays root-local — it has no meaning
+	// anywhere else.
+	root.PersistentFlags().String("session-id", "", "")
+	root.PersistentFlags().Lookup("session-id").Hidden = true
+	root.PersistentFlags().Bool("resume", false, "Resume the most recent session for this terminal")
 	root.Flags().Bool("shell-widget", false, "")
 	root.Flags().Lookup("shell-widget").Hidden = true
-	root.Flags().Bool("resume", false, "Resume the most recent session for this terminal")
 
 	root.AddCommand(askCmd)
+	root.AddCommand(explainCmd)
 	root.AddCommand(initCmd)
 	root.AddCommand(configCmd)
 

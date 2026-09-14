@@ -38,7 +38,23 @@ One shot, straight to stdout, no TUI. Good for piping and for quick lookups.
 tw                      # open the TUI
 tw "undo my last commit but keep the changes"
 tw ask "how do I run the dev server here"
+tw explain 'awk -F: "{print $1}" /etc/passwd'
 ```
+
+### `tw explain` — the other direction
+
+Every other entry point turns intent into a command. `tw explain` goes the
+other way: give it a command and it breaks it down flag by flag, checking `man`
+and `--help` rather than guessing, and calling out anything destructive. Run it
+bare to get an input box, or pipe a command in:
+
+```bash
+tw explain              # asks which command to explain
+fc -ln -1 | tw explain  # explains the command you just ran
+```
+
+It is given no `command` tool at all, so it can only explain — it will never
+hand you something new to run.
 
 Every entry point runs the same agent loop. It reads files, searches code, and
 runs read-only commands to check facts before answering. Commands that change
