@@ -97,13 +97,9 @@ type shell struct {
 	// os.Getwd() call per key.
 	cwd string
 
-	// Always-on slash dropdown
-	slashCursor int
-	slashClosed bool
-
-	// Always-on @-path dropdown
-	atCursor int
-	atClosed bool
+	// Always-on completion dropdowns
+	slashSel completionState
+	atSel    completionState
 
 	// Mouse / selection / copy toast (always-on widgets)
 	links          []linkPosition

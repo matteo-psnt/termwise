@@ -9,14 +9,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// The @-dropdown completes filesystem paths in the prompt. It deliberately
-// mirrors the slash dropdown rather than sharing its code: the two differ in
-// trigger, in where they source rows from, and in what Enter means, and the
-// shared part is small enough that a common abstraction would be all branches.
+// The @-dropdown completes filesystem paths in the prompt. Highlight movement,
+// dismissal and acceptance are shared with the slash dropdown in completion.go;
+// what lives here is the trigger, the listing, and Enter.
 //
 // Completion only fires on the trailing token of the input, which is what lets
-// this reuse the slash dropdown's append-and-CursorEnd model instead of
-// splicing at an arbitrary cursor offset.
+// this reuse the append-and-CursorEnd model instead of splicing at an arbitrary
+// cursor offset.
 
 // atFragment returns the path fragment being completed — the text after the
 // leading "@" of the input's trailing token — and whether the input is in a
@@ -126,7 +125,7 @@ func computeAtMatches(value, cwd string) []slashMatch {
 // visibleAtMatches returns the @-dropdown rows to render now, or nil when the
 // dropdown should be hidden.
 func (m Model) visibleAtMatches() []slashMatch {
-	if m.atClosed || m.histIdx >= 0 {
+	if m.atSel.closed || m.histIdx >= 0 {
 		return nil
 	}
 	// A slash line belongs to the slash dropdown. Testing the prefix rather than
@@ -144,84 +143,29 @@ func (m Model) visibleAtMatches() []slashMatch {
 // the precedence between them. cursor is meaningless when matches is empty.
 func (m Model) visibleDropdown() (matches []slashMatch, cursor int) {
 	if slash := m.visibleSlashMatches(); len(slash) > 0 {
-		return slash, m.slashCursor
+		return slash, m.slashSel.cursor
 	}
-	return m.visibleAtMatches(), m.atCursor
+	return m.visibleAtMatches(), m.atSel.cursor
 }
 
 // handleAtDropdownKey handles navigation and acceptance while the @-dropdown is
 // visible. Returns (newModel, handled); when handled is false the caller falls
 // through to the normal idle-key handler.
 //
-// Unlike the slash dropdown, Enter accepts without submitting. Submitting on
-// Enter there is right because the highlighted row is a complete command; here
-// the highlighted row is usually a directory, and sending "@internal/" to the
-// model is never what the keystroke meant.
+// Only Enter differs from the slash dropdown. There, Enter accepts and submits,
+// because the highlighted row is a complete command. Here the highlighted row
+// is usually a directory, and sending "@internal/" to the model is never what
+// the keystroke meant — so Enter accepts and stops, unless there is nothing
+// left to complete.
 func (m Model) handleAtDropdownKey(msg tea.KeyPressMsg, matches []slashMatch) (Model, bool) {
-	if m.atCursor >= len(matches) {
-		m.atCursor = len(matches) - 1
-	}
-	if m.atCursor < 0 {
-		m.atCursor = 0
-	}
-	// A lone space means the highlighted row is a file the user has already
-	// typed in full. Enter there should send the message, not append a space
-	// and make them press Enter twice.
-	nothingToComplete := matches[m.atCursor].Completion == " "
-	switch msg.Code {
-	case tea.KeyUp:
-		if m.atCursor > 0 {
-			m.atCursor--
-		}
-		return m, true
-	case tea.KeyDown:
-		if m.atCursor < len(matches)-1 {
-			m.atCursor++
-		}
-		return m, true
-	case tea.KeyTab:
-		return m.acceptAtCompletion(matches), true
-	case tea.KeyEnter:
-		if nothingToComplete {
+	if msg.Code == tea.KeyEnter {
+		m.atSel.clamp(len(matches))
+		// A lone space means the highlighted row is a file the user has already
+		// typed in full. Submit it rather than making them press Enter twice.
+		if matches[m.atSel.cursor].Completion == " " {
 			return m, false
 		}
-		return m.acceptAtCompletion(matches), true
-	case tea.KeyEscape:
-		m.atClosed = true
-		return m, true
+		return m.acceptCompletion(matches, &m.atSel), true
 	}
-	switch msg.String() {
-	case "ctrl+p":
-		if m.atCursor > 0 {
-			m.atCursor--
-		}
-		return m, true
-	case "ctrl+n":
-		if m.atCursor < len(matches)-1 {
-			m.atCursor++
-		}
-		return m, true
-	case "right":
-		// Only consume Right at end-of-line so cursor movement still works mid-text.
-		if m.inputCursorAtEnd() {
-			return m.acceptAtCompletion(matches), true
-		}
-	}
-	return m, false
-}
-
-// acceptAtCompletion appends the highlighted match's completion suffix to the
-// input and resets the dropdown cursor.
-func (m Model) acceptAtCompletion(matches []slashMatch) Model {
-	if m.atCursor < 0 || m.atCursor >= len(matches) {
-		return m
-	}
-	completion := matches[m.atCursor].Completion
-	if completion == "" {
-		return m
-	}
-	m.input.SetValue(m.input.Value() + completion)
-	m.input.CursorEnd()
-	m.atCursor = 0
-	return m
+	return m.handleCompletionNav(msg, matches, &m.atSel)
 }

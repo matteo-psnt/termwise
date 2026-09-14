@@ -18,10 +18,8 @@ func (m Model) updateInputAndResetSlash(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	if m.input.Value() != prev {
-		m.slashCursor = 0
-		m.slashClosed = false
-		m.atCursor = 0
-		m.atClosed = false
+		m.slashSel.reset()
+		m.atSel.reset()
 	}
 	return m, cmd
 }
@@ -29,7 +27,7 @@ func (m Model) updateInputAndResetSlash(msg tea.Msg) (tea.Model, tea.Cmd) {
 // visibleSlashMatches returns the dropdown rows to render now, or nil if the
 // dropdown should be hidden (no leading slash, no matches, or user-dismissed).
 func (m Model) visibleSlashMatches() []slashMatch {
-	if m.slashClosed || m.histIdx >= 0 {
+	if m.slashSel.closed || m.histIdx >= 0 {
 		return nil
 	}
 	matches, _ := computeSlashMatches(m, m.input.Value())
@@ -40,67 +38,12 @@ func (m Model) visibleSlashMatches() []slashMatch {
 // dropdown is visible. Returns (newModel, handled). When handled is false,
 // the caller should fall through to the normal idle-key handler.
 func (m Model) handleSlashDropdownKey(msg tea.KeyPressMsg, matches []slashMatch) (Model, bool) {
-	if m.slashCursor >= len(matches) {
-		m.slashCursor = len(matches) - 1
-	}
-	if m.slashCursor < 0 {
-		m.slashCursor = 0
-	}
-	switch msg.Code {
-	case tea.KeyUp:
-		if m.slashCursor > 0 {
-			m.slashCursor--
-		}
-		return m, true
-	case tea.KeyDown:
-		if m.slashCursor < len(matches)-1 {
-			m.slashCursor++
-		}
-		return m, true
-	case tea.KeyTab:
-		return m.acceptSlashCompletion(matches), true
-	case tea.KeyEnter:
+	if msg.Code == tea.KeyEnter {
 		// Enter accepts the highlighted match and submits in one step, so a
 		// dropdown selection always executes the right command (not whatever
 		// raw prefix the user typed).
-		m = m.acceptSlashCompletion(matches)
-		return m, false
-	case tea.KeyEscape:
-		m.slashClosed = true
-		return m, true
+		m.slashSel.clamp(len(matches))
+		return m.acceptCompletion(matches, &m.slashSel), false
 	}
-	switch msg.String() {
-	case "ctrl+p":
-		if m.slashCursor > 0 {
-			m.slashCursor--
-		}
-		return m, true
-	case "ctrl+n":
-		if m.slashCursor < len(matches)-1 {
-			m.slashCursor++
-		}
-		return m, true
-	case "right":
-		// Only consume Right at end-of-line so cursor movement still works mid-text.
-		if m.inputCursorAtEnd() {
-			return m.acceptSlashCompletion(matches), true
-		}
-	}
-	return m, false
-}
-
-// acceptSlashCompletion appends the highlighted match's completion suffix to
-// the input and resets the dropdown cursor.
-func (m Model) acceptSlashCompletion(matches []slashMatch) Model {
-	if m.slashCursor < 0 || m.slashCursor >= len(matches) {
-		return m
-	}
-	completion := matches[m.slashCursor].Completion
-	if completion == "" {
-		return m
-	}
-	m.input.SetValue(m.input.Value() + completion)
-	m.input.CursorEnd()
-	m.slashCursor = 0
-	return m
+	return m.handleCompletionNav(msg, matches, &m.slashSel)
 }
