@@ -174,5 +174,3 @@ Local only, under `~/.config/termwise/`:
 ```bash
 go install ./cmd/termwise/...
 ```
-
-The demo GIFs above are reproducible — see [`assets/README.md`](assets/README.md).
