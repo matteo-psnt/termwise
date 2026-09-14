@@ -7,7 +7,19 @@ import (
 	"testing"
 )
 
-func TestMatchesSupportsFlagStyleAndPositionalSubcommands(t *testing.T) {
+// matchesRule drives matchRule the way matchesBuiltin does, so this table keeps
+// covering rule matching now that the exported Matches wrapper is gone.
+func matchesRule(t *testing.T, rule Rule, command string) bool {
+	t.Helper()
+	e := engine()
+	segments, err := e.parseCommand(command)
+	if err != nil || len(segments) != 1 {
+		return false
+	}
+	return e.matchRule(rule, segments[0])
+}
+
+func TestMatchRuleSupportsFlagStyleAndPositionalSubcommands(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -99,8 +111,8 @@ func TestMatchesSupportsFlagStyleAndPositionalSubcommands(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := Matches(tc.rule, tc.command); got != tc.want {
-				t.Fatalf("Matches(%q) = %v, want %v", tc.command, got, tc.want)
+			if got := matchesRule(t, tc.rule, tc.command); got != tc.want {
+				t.Fatalf("matchRule(%q) = %v, want %v", tc.command, got, tc.want)
 			}
 		})
 	}
@@ -617,33 +629,6 @@ func TestNeedsApprovalStructuredShellParsing(t *testing.T) {
 			t.Parallel()
 			if got := NeedsApproval(tc.command); got != tc.want {
 				t.Fatalf("NeedsApproval(%q) = %v, want %v", tc.command, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestBuildRuleFromCommandUsesStructuredTokens(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		command string
-		want    string
-	}{
-		{command: `brew --version`, want: `brew:--version`},
-		{command: `git --no-pager status`, want: `git:status`},
-		{command: `git -C /tmp status`, want: `git:status`},
-		{command: `go -C . env GOMOD`, want: `go:env`},
-		{command: `docker --context prod ps`, want: `docker:ps`},
-		{command: `LC_ALL=C git --no-pager status`, want: `git:status`},
-		{command: `printf ';'`, want: `printf:;`},
-		{command: `printf "ok" | wc -c`, want: ``},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.command, func(t *testing.T) {
-			t.Parallel()
-			if got := BuildRuleFromCommand(tc.command); got != tc.want {
-				t.Fatalf("BuildRuleFromCommand(%q) = %q, want %q", tc.command, got, tc.want)
 			}
 		})
 	}

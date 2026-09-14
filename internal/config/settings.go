@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/models"
@@ -192,14 +191,6 @@ func EffectiveEffort(provider, modelID, configured string) string {
 		return configured
 	}
 	return DefaultEffort
-}
-
-// ValidateEffort returns nil for "" or any of EffortLevels, else an error.
-func ValidateEffort(val string) error {
-	if val == "" || slices.Contains(EffortLevels, val) {
-		return nil
-	}
-	return fmt.Errorf("unknown effort %q — valid values: %s", val, strings.Join(EffortLevels, ", "))
 }
 
 // ResolveBoolSetting returns the effective boolean value for a setting by key,

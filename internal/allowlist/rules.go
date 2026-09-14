@@ -25,42 +25,6 @@ type allowlistFile struct {
 	Rules []Rule `yaml:"rules"`
 }
 
-// Parse parses an allow-list rule string into a Rule. The second return is
-// false when the input is empty or unparseable.
-func Parse(s string) (Rule, bool) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return Rule{}, false
-	}
-
-	parts := strings.SplitN(s, ":", 3)
-	rule := Rule{Cmd: parts[0]}
-
-	for _, part := range parts[1:] {
-		items := strings.Split(part, ",")
-		if len(items) == 0 {
-			continue
-		}
-		if strings.HasPrefix(strings.TrimSpace(items[0]), "!") {
-			for _, item := range items {
-				item = strings.TrimSpace(item)
-				if strings.HasPrefix(item, "!") {
-					rule.Deny.Flags = append(rule.Deny.Flags, item[1:])
-				}
-			}
-			continue
-		}
-		for _, item := range items {
-			item = strings.TrimSpace(item)
-			if item != "" {
-				rule.Allow.Subcommands = append(rule.Allow.Subcommands, item)
-			}
-		}
-	}
-
-	return rule, true
-}
-
 func matchesAllowedSubcommand(rule Rule, args []string) bool {
 	if len(rule.Allow.Subcommands) == 0 {
 		return true
@@ -84,16 +48,6 @@ func subcommandCandidates(rule Rule, args []string) []string {
 		out = append(out, sub)
 	}
 	return out
-}
-
-func preferredRuleSubcommand(rule Rule, args []string) string {
-	if sub := firstPositional(rule, args); sub != "" {
-		return sub
-	}
-	if len(args) > 0 {
-		return args[0]
-	}
-	return ""
 }
 
 func firstPositional(rule Rule, args []string) string {

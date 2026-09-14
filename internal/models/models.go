@@ -35,18 +35,21 @@ type modelsFile struct {
 // ----------------------------------------------------------------------------
 
 var (
-	once    sync.Once
-	loaded  modelsFile
-	loadErr error
+	once   sync.Once
+	loaded modelsFile
 )
 
 //go:embed models.yaml
 var builtinModelsYAML []byte
 
+// load parses the embedded catalog once. models.yaml is compiled in, so a parse
+// failure is a bug in the file rather than anything a user can hit or fix — and
+// swallowing it would leave every lookup silently empty. Panicking surfaces it
+// on the first test run instead.
 func load() {
 	once.Do(func() {
 		if err := yaml.Unmarshal(builtinModelsYAML, &loaded); err != nil {
-			loadErr = fmt.Errorf("failed to parse embedded models.yaml: %w", err)
+			panic(fmt.Sprintf("embedded models.yaml is malformed: %v", err))
 		}
 	})
 }
@@ -90,21 +93,4 @@ func Find(provider, modelID string) *ModelData {
 		}
 	}
 	return nil
-}
-
-// KnownProviders returns the list of provider names in models.yaml.
-func KnownProviders() []string {
-	load()
-	names := make([]string, 0, len(loaded.Providers))
-	for k := range loaded.Providers {
-		names = append(names, k)
-	}
-	return names
-}
-
-// LoadErr returns any error encountered parsing the embedded models.yaml.
-// This should only ever be non-nil if the embedded file is malformed (a bug).
-func LoadErr() error {
-	load()
-	return loadErr
 }
