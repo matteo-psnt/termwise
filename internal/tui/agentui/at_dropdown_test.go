@@ -1,6 +1,7 @@
 package agentui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -123,19 +124,31 @@ func TestAtFragment(t *testing.T) {
 }
 
 // atModel builds an idle model whose input already holds value, with cwd
-// pointed at the fixture tree.
+// pointed at the fixture tree. The contexts are the ones submitMessage needs,
+// so a key that falls through to submit does not panic.
 func atModel(t *testing.T, value, cwd string, suggestion string) Model {
 	t.Helper()
 	ta := textarea.New()
 	ta.SetValue(value)
 	ta.CursorEnd()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	suggestionCtx, suggestionCancel := context.WithCancel(context.Background())
+	t.Cleanup(suggestionCancel)
+
 	return Model{
 		shell: shell{
-			input:      ta,
-			cwd:        cwd,
-			suggestion: suggestion,
-			histIdx:    -1,
-			vp:         viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
+			input:            ta,
+			cwd:              cwd,
+			suggestion:       suggestion,
+			histIdx:          -1,
+			ctx:              ctx,
+			cancel:           cancel,
+			suggestionCtx:    suggestionCtx,
+			suggestionCancel: suggestionCancel,
+			contextWindow:    32_000,
+			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
 		state: stateIdle,
 	}
@@ -178,5 +191,46 @@ func TestEnterSubmitsOnceTheDropdownIsClosed(t *testing.T) {
 	m := atModel(t, "explain @main.go ", atTestTree(t), "")
 	if matches := m.visibleAtMatches(); len(matches) != 0 {
 		t.Fatalf("dropdown still open after a completed file: %v", labels(matches))
+	}
+}
+
+// Typing a filename in full leaves the dropdown open on a row with nothing
+// left to complete. Enter there must send the message rather than append a
+// space and demand a second Enter.
+func TestEnterSubmitsWhenPathIsAlreadyComplete(t *testing.T) {
+	m := atModel(t, "explain @main.go", atTestTree(t), "")
+
+	gotModel, _ := idleMode{}.handleKey(m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	got := gotModel.(Model)
+
+	if len(got.messages) != 1 {
+		t.Fatalf("Enter produced %d message(s), want 1 — it should submit", len(got.messages))
+	}
+	if got.messages[0].Content != "explain @main.go" {
+		t.Fatalf("submitted %q, want the untouched prompt", got.messages[0].Content)
+	}
+}
+
+// Tab on that same row still completes, appending the trailing space that ends
+// the token.
+func TestTabStillCompletesAnAlreadyCompletePath(t *testing.T) {
+	m := atModel(t, "explain @main.go", atTestTree(t), "")
+
+	gotModel, _ := idleMode{}.handleKey(m, tea.KeyPressMsg{Code: tea.KeyTab})
+	got := gotModel.(Model)
+
+	if v := got.input.Value(); v != "explain @main.go " {
+		t.Fatalf("Tab gave %q, want a trailing space", v)
+	}
+	if len(got.messages) != 0 {
+		t.Fatalf("Tab submitted %d message(s); want none", len(got.messages))
+	}
+}
+
+// A slash line belongs to the slash dropdown, so @ completion stays out of it.
+func TestSlashLineGetsNoPathCompletion(t *testing.T) {
+	m := atModel(t, "/model @int", atTestTree(t), "")
+	if matches := m.visibleAtMatches(); len(matches) != 0 {
+		t.Fatalf("@ dropdown opened on a slash line: %v", labels(matches))
 	}
 }

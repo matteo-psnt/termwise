@@ -129,9 +129,11 @@ func (m Model) visibleAtMatches() []slashMatch {
 	if m.atClosed || m.histIdx >= 0 {
 		return nil
 	}
-	// The slash dropdown wins when both could match, so "/cmd @path" completes
-	// the command first.
-	if len(m.visibleSlashMatches()) > 0 {
+	// A slash line belongs to the slash dropdown. Testing the prefix rather than
+	// calling visibleSlashMatches keeps this off the LoadConfig path that
+	// computeSlashMatches walks for arg completion — this runs per keystroke,
+	// from several call sites per frame.
+	if strings.HasPrefix(m.input.Value(), "/") {
 		return nil
 	}
 	return computeAtMatches(m.input.Value(), m.cwd)
@@ -162,6 +164,10 @@ func (m Model) handleAtDropdownKey(msg tea.KeyPressMsg, matches []slashMatch) (M
 	if m.atCursor < 0 {
 		m.atCursor = 0
 	}
+	// A lone space means the highlighted row is a file the user has already
+	// typed in full. Enter there should send the message, not append a space
+	// and make them press Enter twice.
+	nothingToComplete := matches[m.atCursor].Completion == " "
 	switch msg.Code {
 	case tea.KeyUp:
 		if m.atCursor > 0 {
@@ -173,7 +179,12 @@ func (m Model) handleAtDropdownKey(msg tea.KeyPressMsg, matches []slashMatch) (M
 			m.atCursor++
 		}
 		return m, true
-	case tea.KeyTab, tea.KeyEnter:
+	case tea.KeyTab:
+		return m.acceptAtCompletion(matches), true
+	case tea.KeyEnter:
+		if nothingToComplete {
+			return m, false
+		}
 		return m.acceptAtCompletion(matches), true
 	case tea.KeyEscape:
 		m.atClosed = true
