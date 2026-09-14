@@ -18,7 +18,7 @@ type Renderer struct {
 	glamour *glamour.TermRenderer
 }
 
-func newRenderer(hasDarkBg bool, palette theme.Palette) Renderer {
+func newRenderer(hasDarkBg bool, palette theme.Palette, width int) Renderer {
 	cfg := styles.LightStyleConfig
 	if hasDarkBg {
 		cfg = styles.DarkStyleConfig
@@ -37,7 +37,12 @@ func newRenderer(hasDarkBg bool, palette theme.Palette) Renderer {
 	cfg.H5.Prefix = ""
 	cfg.H6.Prefix = ""
 
-	gr, _ := glamour.NewTermRenderer(glamour.WithStyles(cfg), glamour.WithWordWrap(0))
+	// Wrap to the viewport. WithWordWrap(0) disables wrapping entirely, which
+	// left every paragraph longer than the pane clipped mid-word at the right
+	// edge — the text was not just unwrapped, it was gone. Width is 0 before the
+	// first WindowSizeMsg; glamour treats that as "no wrapping", which is the
+	// right behaviour until the real width arrives and the renderer is rebuilt.
+	gr, _ := glamour.NewTermRenderer(glamour.WithStyles(cfg), glamour.WithWordWrap(width))
 	return Renderer{
 		styles:  newStyles(hasDarkBg, palette),
 		glamour: gr,
@@ -63,6 +68,12 @@ func (r Renderer) RenderThread(entries []ThreadEntry) string {
 type ThreadEntry interface {
 	render(r Renderer) string
 }
+
+// threadGutter is the width every thread entry is indented by — the "◆ " or
+// "› " symbol and the hanging indent that lines continuation up under it. Wrap
+// width has to account for it or wrapped lines overrun the pane by exactly this
+// much.
+const threadGutter = 2
 
 // UserEntry is a message typed by the user.
 type UserEntry struct{ Content string }

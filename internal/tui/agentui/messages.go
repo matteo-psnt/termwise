@@ -14,6 +14,7 @@ import (
 	"github.com/matteo-psnt/termwise/internal/allowlist"
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/provider"
+	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
 type judgmentMsg struct {
@@ -47,8 +48,22 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 		m.vp.SetHeight(vpH)
 	}
 	m.input.SetWidth(vpW - 4)
+	// glamour fixes the wrap width when the renderer is built, so a resize needs
+	// a new one or the thread keeps wrapping to the old terminal.
+	m.renderer = newRenderer(m.hasDarkBg, theme.Get(m.themeName), m.renderWidth())
 	m.refreshViewport()
 	return m, nil
+}
+
+// renderWidth is the column budget for rendered markdown: the viewport, less
+// the gutter the thread indents entries by. Zero before the first
+// WindowSizeMsg, which glamour reads as "do not wrap yet".
+func (m Model) renderWidth() int {
+	vpW, _ := m.viewportDims()
+	if vpW <= threadGutter {
+		return 0
+	}
+	return vpW - threadGutter
 }
 
 func (m Model) handleSpinnerTick(msg spinner.TickMsg) (tea.Model, tea.Cmd) {

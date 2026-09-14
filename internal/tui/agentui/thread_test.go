@@ -11,7 +11,8 @@ import (
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
-func testRenderer() Renderer { return newRenderer(true, theme.Get("forest")) }
+// Width 0 keeps these tests about structure rather than wrapping.
+func testRenderer() Renderer { return newRenderer(true, theme.Get("forest"), 0) }
 
 // indentOf reports the leading-space count of a rendered line, ignoring colour.
 func indentOf(line string) int {
@@ -134,12 +135,39 @@ func TestAutoAcceptedToolCallIsAnnounced(t *testing.T) {
 // system prompt.
 func TestMarkdownHeadingsRenderWithoutLiteralHashes(t *testing.T) {
 	for _, dark := range []bool{false, true} {
-		r := newRenderer(dark, theme.Get("forest"))
+		r := newRenderer(dark, theme.Get("forest"), 0)
 		out := stripANSI(renderMarkdown("# One\n\n## Two\n\n### Three\n\nbody\n", r.glamour))
 		for _, bad := range []string{"## ", "### "} {
 			if strings.Contains(out, bad) {
 				t.Errorf("dark=%v: rendered markdown still contains %q:\n%s", dark, bad, out)
 			}
 		}
+	}
+}
+
+// Long prose used to be clipped mid-word at the right edge rather than wrapped:
+// the renderer was built with WithWordWrap(0) and nothing else wrapped, so the
+// tail of every long paragraph was simply not drawn.
+func TestLongProseWrapsToTheRenderWidth(t *testing.T) {
+	const width = 40
+	r := newRenderer(true, theme.Get("forest"), width)
+
+	long := "Essentially it is a simple session manager that keeps track of " +
+		"logged-in users and automatically expires them after thirty minutes."
+	out := stripANSI(renderMarkdown(long, r.glamour))
+
+	var longest int
+	for _, line := range strings.Split(out, "\n") {
+		if n := len([]rune(strings.TrimRight(line, " "))); n > longest {
+			longest = n
+		}
+	}
+	if longest > width {
+		t.Errorf("longest rendered line is %d columns, want <= %d", longest, width)
+	}
+	// Wrapping must not cost any words.
+	flat := strings.Join(strings.Fields(out), " ")
+	if !strings.Contains(flat, "expires them after thirty minutes.") {
+		t.Errorf("tail of the paragraph went missing; got %q", flat)
 	}
 }

@@ -145,7 +145,7 @@ func newModel(cfg modelConfig) Model {
 		cancel:           cancel,
 		suggestionCtx:    suggestionCtx,
 		suggestionCancel: suggestionCancel,
-		renderer:         newRenderer(cfg.hasDarkBg, theme.Get(cfg.themeName)),
+		renderer:         newRenderer(cfg.hasDarkBg, theme.Get(cfg.themeName), 0),
 		hasDarkBg:        cfg.hasDarkBg,
 		themeName:        cfg.themeName,
 		closeKey:         cfg.closeKey,
@@ -391,7 +391,7 @@ func (m *Model) persistActiveModel() {
 // applyTheme rebuilds the renderer with the given theme name.
 func (m *Model) applyTheme(name string) {
 	m.themeName = name
-	m.renderer = newRenderer(m.hasDarkBg, theme.Get(name))
+	m.renderer = newRenderer(m.hasDarkBg, theme.Get(name), m.renderWidth())
 	m.input.SetStyles(inputStyles(m.hasDarkBg, m.renderer.styles.Suggestion))
 }
 
