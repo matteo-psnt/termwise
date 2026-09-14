@@ -37,6 +37,32 @@ func ToBash(kb string) string {
 	return kb
 }
 
+// ToFish converts a stored zsh bindkey string to a fish 4 key name, e.g.
+// "^T" → "ctrl-t", "\\ef" → "alt-f", "\\e[15~" → "f5".
+//
+// fish 4 dropped the \\ck escape form: `bind '\\ck'` there binds the three-key
+// sequence backslash, c, k rather than Ctrl+K, so only the named form works.
+// Label already resolves every sequence termwise can store into "Ctrl+T" /
+// "Alt+F" / "F5" shape, which is the fish name modulo case and separator.
+//
+// Returns ok=false when the binding has no fish equivalent — Label echoes back
+// anything it does not recognise, and echoing that at fish would bind garbage.
+func ToFish(kb string) (string, bool) {
+	label := Label(kb)
+	if label == kb && !strings.HasPrefix(kb, "^") {
+		return "", false
+	}
+	name := strings.ToLower(strings.ReplaceAll(label, "+", "-"))
+	for _, r := range name {
+		isLower := r >= 'a' && r <= 'z'
+		isDigit := r >= '0' && r <= '9'
+		if !isLower && !isDigit && r != '-' {
+			return "", false
+		}
+	}
+	return name, true
+}
+
 // zshLabelMap is built at init from keySeqTable + codeLabel.
 var zshLabelMap map[string]string
 
