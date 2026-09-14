@@ -10,10 +10,10 @@ func (m Model) openSlashPicker(cmd, title, subtitle string, options []slashOptio
 	return m, nil
 }
 
-// updateInputAndResetSlash forwards the key to the textinput, and clears the
-// transient slash dropdown state (cursor + dismissed flag) whenever the input
-// value changes.
-func (m Model) updateInputAndResetSlash(msg tea.Msg) (tea.Model, tea.Cmd) {
+// updateInputAndResetCompletions forwards the key to the textinput, and clears
+// the transient state of both completion dropdowns (cursor + dismissed flag)
+// whenever the input value changes.
+func (m Model) updateInputAndResetCompletions(msg tea.Msg) (tea.Model, tea.Cmd) {
 	prev := m.input.Value()
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)

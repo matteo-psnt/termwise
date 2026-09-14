@@ -53,9 +53,11 @@ func (c *completionState) navigate(msg tea.KeyPressMsg, n int) bool {
 
 // handleCompletionNav applies the keys both dropdowns treat the same way:
 // moving the highlight, dismissing with Esc, and accepting with Tab or with
-// Right at end-of-line. Returns handled=false for any key the caller has to
-// decide on itself — in practice Enter, which is the one key whose meaning
-// differs between the two.
+// Right at end-of-line. Returns handled=false for anything else, so ordinary
+// typing reaches the input.
+//
+// Callers deal with Enter before delegating here — it is the one key that means
+// different things in the two dropdowns — so this never sees it.
 func (m Model) handleCompletionNav(msg tea.KeyPressMsg, matches []slashMatch, sel *completionState) (Model, bool) {
 	sel.clamp(len(matches))
 	if sel.navigate(msg, len(matches)) {
@@ -89,4 +91,14 @@ func (m Model) acceptCompletion(matches []slashMatch, sel *completionState) Mode
 	m.input.CursorEnd()
 	sel.cursor = 0
 	return m
+}
+
+// visibleDropdown returns the rows and highlight index for whichever completion
+// dropdown is open, so the layout and render sites do not each have to restate
+// the precedence between them. cursor is meaningless when matches is empty.
+func (m Model) visibleDropdown() (matches []slashMatch, cursor int) {
+	if slash := m.visibleSlashMatches(); len(slash) > 0 {
+		return slash, m.slashSel.cursor
+	}
+	return m.visibleAtMatches(), m.atSel.cursor
 }

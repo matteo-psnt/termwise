@@ -138,16 +138,6 @@ func (m Model) visibleAtMatches() []slashMatch {
 	return computeAtMatches(m.input.Value(), m.cwd)
 }
 
-// visibleDropdown returns the rows and highlight index for whichever completion
-// dropdown is open, so the layout and render sites do not each have to restate
-// the precedence between them. cursor is meaningless when matches is empty.
-func (m Model) visibleDropdown() (matches []slashMatch, cursor int) {
-	if slash := m.visibleSlashMatches(); len(slash) > 0 {
-		return slash, m.slashSel.cursor
-	}
-	return m.visibleAtMatches(), m.atSel.cursor
-}
-
 // handleAtDropdownKey handles navigation and acceptance while the @-dropdown is
 // visible. Returns (newModel, handled); when handled is false the caller falls
 // through to the normal idle-key handler.

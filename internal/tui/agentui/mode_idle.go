@@ -102,7 +102,7 @@ func (idleMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.suggestion = ""
 			return m, nil
 		}
-		return m.updateInputAndResetSlash(msg)
+		return m.updateInputAndResetCompletions(msg)
 	}
 
 	if newM, cmd, ok := idleKeys.handle(m, msg); ok {
@@ -113,7 +113,7 @@ func (idleMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.histIdx >= 0 {
 		m.cancelHistoryNav()
 	}
-	return m.updateInputAndResetSlash(msg)
+	return m.updateInputAndResetCompletions(msg)
 }
 
 // idleEsc implements the two-tap Esc gesture: the first Esc arms a 500ms timer
