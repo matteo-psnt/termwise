@@ -83,15 +83,42 @@ func LoadAndResolve(path string) (FileConfig, ResolvedConfig, error) {
 	if !exists {
 		var ok bool
 		cfg, ok = ZeroConfigDefaults()
-		if !ok {
+		if !ok && os.Getenv(EnvProvider) == "" {
 			return FileConfig{}, ResolvedConfig{}, fmt.Errorf("%w — run `%s config` to set up, or export an API key such as ANTHROPIC_API_KEY or OPENAI_API_KEY", ErrNoConfig, cliname.Name())
 		}
+	}
+	if err := applyEnvOverrides(&cfg); err != nil {
+		return FileConfig{}, ResolvedConfig{}, err
 	}
 	if err := ValidateForRuntime(cfg); err != nil {
 		return FileConfig{}, ResolvedConfig{}, err
 	}
 	rc, err := Resolve(cfg)
 	return cfg, rc, err
+}
+
+// Environment variables that override the config file for one run, so a
+// script or CI job can pick a provider and model without writing config.
+const (
+	EnvProvider = "TERMWISE_PROVIDER"
+	EnvModel    = "TERMWISE_MODEL"
+)
+
+// applyEnvOverrides applies TERMWISE_PROVIDER and TERMWISE_MODEL to cfg in
+// memory. A provider with no block in the file gets the same defaults
+// `config use` would write.
+func applyEnvOverrides(cfg *FileConfig) error {
+	if name := os.Getenv(EnvProvider); name != "" {
+		if err := UseProvider(cfg, name); err != nil {
+			return fmt.Errorf("%s: %w", EnvProvider, err)
+		}
+	}
+	if model := os.Getenv(EnvModel); model != "" && cfg.SelectedProvider != "" {
+		pc := cfg.Providers[cfg.SelectedProvider]
+		pc.Model = model
+		SetProvider(cfg, cfg.SelectedProvider, pc)
+	}
+	return nil
 }
 
 // LoadRuntimeConfig loads the config file, falls back to zero-config defaults
@@ -237,9 +264,16 @@ func DefaultKeychainEntry(providerName string) string {
 	return "termwise-" + providerName
 }
 
-// StoreKeychain writes an API key into the macOS Keychain under the termwise service.
+// StoreKeychain writes an API key into the system keychain under the termwise
+// service, at the provider's default entry.
 func StoreKeychain(providerName, apiKey string) error {
-	return keyring.Set("termwise", DefaultKeychainEntry(providerName), apiKey)
+	return StoreKeychainEntry(DefaultKeychainEntry(providerName), apiKey)
+}
+
+// StoreKeychainEntry writes an API key into the system keychain under the
+// termwise service.
+func StoreKeychainEntry(entry, apiKey string) error {
+	return keyring.Set("termwise", entry, apiKey)
 }
 
 // ListProviderModels returns the models available for the given provider config.

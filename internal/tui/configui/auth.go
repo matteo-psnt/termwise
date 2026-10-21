@@ -33,11 +33,12 @@ type authInputConfig struct {
 // instead of credentials.
 func buildAuthInputConfig(providerName, method string) authInputConfig {
 	if provider.HasNoAuth(providerName) {
+		url := serverURL(providerName)
 		return authInputConfig{
-			Label:       "Base URL",
-			Hint:        "leave blank for default (" + defaultOllamaBaseURL + ")",
-			Fallback:    defaultOllamaBaseURL,
-			Placeholder: defaultOllamaBaseURL,
+			Label:       "Server address",
+			Hint:        "leave blank for default (" + url + ")",
+			Fallback:    url,
+			Placeholder: url,
 		}
 	}
 	switch method {

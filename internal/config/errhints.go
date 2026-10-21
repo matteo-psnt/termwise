@@ -13,11 +13,18 @@ import (
 // keyPages is where each provider issues API keys, so an auth failure can say
 // where to get a new one.
 var keyPages = map[string]string{
-	"anthropic": "https://console.anthropic.com/settings/keys",
-	"openai":    "https://platform.openai.com/api-keys",
-	"groq":      "https://console.groq.com/keys",
-	"deepseek":  "https://platform.deepseek.com/api_keys",
-	"mistral":   "https://console.mistral.ai/api-keys",
+	"anthropic":  "https://console.anthropic.com/settings/keys",
+	"openai":     "https://platform.openai.com/api-keys",
+	"groq":       "https://console.groq.com/keys",
+	"deepseek":   "https://platform.deepseek.com/api_keys",
+	"mistral":    "https://console.mistral.ai/api-keys",
+	"openrouter": "https://openrouter.ai/settings/keys",
+}
+
+// startHints says how to start each self-hosted server.
+var startHints = map[string]string{
+	"ollama":   "Start it with `ollama serve`",
+	"lmstudio": "Start its server from LM Studio's Developer tab or with `lms server start`",
 }
 
 // hintingClient rewrites provider errors into messages that say what failed
@@ -85,13 +92,17 @@ func explainError(rc ResolvedConfig, err error) error {
 }
 
 func connectionReason(rc ResolvedConfig, name, cmd string, err error) string {
-	if rc.ProviderName == "ollama" {
-		where := "http://localhost:11434"
+	if info, ok := provider.Lookup(rc.ProviderName); ok && info.NoAuth {
+		where := info.ServerURL
 		if rc.BaseURL != "" {
 			where = rc.BaseURL
 		}
-		return fmt.Sprintf("Can't reach Ollama at %s — is it running?\n  Start it with `ollama serve`, or run `%s config` if it lives at another address.",
-			where, cmd)
+		start := startHints[rc.ProviderName]
+		if start == "" {
+			start = "Start it"
+		}
+		return fmt.Sprintf("Can't reach %s at %s — is it running?\n  %s, or run `%s config` if it lives at another address.",
+			name, where, start, cmd)
 	}
 	reason := "Can't reach " + name
 	if rc.BaseURL != "" {

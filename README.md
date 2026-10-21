@@ -101,8 +101,41 @@ exported is marked and selected for you.
 If `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or another provider's key is already
 exported, termwise works with no config file at all, using that provider's
 recommended model; the TUI says which one it picked. Anthropic, OpenAI,
-Groq, DeepSeek and Mistral are built in, plus **Ollama** if you'd rather nothing
-left the machine.
+Groq, DeepSeek, Mistral and OpenRouter are built in, plus **Ollama** and
+**LM Studio** if you'd rather nothing left the machine.
+
+If something isn't working, `tw config doctor` checks the config, makes a
+live request to the provider, and checks that `termwise` is on your `PATH` and
+the shell integration is loaded.
+
+### Setting up from a script
+
+Everything the setup screen does has a non-interactive form, for dotfiles and
+provisioning:
+
+```bash
+termwise config use anthropic                      # default key env var and model
+termwise config use openai --model gpt-4o --env-var WORK_OPENAI_KEY
+termwise config use ollama --base-url http://gpu-box:11434 --model qwen3:14b
+op read op://dev/anthropic/key | termwise config auth keychain --store
+termwise init --install
+```
+
+`config base-url` points the current provider at any OpenAI-compatible server
+(LiteLLM, vLLM, a remote Ollama); `--reset` restores the default.
+
+For a single run — CI, or trying another model — `TERMWISE_PROVIDER` and
+`TERMWISE_MODEL` override the config file without touching it:
+
+```bash
+TERMWISE_PROVIDER=groq TERMWISE_MODEL=llama-3.3-70b-versatile tw ask "…"
+```
+
+### Completions
+
+Homebrew installs completions for bash, zsh and fish. Otherwise generate them
+with `termwise completion <shell>` (see `termwise completion --help`). Once
+they are loaded, `tw` completes the same way `termwise` does.
 
 ---
 

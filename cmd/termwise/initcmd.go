@@ -177,7 +177,7 @@ tw() {
                 command termwise explain --session-id "$$" "$@"
                 return
                 ;;
-            config|init|help|--help|-h)
+            config|init|help|--help|-h|completion|__complete|__completeNoDesc)
                 command termwise "$@"
                 return
                 ;;
@@ -204,6 +204,11 @@ _termwise_widget() {
     zle reset-prompt
 }
 zle -N _termwise_widget
+# Complete tw like termwise, when completion is set up. The tw function passes
+# __complete through, which is what the completion script calls.
+if (( $+functions[compdef] )); then
+    compdef tw=termwise
+fi
 # Remove any previous _termwise_widget binding before applying the configured one.
 while IFS= read -r _tw_key; do
     bindkey -r "$_tw_key"
@@ -219,7 +224,7 @@ func bashSetup(binding string) string {
 export TERMWISE_INVOKED_AS=tw
 tw() {
     case "$1" in
-        ask|config|init|help|--help|-h)
+        ask|config|init|help|--help|-h|completion|__complete|__completeNoDesc)
             command termwise "$@"
             return
             ;;
@@ -248,6 +253,15 @@ _termwise_widget() {
         READLINE_POINT=${#READLINE_LINE}
     fi
 }
+# Complete tw like termwise. bash-completion loads scripts lazily, so ask it
+# for termwise's now; without bash-completion this is a no-op.
+if declare -F _completion_loader >/dev/null; then
+    _completion_loader termwise 2>/dev/null
+fi
+if declare -F __start_termwise >/dev/null; then
+    complete -o default -F __start_termwise tw
+fi
+
 # Remove any previous _termwise_widget binding before applying the configured one.
 while IFS= read -r _tw_key; do
     bind -r "\"$_tw_key\"" 2>/dev/null
@@ -269,7 +283,7 @@ func fishSetup(binding string) string {
 set -gx TERMWISE_INVOKED_AS tw
 function tw --description 'termwise'
     switch "$argv[1]"
-        case ask config init help --help -h
+        case ask config init help --help -h completion __complete __completeNoDesc
             command termwise $argv
             return
         case explain
@@ -282,6 +296,8 @@ function tw --description 'termwise'
         command termwise --session-id $fish_pid
     end
 end
+
+complete -c tw -w termwise
 
 function _termwise_widget
     # string collect keeps a multi-line result as one value; $pipestatus[2] is

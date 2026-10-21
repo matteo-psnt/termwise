@@ -18,6 +18,8 @@ type compatProvider struct {
 	// apiPath is appended to a user-supplied base URL that has no path, so
 	// the server's address as users know it (http://host:11434) still works.
 	apiPath string
+	// serverURL is that address for the default server; see provider.Info.
+	serverURL string
 }
 
 var compatProviders = []compatProvider{
@@ -25,7 +27,9 @@ var compatProviders = []compatProvider{
 	{name: "groq", displayName: "Groq", defaultEnvVar: "GROQ_API_KEY", defaultURL: "https://api.groq.com/openai/v1"},
 	{name: "deepseek", displayName: "DeepSeek", defaultEnvVar: "DEEPSEEK_API_KEY", defaultURL: "https://api.deepseek.com"},
 	{name: "mistral", displayName: "Mistral", defaultEnvVar: "MISTRAL_API_KEY", defaultURL: "https://api.mistral.ai/v1"},
-	{name: "ollama", displayName: "Ollama (local)", defaultEnvVar: "", defaultURL: "http://localhost:11434/v1", noAuth: true, apiPath: "/v1"},
+	{name: "openrouter", displayName: "OpenRouter", defaultEnvVar: "OPENROUTER_API_KEY", defaultURL: "https://openrouter.ai/api/v1"},
+	{name: "ollama", displayName: "Ollama (local)", defaultURL: "http://localhost:11434/v1", noAuth: true, apiPath: "/v1", serverURL: "http://localhost:11434"},
+	{name: "lmstudio", displayName: "LM Studio (local)", defaultURL: "http://localhost:1234/v1", noAuth: true, apiPath: "/v1", serverURL: "http://localhost:1234"},
 }
 
 func init() {
@@ -35,6 +39,7 @@ func init() {
 			DisplayName:   p.displayName,
 			DefaultEnvVar: p.defaultEnvVar,
 			NoAuth:        p.noAuth,
+			ServerURL:     p.serverURL,
 			Factory: func(cfg provider.Config) (provider.AgentClient, error) {
 				if cfg.BaseURL != "" && p.apiPath != "" {
 					cfg.BaseURL = withAPIPath(cfg.BaseURL, p.apiPath)

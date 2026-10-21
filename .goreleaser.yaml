@@ -5,6 +5,8 @@ version: 2
 before:
   hooks:
     - go mod tidy
+    # Shell completions ship in the archive so the formula can install them.
+    - sh -c 'mkdir -p completions && for sh in bash zsh fish; do go run ./cmd/termwise completion "$sh" > "completions/termwise.$sh"; done'
 
 builds:
   - id: termwise
@@ -21,6 +23,10 @@ archives:
     # Keep the conventional <name>_<os>_<arch> layout Homebrew and curl scripts expect.
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE
+      - README.md
+      - completions/*
 
 checksum:
   name_template: checksums.txt
@@ -52,13 +58,15 @@ brews:
     homepage: https://github.com/matteo-psnt/termwise
     description: A terminal assistant for command generation and quick answers
     license: MIT
+    install: |
+      bin.install "termwise"
+      bash_completion.install "completions/termwise.bash" => "termwise"
+      zsh_completion.install "completions/termwise.zsh" => "_termwise"
+      fish_completion.install "completions/termwise.fish"
     test: |
       system "#{bin}/termwise", "--version"
     caveats: |
-      Add the shell integration to your rc file:
-        eval "$(termwise init zsh)"     # ~/.zshrc
-        eval "$(termwise init bash)"    # ~/.bashrc
-        termwise init fish | source     # ~/.config/fish/config.fish
+      Add the `tw` command and its keybinding to your shell:
+        termwise init --install
 
-      Then choose a provider:
-        tw config
+      Then run `termwise` — it walks you through choosing a provider.
