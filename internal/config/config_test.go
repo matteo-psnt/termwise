@@ -506,3 +506,27 @@ func assertEqual(t *testing.T, label, want, got string) {
 		t.Errorf("%s: want %q, got %q", label, want, got)
 	}
 }
+
+func TestEnvOnlyNotice(t *testing.T) {
+	for _, p := range ProviderInfos() {
+		if p.DefaultEnvVar != "" {
+			t.Setenv(p.DefaultEnvVar, "")
+		}
+	}
+	missing := filepath.Join(t.TempDir(), "config.toml")
+
+	if got := EnvOnlyNotice(missing); got != "" {
+		t.Errorf("no file, no key: got %q, want empty", got)
+	}
+
+	t.Setenv("OPENAI_API_KEY", "sk-oai")
+	got := EnvOnlyNotice(missing)
+	if !strings.Contains(got, "OpenAI") || !strings.Contains(got, "$OPENAI_API_KEY") {
+		t.Errorf("env-only notice = %q, want it to name OpenAI and $OPENAI_API_KEY", got)
+	}
+
+	present := writeConfig(t, `selected_provider = "openai"`)
+	if got := EnvOnlyNotice(present); got != "" {
+		t.Errorf("config file exists: got %q, want empty", got)
+	}
+}

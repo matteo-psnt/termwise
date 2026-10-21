@@ -252,6 +252,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		}
 		wiz := newWizardModel(m.hasDarkBg, theme.Normalize(m.cfg.Settings.Theme))
 		wiz.exclude = exclude
+		wiz = wiz.preselectDetected()
 		m.addWizard = &wiz
 		return m, m.addWizard.Init()
 

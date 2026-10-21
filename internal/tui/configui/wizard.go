@@ -13,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
@@ -102,6 +103,18 @@ func (m wizardModel) availableProviders() []config.ProviderInfo {
 	return out
 }
 
+// preselectDetected moves the cursor to the first provider whose API key is
+// already in the environment, so the common case is a single enter press.
+func (m wizardModel) preselectDetected() wizardModel {
+	for i, p := range m.availableProviders() {
+		if envVarDetected(p.Name) {
+			m.cursor = i
+			break
+		}
+	}
+	return m
+}
+
 func (m wizardModel) selectedProvider() (config.ProviderInfo, bool) {
 	providers := m.availableProviders()
 	if len(providers) == 0 || m.cursor < 0 || m.cursor >= len(providers) {
@@ -143,7 +156,7 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.apiModels = msg.models
-		m.cursor = 0
+		m.cursor = defaultModelIndex(m.provider, msg.models)
 		m.step = wizPickModel
 		return m, nil
 
@@ -424,12 +437,21 @@ func (m wizardModel) renderInner() string {
 			b.WriteString(m.styles.Dim.Render("q quit"))
 			break
 		}
+		detected := false
 		for i, p := range providers {
-			if i == m.cursor {
-				b.WriteString(m.styles.Selected.Render("▶ "+p.DisplayName) + "\n")
-			} else {
-				b.WriteString(m.styles.Normal.Render("  "+p.DisplayName) + "\n")
+			badge := ""
+			if envVarDetected(p.Name) {
+				badge = "  " + m.styles.Success.Render("●")
+				detected = true
 			}
+			if i == m.cursor {
+				b.WriteString(m.styles.Selected.Render("▶ "+p.DisplayName) + badge + "\n")
+			} else {
+				b.WriteString(m.styles.Normal.Render("  "+p.DisplayName) + badge + "\n")
+			}
+		}
+		if detected {
+			b.WriteString("\n" + m.styles.Hint.Render("● API key found in your environment"))
 		}
 		b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   q quit"))
 
@@ -451,12 +473,25 @@ func (m wizardModel) renderInner() string {
 
 	case wizPickModel:
 		b.WriteString("Choose a model:\n\n")
-		for i, mod := range m.apiModels {
-			if i == m.cursor {
-				b.WriteString(m.styles.Selected.Render("▶ "+mod.ID) + "\n")
-			} else {
-				b.WriteString(m.styles.Normal.Render("  "+mod.ID) + "\n")
+		start, end := listWindow(len(m.apiModels), m.cursor, m.modelRows())
+		if start > 0 {
+			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
+		}
+		def := models.DefaultModel(m.provider)
+		for i := start; i < end; i++ {
+			id := m.apiModels[i].ID
+			badge := ""
+			if id == def {
+				badge = m.styles.Dim.Render("  (recommended)")
 			}
+			if i == m.cursor {
+				b.WriteString(m.styles.Selected.Render("▶ "+id) + badge + "\n")
+			} else {
+				b.WriteString(m.styles.Normal.Render("  "+id) + badge + "\n")
+			}
+		}
+		if end < len(m.apiModels) {
+			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  ↓ %d more", len(m.apiModels)-end)) + "\n")
 		}
 		b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back   q quit"))
 
@@ -473,4 +508,36 @@ func (m wizardModel) renderInner() string {
 	}
 
 	return b.String()
+}
+
+// defaultModelIndex returns the position of the provider's recommended model
+// in list, or 0 when the provider did not return it.
+func defaultModelIndex(providerName string, list []provider.Model) int {
+	def := models.DefaultModel(providerName)
+	for i, mod := range list {
+		if mod.ID == def {
+			return i
+		}
+	}
+	return 0
+}
+
+// modelRows is how many model rows fit in the box. The rest of the screen is
+// title, prompt, scroll markers, help line and the box's own border.
+func (m wizardModel) modelRows() int {
+	const chrome = 14
+	if m.height <= 0 {
+		return 15
+	}
+	return max(m.height-chrome, 5)
+}
+
+// listWindow returns the [start, end) slice of an n-item list that keeps
+// cursor visible within size rows, scrolling only once the cursor nears an edge.
+func listWindow(n, cursor, size int) (int, int) {
+	if n <= size {
+		return 0, n
+	}
+	start := min(max(cursor-size/2, 0), n-size)
+	return start, start + size
 }

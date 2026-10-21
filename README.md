@@ -62,7 +62,14 @@ edits your shell's input buffer and the wrapper tags each terminal's session
 with its PID. So it does not exist until you add the integration and start a
 new shell.
 
-Add the line for your shell:
+Let termwise add it for you — it reads your shell from `$SHELL`, writes one
+line to the right startup file, and does nothing if the line is already there:
+
+```bash
+termwise init --install         # undo with: termwise init --uninstall
+```
+
+Or add the line for your shell yourself:
 
 ```bash
 eval "$(termwise init zsh)"     # ~/.zshrc
@@ -85,8 +92,15 @@ Then pick a provider:
 tw config
 ```
 
-First run walks you through provider, model and where the API key comes from —
-an environment variable, a command, or the system keychain. Anthropic, OpenAI,
+You don't have to run this first: opening `tw` or `termwise` with nothing set
+up starts the same setup, then offers to add the shell integration. It walks
+you through provider, model and where the API key comes from — an environment
+variable, a command, or the system keychain. A provider whose key is already
+exported is marked and selected for you.
+
+If `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or another provider's key is already
+exported, termwise works with no config file at all, using that provider's
+recommended model; the TUI says which one it picked. Anthropic, OpenAI,
 Groq, DeepSeek and Mistral are built in, plus **Ollama** if you'd rather nothing
 left the machine.
 

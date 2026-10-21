@@ -50,7 +50,13 @@ var configCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Warning: %s\n\nOpening file for repair — fix it and save, or delete it to start fresh.\n\n", err)
 			return editConfig()
 		}
-		return configui.Open(cfgPath, cfg, exists)
+		if err := configui.Open(cfgPath, cfg, exists); err != nil {
+			return err
+		}
+		if !exists && configExists(cfgPath) && interactive() {
+			offerShellIntegration(os.Stdin, os.Stdout)
+		}
+		return nil
 	},
 }
 

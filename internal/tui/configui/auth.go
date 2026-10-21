@@ -2,6 +2,7 @@ package configui
 
 import (
 	"os"
+	"runtime"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -15,7 +16,7 @@ var authMethods = []struct {
 	label string
 }{
 	{"env", "Environment variable"},
-	{"keychain", "macOS Keychain"},
+	{"keychain", keychainName()},
 	{"cmd", "Shell command"},
 }
 
@@ -57,12 +58,20 @@ func buildAuthInputConfig(providerName, method string) authInputConfig {
 	case "keychain":
 		return authInputConfig{
 			Label:       "API key",
-			Hint:        "will be stored securely in macOS Keychain",
+			Hint:        "will be stored securely in the " + keychainName(),
 			Placeholder: "sk-...",
 			EchoMode:    textinput.EchoPassword,
 		}
 	}
 	return authInputConfig{}
+}
+
+// keychainName is what the OS calls the store go-keyring writes to.
+func keychainName() string {
+	if runtime.GOOS == "darwin" {
+		return "macOS Keychain"
+	}
+	return "system keychain"
 }
 
 // envVarDetected reports whether the default env var for provider is set.

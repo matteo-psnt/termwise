@@ -37,7 +37,7 @@ it is given no tool to propose a command of its own.`,
 			sessionID += "-explain"
 		}
 
-		rt, err := resolveTUIRuntime()
+		rt, err := resolveTUIRuntimeOrSetup()
 		if err != nil {
 			return err
 		}

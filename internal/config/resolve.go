@@ -63,6 +63,10 @@ func Resolve(cfg FileConfig) (ResolvedConfig, error) {
 	}, nil
 }
 
+// ErrNoConfig is returned when there is no config file and no API key in the
+// environment to fall back on. Interactive entry points use it to start setup.
+var ErrNoConfig = errors.New("no configuration found")
+
 // LoadAndResolve loads, validates, and resolves the config at path, returning
 // both the raw FileConfig (for settings access) and the resolved runtime config.
 func LoadAndResolve(path string) (FileConfig, ResolvedConfig, error) {
@@ -74,7 +78,7 @@ func LoadAndResolve(path string) (FileConfig, ResolvedConfig, error) {
 		var ok bool
 		cfg, ok = ZeroConfigDefaults()
 		if !ok {
-			return FileConfig{}, ResolvedConfig{}, fmt.Errorf("no configuration found — run `%s config` to set up", cliname.Name())
+			return FileConfig{}, ResolvedConfig{}, fmt.Errorf("%w — run `%s config` to set up, or export an API key such as ANTHROPIC_API_KEY or OPENAI_API_KEY", ErrNoConfig, cliname.Name())
 		}
 	}
 	if err := ValidateForRuntime(cfg); err != nil {
@@ -113,6 +117,27 @@ func ZeroConfigDefaults() (FileConfig, bool) {
 		}, true
 	}
 	return FileConfig{}, false
+}
+
+// EnvOnlyNotice describes the zero-config fallback when it is in effect:
+// there is no file at path, so the provider comes from an API key in the
+// environment. It returns "" when a config file exists or no key is set.
+func EnvOnlyNotice(path string) string {
+	if _, err := os.Stat(path); err == nil {
+		return ""
+	}
+	cfg, ok := ZeroConfigDefaults()
+	if !ok {
+		return ""
+	}
+	name := cfg.SelectedProvider
+	pc := cfg.Providers[name]
+	display := name
+	if info, ok := provider.Lookup(name); ok {
+		display = info.DisplayName
+	}
+	return fmt.Sprintf("No config file — using %s via $%s (model %s). Run `%s config` to save or change this.",
+		display, pc.EnvVar, pc.Model, cliname.Name())
 }
 
 // NewClientFromResolved constructs a provider client from a ResolvedConfig.

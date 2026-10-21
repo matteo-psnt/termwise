@@ -80,7 +80,7 @@ func main() {
 }
 
 func openTUI(sessionID string, forceResume bool) error {
-	rt, err := resolveTUIRuntime()
+	rt, err := resolveTUIRuntimeOrSetup()
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func openTUI(sessionID string, forceResume bool) error {
 }
 
 func openTUIWithPrompt(initialPrompt string, sessionID string, forceResume bool) error {
-	rt, err := resolveTUIRuntime()
+	rt, err := resolveTUIRuntimeOrSetup()
 	if err != nil {
 		return err
 	}
