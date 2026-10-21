@@ -18,13 +18,14 @@ const judgeTimeout = 10 * time.Second
 
 // Ask runs the non-interactive headless agent path used by `tw ask`.
 func Ask(ctx context.Context, prompt string) error {
-	var err error
-	prompt, err = appendPromptStdin(prompt)
+	// Resolve config first: an unconfigured run should fail straight away,
+	// not block reading a stdin that a script left open.
+	rt, err := resolveRuntime()
 	if err != nil {
 		return err
 	}
 
-	rt, err := resolveRuntime()
+	prompt, err = appendPromptStdin(prompt)
 	if err != nil {
 		return err
 	}
