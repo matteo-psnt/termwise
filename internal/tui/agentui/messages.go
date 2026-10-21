@@ -82,7 +82,7 @@ func (m Model) handleResponseEvent(msg agent.ResponseEvent) (tea.Model, tea.Cmd)
 			return m, nil
 		}
 		m.state = stateIdle
-		m.appendThreadEntries(ErrorEntry{Content: providerErrMsg(msg.Err)})
+		m.appendThreadEntries(ErrorEntry{Content: msg.Err.Error()})
 		m.refreshViewport()
 		return m, nil
 	}

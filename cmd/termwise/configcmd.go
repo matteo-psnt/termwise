@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
+	"github.com/matteo-psnt/termwise/internal/shellrc"
 	"github.com/matteo-psnt/termwise/internal/tui/configui"
 )
 
@@ -290,18 +292,23 @@ var configTestCmd = &cobra.Command{
 
 var configDoctorCmd = &cobra.Command{
 	Use:          "doctor",
-	Short:        "Report configuration issues",
+	Short:        "Check configuration, provider connection and shell setup",
 	SilenceUsage: true,
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		cfgPath, err := config.DefaultConfigPath()
 		if err != nil {
 			return err
 		}
-		if !runDoctor(cfgPath) {
+		offline, _ := cmd.Flags().GetBool("offline")
+		if !runDoctor(cfgPath, !offline) {
 			os.Exit(1)
 		}
 		return nil
 	},
+}
+
+func init() {
+	configDoctorCmd.Flags().Bool("offline", false, "Skip the check that contacts the provider")
 }
 
 // ---------------------------------------------------------------------------
@@ -439,25 +446,34 @@ func sortedProviderNames(cfg config.FileConfig) []string {
 }
 
 // runDoctor prints a per-check diagnostic report and returns true if all pass.
-func runDoctor(cfgPath string) bool {
+// online adds a live request to the provider. Warnings point at something
+// worth knowing but do not fail the run.
+func runDoctor(cfgPath string, online bool) bool {
 	allOk := true
 	pass := func(msg string) { fmt.Printf("  ✓ %s\n", msg) }
 	fail := func(msg string) { fmt.Printf("  ✗ %s\n", msg); allOk = false }
+	warn := func(msg string) { fmt.Printf("  ! %s\n", msg) }
+	hint := func(format string, a ...any) { fmt.Printf("    → "+format+"\n", a...) }
 
 	fmt.Printf("Config: %s\n\n", cfgPath)
 
 	cfg, exists, parseErr := config.LoadConfig(cfgPath)
 	if parseErr != nil {
 		fail("File: " + parseErr.Error())
-		fmt.Printf("    → Run `%s config --edit` to repair\n", cliname.Name())
+		hint("Run `%s config --edit` to repair", cliname.Name())
 		return false
 	}
-	if !exists {
-		fail("File: not found")
-		fmt.Printf("    → Run `%s config` to create it\n", cliname.Name())
+	if exists {
+		pass("File: exists and valid TOML")
+	} else if zero, ok := config.ZeroConfigDefaults(); ok {
+		pass("File: none — running from an API key in the environment")
+		hint("Run `%s config` to save a config", cliname.Name())
+		cfg = zero
+	} else {
+		fail("File: not found, and no provider API key in the environment")
+		hint("Run `%s config` to set up", cliname.Name())
 		return false
 	}
-	pass("File: exists and valid TOML")
 
 	// selected_provider set and known.
 	if cfg.SelectedProvider == "" {
@@ -488,10 +504,11 @@ func runDoctor(cfgPath string) bool {
 		pass("Model: " + pc.Model)
 	} else {
 		fail("Model: not set")
-		fmt.Println("    → Run: tw config model set <model>")
+		hint("Run: %s config model set <model>", cliname.Name())
 	}
 
 	// Auth credentials.
+	authOk := true
 	if provider.HasNoAuth(cfg.SelectedProvider) {
 		pass("Auth: not required")
 	} else {
@@ -501,8 +518,28 @@ func runDoctor(cfgPath string) bool {
 			pass("Auth: " + authDesc + " — key resolved")
 		} else {
 			fail("Auth: " + authDesc + " — " + authErr.Error())
+			authOk = false
 		}
 	}
+
+	// Connection: the only check that proves the key and URL actually work.
+	switch {
+	case !online:
+		warn("Connection: skipped (--offline)")
+	case !known || !authOk:
+		warn("Connection: skipped until the problems above are fixed")
+	default:
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		err := config.CheckProviderConnectivity(ctx, cfg.SelectedProvider, pc)
+		cancel()
+		if err == nil {
+			pass("Connection: " + cfg.SelectedProvider + " answered")
+		} else {
+			fail("Connection: " + strings.ReplaceAll(err.Error(), "\n", "\n    "))
+		}
+	}
+
+	doctorShell(pass, warn, hint, cfg)
 
 	// Settings — validated through the central registry so each SettingDef owns its rules.
 	for _, def := range config.Settings {
@@ -697,4 +734,50 @@ func init() {
 	configCmd.AddCommand(configTestCmd)
 	configCmd.AddCommand(configDoctorCmd)
 	configCmd.AddCommand(configRemoveCmd)
+}
+
+// doctorShell checks the pieces outside the config file that `tw` and the
+// keybinding depend on. Everything here is a warning: termwise itself works
+// without the integration.
+func doctorShell(pass, warn func(string), hint func(string, ...any), cfg config.FileConfig) {
+	if _, err := exec.LookPath("termwise"); err == nil {
+		pass("PATH: termwise found")
+	} else {
+		warn("PATH: termwise is not on your PATH, so `tw` and the shell integration cannot run it")
+		if exe, err := os.Executable(); err == nil {
+			hint("Add %s to PATH in your shell's startup file", displayPath(filepath.Dir(exe)))
+		}
+	}
+
+	shell, ok := shellrc.Detect()
+	loaded := os.Getenv(cliname.EnvVar) != ""
+	switch {
+	case loaded:
+		pass("Shell integration: loaded in this shell")
+	case !ok:
+		warn("Shell integration: not loaded, and $SHELL is not zsh, bash or fish")
+	default:
+		path, err := shellrc.Path(shell)
+		if err != nil {
+			break
+		}
+		if installed, _ := shellrc.Installed(path); installed {
+			warn("Shell integration: in " + displayPath(path) + " but not loaded in this shell")
+			hint("Open a new terminal, or run `exec %s`", shell)
+		} else {
+			warn("Shell integration: not installed — no `tw` command or keybinding")
+			hint("Run `termwise init --install`")
+		}
+	}
+
+	binding := cfg.Settings.Keybinding
+	if binding == "" {
+		binding = "^T"
+	}
+	if binding == "^T" {
+		if _, err := exec.LookPath("fzf"); err == nil {
+			warn("Keybinding: fzf is installed, and its shell keybindings also use Ctrl+T — whichever loads last wins")
+			hint("Pick another key in `%s config` → Keybinding", cliname.Name())
+		}
+	}
 }
