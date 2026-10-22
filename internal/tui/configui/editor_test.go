@@ -44,3 +44,18 @@ func TestDescribeAuthTruncatesByRune(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
+
+func TestReloadHintMatchesTheUsersShell(t *testing.T) {
+	t.Setenv("SHELL", "/usr/bin/fish")
+	if got := reloadHint(); !strings.Contains(got, "termwise init fish | source") {
+		t.Errorf("fish hint = %q", got)
+	}
+	t.Setenv("SHELL", "/bin/bash")
+	if got := reloadHint(); !strings.Contains(got, `eval "$(termwise init bash)"`) {
+		t.Errorf("bash hint = %q", got)
+	}
+	t.Setenv("SHELL", "/bin/tcsh")
+	if got := reloadHint(); strings.Contains(got, "run:") {
+		t.Errorf("unknown-shell hint suggests a command: %q", got)
+	}
+}

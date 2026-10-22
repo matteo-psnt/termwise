@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/keybinding"
+	"github.com/matteo-psnt/termwise/internal/shellrc"
 )
 
 type keybindingModel struct {
@@ -67,7 +68,7 @@ func (m keybindingModel) View() string {
 	b.WriteString("Shell keybinding:\n\n")
 	if m.confirming {
 		b.WriteString("Captured: " + m.styles.Selected.Render(keybinding.Label(m.captured)) + "\n\n")
-		b.WriteString(m.styles.Hint.Render(`takes effect in new terminals, or run: eval "$(termwise init zsh)"`))
+		b.WriteString(m.styles.Hint.Render(reloadHint()))
 		b.WriteString("\n\n" + m.styles.Dim.Render("enter confirm   any key retry   esc cancel"))
 	} else {
 		b.WriteString("Current: " + m.styles.Normal.Render(keybinding.Label(m.current)) + "\n\n")
@@ -78,4 +79,15 @@ func (m keybindingModel) View() string {
 		b.WriteString("\n" + m.styles.Dim.Render("esc cancel"))
 	}
 	return b.String()
+}
+
+// reloadHint says how to pick up a new binding without opening a terminal:
+// re-running the integration line for the user's own shell. The line differs
+// per shell (fish pipes to source), so an unknown shell gets no command.
+func reloadHint() string {
+	shell, ok := shellrc.Detect()
+	if !ok {
+		return "takes effect in new terminals"
+	}
+	return "takes effect in new terminals, or run: " + shellrc.Line(shell)
 }

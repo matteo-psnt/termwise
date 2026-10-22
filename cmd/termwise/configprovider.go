@@ -200,7 +200,7 @@ var configModelListCmd = &cobra.Command{
 var configModelSetCmd = &cobra.Command{
 	Use:          "set <model>",
 	Short:        "Set the model for the selected provider",
-	Example:      fmt.Sprintf("  %[1]s config model set claude-sonnet-4-6\n  %[1]s config model set gpt-4o", cliname.Name()),
+	Example:      fmt.Sprintf("  %[1]s config model set claude-sonnet-5-5\n  %[1]s config model set gpt-4o", cliname.Name()),
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
