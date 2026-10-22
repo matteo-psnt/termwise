@@ -17,7 +17,6 @@ const requestTimeout = 30 * time.Second
 // Client implements provider.AgentClient for the Anthropic API.
 type Client struct {
 	sdk sdk.Client
-	cfg provider.Config
 }
 
 // New constructs an Anthropic client from a resolved provider.Config.
@@ -31,7 +30,6 @@ func New(cfg provider.Config) (*Client, error) {
 	}
 	return &Client{
 		sdk: sdk.NewClient(opts...),
-		cfg: cfg,
 	}, nil
 }
 

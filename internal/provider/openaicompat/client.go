@@ -16,14 +16,13 @@ const requestTimeout = 30 * time.Second
 
 // Client implements provider.AgentClient for any OpenAI-compatible API.
 type Client struct {
-	sdk      openai.Client
-	provider string
-	cfg      provider.Config
+	sdk  openai.Client
+	name string
 }
 
 // New constructs a client for the named provider using its default base URL,
 // overridden by cfg.BaseURL if set.
-func New(provider, defaultBaseURL string, cfg provider.Config) (*Client, error) {
+func New(name, defaultBaseURL string, cfg provider.Config) (*Client, error) {
 	baseURL := defaultBaseURL
 	if cfg.BaseURL != "" {
 		baseURL = cfg.BaseURL
@@ -34,13 +33,12 @@ func New(provider, defaultBaseURL string, cfg provider.Config) (*Client, error) 
 		option.WithRequestTimeout(requestTimeout),
 	}
 	return &Client{
-		sdk:      openai.NewClient(opts...),
-		provider: provider,
-		cfg:      cfg,
+		sdk:  openai.NewClient(opts...),
+		name: name,
 	}, nil
 }
 
-func (c *Client) Name() string { return c.provider }
+func (c *Client) Name() string { return c.name }
 
 // ListModels fetches available models and applies per-provider filtering.
 func (c *Client) ListModels(ctx context.Context) ([]provider.Model, error) {
@@ -56,7 +54,7 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.Model, error) {
 	if err := pager.Err(); err != nil {
 		return nil, mapErr(err)
 	}
-	return filterModels(c.provider, models), nil
+	return filterModels(c.name, models), nil
 }
 
 // Complete sends a single-shot prompt and returns the full response.
