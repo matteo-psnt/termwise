@@ -40,15 +40,36 @@ func validateFindCommand(e *ruleEngine, cmd parsedCommand) bool {
 }
 
 func validateGoCommand(e *ruleEngine, cmd parsedCommand) bool {
-	if firstPositional(e.ruleMetadata(cmd.Name), cmd.Args) != "env" {
-		return true
-	}
+	isEnv := firstPositional(e.ruleMetadata(cmd.Name), cmd.Args) == "env"
 	for _, tok := range cmd.Args {
-		if tokenMatchesDeniedFlag(tok, "-w") || tokenMatchesDeniedFlag(tok, "-u") {
+		switch goFlagName(tok) {
+		// -toolexec, -vettool and -exec name a program the go command runs
+		// in place of (or around) its own tools.
+		case "toolexec", "vettool", "exec":
 			return false
+		// go doc -http downloads and runs a documentation server and opens a
+		// browser.
+		case "http":
+			return false
+		// go env -w and -u write the user's go env file.
+		case "w", "u":
+			if isEnv {
+				return false
+			}
 		}
 	}
 	return true
+}
+
+// goFlagName returns the name of a Go-style flag: the flag package accepts
+// -name and --name alike, with an optional =value. Non-flags give "".
+func goFlagName(tok string) string {
+	if len(tok) < 2 || tok[0] != '-' || tok == "--" {
+		return ""
+	}
+	name := strings.TrimPrefix(strings.TrimPrefix(tok, "-"), "-")
+	name, _, _ = strings.Cut(name, "=")
+	return name
 }
 
 func validateSysctlCommand(_ *ruleEngine, cmd parsedCommand) bool {

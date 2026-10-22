@@ -792,3 +792,52 @@ func TestBuiltinRulesLoad(t *testing.T) {
 		t.Fatalf("embedded allowlist.yaml has %d rules; expected the full catalog", len(rules))
 	}
 }
+
+func requireApproval(t *testing.T, cmds ...string) {
+	t.Helper()
+	for _, cmd := range cmds {
+		if !NeedsApproval(cmd) {
+			t.Errorf("NeedsApproval(%q) = false, want true", cmd)
+		}
+		if ApprovalReason(cmd) == "" {
+			t.Errorf("ApprovalReason(%q) is empty, but the command needs approval", cmd)
+		}
+	}
+}
+
+func requireSafe(t *testing.T, cmds ...string) {
+	t.Helper()
+	for _, cmd := range cmds {
+		if NeedsApproval(cmd) {
+			t.Errorf("NeedsApproval(%q) = true, want false (%s)", cmd, ApprovalReason(cmd))
+		}
+	}
+}
+
+// Go's flag package takes -flag and --flag alike, with or without =value.
+func TestGoFlagsMatchInEveryDashForm(t *testing.T) {
+	t.Parallel()
+	requireApproval(t,
+		`go env --w GOFLAGS=x`,
+		`go env --u GOPATH`,
+		`go env -w=true GOFLAGS=x`,
+		`go env --w=true GOFLAGS=x`,
+		`go list -export -toolexec x ./...`,
+		`go list --toolexec=x ./...`,
+		`go vet -vettool=/tmp/v ./...`,
+		`go vet --vettool /tmp/v ./...`,
+		`go list -exec x ./...`,
+		`go doc -http`,
+		`go doc --http=:8080 fmt`,
+	)
+	requireSafe(t,
+		`go env GOPATH`,
+		`go env -json`,
+		`go env --json GOMOD`,
+		`go list -m all`,
+		`go list -f '{{.Dir}}' ./...`,
+		`go vet ./...`,
+		`go version`,
+		`go doc fmt.Println`,
+	)
+}
