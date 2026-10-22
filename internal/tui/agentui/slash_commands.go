@@ -47,7 +47,9 @@ func runTheme(m Model, args []string) (tea.Model, tea.Cmd) {
 	}
 	m = previewTheme(m, name)
 	if def, ok := config.FindSetting("theme"); ok {
-		m.persistConfigValue(def, name)
+		if err := m.persistConfigValue(def, name); err != nil {
+			return m.show(saveFailedEntry(err))
+		}
 	}
 	return m.show(SystemEntry{Content: "Theme set to " + name + "."})
 }
@@ -84,13 +86,16 @@ func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
 		return m.show(ErrorEntry{Content: "Unknown effort level '" + args[0] + "' — valid: " + strings.Join(config.EffortLevels, ", ")})
 	}
 	m = previewEffort(m, level)
-	m.updateConfigFile(func(cfg *config.FileConfig) {
+	err := m.updateConfigFile(func(cfg *config.FileConfig) {
 		pc := cfg.Providers[m.providerName]
 		pc.Effort = m.effort
 		// SetProvider, not a map write: an env-only config file has no
 		// [providers] table, so the map can be nil.
 		config.SetProvider(cfg, m.providerName, pc)
 	})
+	if err != nil {
+		return m.show(saveFailedEntry(err))
+	}
 	return m.show(SystemEntry{Content: "Effort set to " + level + "."})
 }
 
@@ -201,7 +206,7 @@ func runModel(m Model, args []string) (tea.Model, tea.Cmd) {
 	}
 	providerName, modelID, ok := strings.Cut(args[0], "/")
 	if !ok || providerName == "" || modelID == "" {
-		return m.show(ErrorEntry{Content: "Usage: /model provider/model-id (e.g. anthropic/claude-sonnet-4-5)"})
+		return m.show(ErrorEntry{Content: "Usage: /model provider/model-id (e.g. anthropic/claude-sonnet-5-5)"})
 	}
 	if models.Find(providerName, modelID) == nil {
 		return m.show(ErrorEntry{Content: "Unknown model '" + args[0] + "'"})
@@ -209,7 +214,9 @@ func runModel(m Model, args []string) (tea.Model, tea.Cmd) {
 	if err := m.applyModel(providerName, modelID); err != nil {
 		return m.show(ErrorEntry{Content: err.Error()})
 	}
-	m.persistActiveModel()
+	if err := m.persistActiveModel(); err != nil {
+		return m.show(saveFailedEntry(err))
+	}
 	m.refreshViewport()
 	return m, nil
 }

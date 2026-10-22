@@ -94,24 +94,32 @@ func applyConfigValue(m Model, def config.SettingDef, val string) Model {
 
 // persistConfigValue writes a setting value to disk using the canonical
 // SettingDef.Set hook.
-func (m Model) persistConfigValue(def config.SettingDef, val string) {
-	m.updateConfigFile(func(cfg *config.FileConfig) { def.Set(cfg, val) })
+func (m Model) persistConfigValue(def config.SettingDef, val string) error {
+	return m.updateConfigFile(func(cfg *config.FileConfig) { def.Set(cfg, val) })
 }
 
-// updateConfigFile applies edit to the config file and saves it. It reads the
-// latest on-disk config first so we don't clobber concurrent edits from
-// outside the TUI. Best-effort: with no config path, no file, or an unreadable
-// one, nothing is written and nothing is reported.
-func (m Model) updateConfigFile(edit func(cfg *config.FileConfig)) {
-	if m.cfgPath == "" {
-		return
+// updateConfigFile applies edit to the config file under the config lock, so
+// a concurrent save from outside the TUI is neither clobbered nor lost.
+//
+// With no config file (an env-key-only setup) nothing is written: a file
+// holding just this one setting would have no selected provider, and from
+// then on every start would fail validation instead of falling back to the
+// environment. The change still applies for the session. A failed save is
+// returned so the caller can say the setting did not stick.
+func (m Model) updateConfigFile(edit func(cfg *config.FileConfig)) error {
+	if m.cfgPath == "" || !config.ConfigExists(m.cfgPath) {
+		return nil
 	}
-	cfg, exists, err := config.LoadConfig(m.cfgPath)
-	if err != nil || !exists {
-		return
-	}
-	edit(&cfg)
-	_ = config.SaveConfig(m.cfgPath, cfg)
+	return config.MutateConfig(m.cfgPath, func(cfg *config.FileConfig) error {
+		edit(cfg)
+		return nil
+	})
+}
+
+// saveFailedEntry reports a setting that applies for this session but could
+// not be written to the config file.
+func saveFailedEntry(err error) ErrorEntry {
+	return ErrorEntry{Content: "Couldn't save this to the config file, so it only lasts for this session: " + err.Error()}
 }
 
 // openConfigEditor loads the current config snapshot, builds the chooser, and

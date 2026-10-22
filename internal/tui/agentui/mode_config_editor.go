@@ -122,7 +122,9 @@ func handleConfigValueKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // chooser. Shared by the value picker and keybinding capture.
 func commitConfigValue(m Model, def config.SettingDef, val string) Model {
 	m = applyConfigValue(m, def, val)
-	m.persistConfigValue(def, val)
+	if err := m.persistConfigValue(def, val); err != nil {
+		m.appendThreadEntries(saveFailedEntry(err))
+	}
 	def.Set(&m.configEditor.cfg, val)
 	m.configEditor.chooser = rebuildChooser(m.configEditor.chooser, m.configEditor.cfg)
 	m = backToChooser(m)

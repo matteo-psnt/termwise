@@ -1,6 +1,7 @@
 package agentui
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -150,7 +151,9 @@ func TestConfigWritesSurviveMissingProvidersTable(t *testing.T) {
 	if err := config.SaveConfig(path, config.FileConfig{}); err != nil {
 		t.Fatal(err)
 	}
-	m.persistActiveModel()
+	if err := m.persistActiveModel(); err != nil {
+		t.Fatal(err)
+	}
 	cfg := loadConfig(t, path)
 	if cfg.Providers["anthropic"].Model != "claude-sonnet-4-6" || cfg.SelectedProvider != "anthropic" {
 		t.Fatalf("persisted %+v selected %q", cfg.Providers, cfg.SelectedProvider)
@@ -192,5 +195,40 @@ func TestConfigEditorCaptureRefusesReservedKeys(t *testing.T) {
 	}
 	if !strings.Contains(renderCaptureView(m), m.configEditor.captureNotice) {
 		t.Error("the refusal is not shown in the capture view")
+	}
+}
+
+// A setting that can't be written must say so, not report success while the
+// file stays unchanged.
+func TestSettingSaveFailureIsReported(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	m := configEditorModel(t)
+	dir := filepath.Dir(m.cfgPath)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	def := mustSetting(t, "theme")
+	if err := m.persistConfigValue(def, "dracula"); err == nil {
+		t.Fatal("saving into a read-only directory reported success")
+	}
+}
+
+// Without a config file (env-key-only setup) a setting applies for the
+// session but no file is created: one holding only that setting would have
+// no selected provider and break every later start.
+func TestSettingWithoutConfigFileIsNotWritten(t *testing.T) {
+	m := configEditorModel(t)
+	if err := os.Remove(m.cfgPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.persistConfigValue(mustSetting(t, "theme"), "dracula"); err != nil {
+		t.Fatalf("no-file save returned %v, want nil", err)
+	}
+	if config.ConfigExists(m.cfgPath) {
+		t.Error("a config file was created for a single setting")
 	}
 }
