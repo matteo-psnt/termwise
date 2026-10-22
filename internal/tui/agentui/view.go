@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // View implements tea.Model. MouseMode is set per-frame (v2 moved mouse and
@@ -145,35 +146,32 @@ func wrapToWidth(s string, width int) []string {
 		return []string{s}
 	}
 
+	// Measure in terminal cells, not runes: a CJK character or an emoji is one
+	// rune but two cells, and counting runes let such lines overflow the box.
 	var out []string
-	runes := []rune(s)
+	rest := s
 	indent := ""
-	for len(runes) > 0 {
-		limit := width - len([]rune(indent))
-		if limit < 1 {
-			limit = 1
-		}
-		if len(runes) <= limit {
-			out = append(out, indent+string(runes))
+	for rest != "" {
+		limit := max(width-ansi.StringWidth(indent), 1)
+		if ansi.StringWidth(rest) <= limit {
+			out = append(out, indent+rest)
 			break
 		}
-		// Prefer the last space inside the limit so words stay intact.
-		cut := -1
-		for i := limit; i > 0; i-- {
-			if runes[i-1] == ' ' {
-				cut = i
-				break
-			}
+		head := ansi.Truncate(rest, limit, "")
+		if head == "" {
+			// A two-cell character at a one-cell limit. Overflowing by one
+			// cell beats looping forever.
+			head = ansi.Truncate(rest, 2, "")
 		}
-		if cut <= 0 {
-			cut = limit // one long token: hard-break it
+		// Prefer the last space inside the limit so words stay intact; a long
+		// unbroken token is hard-broken at the limit instead.
+		cut := len(head)
+		if i := strings.LastIndexByte(head, ' '); i > 0 {
+			cut = i + 1
 		}
-		out = append(out, indent+strings.TrimRight(string(runes[:cut]), " "))
-		runes = runes[cut:]
+		out = append(out, indent+strings.TrimRight(rest[:cut], " "))
 		// Drop leading spaces on the next segment; the indent supplies the offset.
-		for len(runes) > 0 && runes[0] == ' ' {
-			runes = runes[1:]
-		}
+		rest = strings.TrimLeft(rest[cut:], " ")
 		indent = contIndent
 	}
 	return out
