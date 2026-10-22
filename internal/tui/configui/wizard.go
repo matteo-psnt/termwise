@@ -473,9 +473,14 @@ func (m wizardModel) renderInner() string {
 // defaultModelIndex returns the position of the provider's recommended model
 // in list, or 0 when the provider did not return it.
 func defaultModelIndex(providerName string, list []provider.Model) int {
-	def := models.DefaultModel(providerName)
+	return modelIndex(list, models.DefaultModel(providerName))
+}
+
+// modelIndex returns the position of the model with the given ID in list, or
+// 0 when it isn't there.
+func modelIndex(list []provider.Model, id string) int {
 	for i, mod := range list {
-		if mod.ID == def {
+		if mod.ID == id {
 			return i
 		}
 	}

@@ -60,13 +60,7 @@ func (m modelPickerModel) Update(msg tea.Msg) (modelPickerModel, tea.Cmd) {
 			return m, nil
 		}
 		m.models = msg.models
-		m.cursor = 0
-		for i, mod := range m.models {
-			if mod.ID == m.current {
-				m.cursor = i
-				break
-			}
-		}
+		m.cursor = modelIndex(m.models, m.current)
 		return m, nil
 
 	case tea.KeyPressMsg:
