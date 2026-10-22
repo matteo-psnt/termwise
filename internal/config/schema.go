@@ -21,7 +21,7 @@ type ProviderConfig struct {
 	Model   string `toml:"model,omitempty"`
 	BaseURL string `toml:"base_url,omitempty"`
 
-	// Effort is the reasoning effort level ("low" | "medium" | "high") for
+	// Effort is the reasoning effort level (one of EffortLevels) for
 	// thinking-capable models. Empty means use the default. Ignored when the
 	// active model does not support reasoning effort.
 	Effort string `toml:"effort,omitempty"`

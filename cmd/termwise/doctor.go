@@ -115,6 +115,8 @@ func runDoctor(cfgPath string, online bool) bool {
 		hint("Run `%s config model set <model>`", cliname.Name())
 	}
 
+	doctorEffort(pass, warn, hint, pc)
+
 	// Auth credentials.
 	authOk := true
 	if provider.HasNoAuth(cfg.SelectedProvider) {
@@ -180,6 +182,20 @@ func runDoctor(cfgPath string, online bool) bool {
 		fmt.Println("All checks passed.")
 	}
 	return allOk
+}
+
+// doctorEffort checks the provider's reasoning effort. A bad value is
+// ignored at runtime rather than sent, so it is a warning: the user still
+// gets the default, just not what they asked for.
+func doctorEffort(pass, warn func(string), hint func(string, ...any), pc config.ProviderConfig) {
+	switch {
+	case pc.Effort == "":
+	case config.ValidEffort(pc.Effort):
+		pass("Effort: " + pc.Effort)
+	default:
+		warn(fmt.Sprintf("Effort: %q is not a valid level — ignored, using the default", pc.Effort))
+		hint("Valid levels: %s", strings.Join(config.EffortLevels, ", "))
+	}
 }
 
 // doctorShell checks the pieces outside the config file that `tw` and the

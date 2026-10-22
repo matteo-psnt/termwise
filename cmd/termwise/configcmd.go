@@ -155,7 +155,7 @@ func editConfig() error {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", err)
 		return nil
 	}
-	for _, e := range config.Validate(cfg) {
+	for _, e := range append(config.Validate(cfg), config.EffortProblems(cfg)...) {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", e)
 	}
 	return nil
