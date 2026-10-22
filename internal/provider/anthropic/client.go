@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"strings"
 	"time"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
@@ -86,54 +84,12 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 
 // mapErr converts SDK errors to our provider.Error type.
 func mapErr(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	// Context cancellation (ctrl+c).
-	if errors.Is(err, context.Canceled) {
-		return err
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return provider.NewError(provider.ErrTimeout, "request timed out", err)
-	}
-
 	// Anthropic SDK wraps HTTP errors as *sdk.Error (alias for *apierror.Error).
-	var apiErr *sdk.Error
-	if errors.As(err, &apiErr) {
-		return mapAPIErr(apiErr)
-	}
-
-	return provider.NewError(provider.ErrProvider, err.Error(), err)
-}
-
-func mapAPIErr(err *sdk.Error) *provider.Error {
-	body := err.Error()
-	switch err.StatusCode {
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return provider.NewError(provider.ErrAuth,
-			"API key invalid or expired.", err)
-
-	case http.StatusTooManyRequests:
-		return provider.NewError(provider.ErrRateLimit,
-			"Rate limited. Try again in a moment.", err)
-
-	case http.StatusRequestTimeout, http.StatusGatewayTimeout:
-		return provider.NewError(provider.ErrTimeout,
-			"Request timed out.", err)
-
-	case http.StatusNotFound:
-		return provider.NewError(provider.ErrModelNotFound,
-			"Model not found.", err)
-
-	case http.StatusBadRequest:
-		if strings.Contains(body, "too large") || strings.Contains(body, "too long") {
-			return provider.NewError(provider.ErrInputTooLarge,
-				"Input too large for this model. Try piping less data.", err)
+	return provider.MapError(err, func(err error) (int, bool) {
+		var apiErr *sdk.Error
+		if errors.As(err, &apiErr) {
+			return apiErr.StatusCode, true
 		}
-		return provider.NewError(provider.ErrProvider, body, err)
-
-	default:
-		return provider.NewError(provider.ErrProvider, body, err)
-	}
+		return 0, false
+	})
 }

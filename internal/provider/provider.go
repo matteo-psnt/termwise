@@ -125,30 +125,3 @@ type Config struct {
 	Model   string // model ID to use
 	BaseURL string // optional override; empty means use provider default
 }
-
-// ErrorKind categorises provider errors for the CLI/TUI layer.
-type ErrorKind int
-
-const (
-	ErrAuth ErrorKind = iota
-	ErrRateLimit
-	ErrTimeout
-	ErrModelNotFound
-	ErrInputTooLarge
-	ErrProvider // catch-all
-)
-
-// Error carries a user-facing reason and an underlying technical error.
-type Error struct {
-	Kind   ErrorKind
-	Reason string // shown to the user
-	Err    error  // underlying detail for debugging
-}
-
-func (e *Error) Error() string { return e.Reason }
-func (e *Error) Unwrap() error { return e.Err }
-
-// NewError is a convenience constructor used by client packages.
-func NewError(kind ErrorKind, reason string, err error) *Error {
-	return &Error{Kind: kind, Reason: reason, Err: err}
-}
