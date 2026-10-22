@@ -59,25 +59,18 @@ func writeFinalOutput(output agent.FinalResponse, isTTY bool) {
 // resolveRuntime loads config and returns the client, model, settings and
 // detected environment for this invocation.
 func resolveRuntime() (runtimeContext, error) {
-	cfgPath, err := config.DefaultConfigPath()
+	rt, err := config.LoadRuntime()
 	if err != nil {
 		return runtimeContext{}, err
 	}
-	cfg, rc, err := config.LoadAndResolve(cfgPath)
-	if err != nil {
-		return runtimeContext{}, err
-	}
-	client, err := config.NewClientFromResolved(rc)
-	if err != nil {
-		return runtimeContext{}, err
-	}
+	cfg, rc := rt.File, rt.Resolved
 	return runtimeContext{
-		client:       client,
+		client:       rt.Client,
 		providerName: rc.ProviderName,
 		modelID:      rc.Model,
 		llmJudge:     config.ResolveBoolSetting(cfg, "llm_judge"),
 		effort:       cfg.Providers[rc.ProviderName].Effort,
-		cfgPath:      cfgPath,
+		cfgPath:      rt.Path,
 		isTTY:        tty.IsTerminal(os.Stdout),
 		env:          envcontext.Detect(context.Background(), envcontext.Options{ShellHistory: config.ResolveBoolSetting(cfg, "shell_context")}),
 	}, nil

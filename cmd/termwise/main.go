@@ -103,25 +103,17 @@ type tuiRuntime struct {
 }
 
 func resolveTUIRuntime() (tuiRuntime, error) {
-	cfgPath, err := config.DefaultConfigPath()
-	if err != nil {
-		return tuiRuntime{}, err
-	}
 	// TUI surfaces config warnings inline (the alt-screen wipes stderr).
 	// Non-TUI commands (ask, config) still emit them to stderr.
-	rc, err := config.LoadRuntimeConfig(cfgPath)
-	if err != nil {
-		return tuiRuntime{}, err
-	}
-	client, err := config.NewClientFromResolved(rc)
+	rt, err := config.LoadRuntime()
 	if err != nil {
 		return tuiRuntime{}, err
 	}
 	return tuiRuntime{
-		cfgPath:      cfgPath,
-		providerName: rc.ProviderName,
-		client:       client,
-		modelID:      rc.Model,
+		cfgPath:      rt.Path,
+		providerName: rt.Resolved.ProviderName,
+		client:       rt.Client,
+		modelID:      rt.Resolved.Model,
 	}, nil
 }
 

@@ -83,12 +83,33 @@ func LoadAndResolve(path string) (FileConfig, ResolvedConfig, error) {
 	return cfg, rc, err
 }
 
-// LoadRuntimeConfig loads the config file, falls back to zero-config defaults
-// when the file is absent, validates it structurally, and resolves it into a
-// ResolvedConfig. This is the entry point for the normal runtime path.
-func LoadRuntimeConfig(path string) (ResolvedConfig, error) {
-	_, rc, err := LoadAndResolve(path)
-	return rc, err
+// Runtime is what an entry point needs before its first turn: where the
+// config lives, the file as loaded (settings are read from it), what it
+// resolved to, and a client for that provider.
+type Runtime struct {
+	Path     string
+	File     FileConfig
+	Resolved ResolvedConfig
+	Client   provider.AgentClient
+}
+
+// LoadRuntime loads the config at the default path — falling back to
+// zero-config defaults when there is no file — resolves it, and builds the
+// provider client. This is the entry point for the TUI and `ask` alike.
+func LoadRuntime() (Runtime, error) {
+	path, err := DefaultConfigPath()
+	if err != nil {
+		return Runtime{}, err
+	}
+	cfg, rc, err := LoadAndResolve(path)
+	if err != nil {
+		return Runtime{}, err
+	}
+	client, err := NewClientFromResolved(rc)
+	if err != nil {
+		return Runtime{}, err
+	}
+	return Runtime{Path: path, File: cfg, Resolved: rc, Client: client}, nil
 }
 
 // NewClientFromResolved constructs a provider client from a ResolvedConfig.
