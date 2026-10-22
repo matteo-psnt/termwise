@@ -8,7 +8,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type validator func(*ruleEngine, parsedCommand) bool
+// validator checks what a rule's flag lists cannot express. It returns why the
+// command needs approval, or "" when it is fine.
+type validator func(*ruleEngine, parsedCommand) string
 
 type ruleEngine struct {
 	builtinRules  []Rule
@@ -60,55 +62,91 @@ func (e *ruleEngine) approvalReason(command string) string {
 
 	segments, err := e.parseCommand(command)
 	if err != nil {
-		return "it is more than one statement, or could not be parsed"
+		// Every error parseCommand returns is phrased as the reason.
+		return err.Error()
 	}
 
 	for _, seg := range segments {
-		if !e.matchesBuiltin(seg) {
-			if seg.Name == "" {
-				return "part of it is not a plain command"
-			}
-			return seg.Name + " is not on the read-only allowlist"
+		if reason := e.builtinReason(seg); reason != "" {
+			return reason
 		}
 	}
 	return ""
 }
 
-func (e *ruleEngine) matchRule(rule Rule, cmd parsedCommand) bool {
+// ruleReason returns why cmd does not satisfy rule, or "" when it does.
+func (e *ruleEngine) ruleReason(rule Rule, cmd parsedCommand) string {
 	if cmd.Name == "" {
-		return false
+		return "part of it is not a plain command"
 	}
 	if cmd.Name != rule.Cmd {
-		return false
+		return cmd.Name + " is not on the read-only allowlist"
 	}
 	rule = e.effectiveRule(rule)
 
-	if !matchesAllowedSubcommand(rule, cmd.Args) {
-		return false
+	if reason := subcommandReason(rule, cmd.Args); reason != "" {
+		return reason
 	}
 
-	if validator := e.validators[rule.Cmd]; validator != nil && !validator(e, cmd) {
-		return false
+	if validator := e.validators[rule.Cmd]; validator != nil {
+		if reason := validator(e, cmd); reason != "" {
+			return reason
+		}
 	}
 
 	for _, tok := range cmd.Args {
 		for _, blocked := range rule.Deny.Flags {
-			if tokenMatchesDeniedFlag(tok, blocked) {
-				return false
+			if ruleDeniesToken(rule, tok, blocked) {
+				return deniedFlagReason(rule.Cmd, blocked)
 			}
 		}
 	}
 
-	return true
-}
-
-func (e *ruleEngine) matchesBuiltin(cmd parsedCommand) bool {
-	for _, rule := range e.builtinRules {
-		if e.matchRule(rule, cmd) {
-			return true
+	if len(rule.Deny.GlobalFlags) > 0 {
+		global := cmd.Args
+		if i := subcommandIndex(rule, cmd.Args); i >= 0 {
+			global = cmd.Args[:i]
+		}
+		for _, tok := range global {
+			for _, blocked := range rule.Deny.GlobalFlags {
+				if ruleDeniesToken(rule, tok, blocked) {
+					return deniedFlagReason(rule.Cmd, blocked)
+				}
+			}
 		}
 	}
-	return false
+
+	return ""
+}
+
+func deniedFlagReason(cmd, flag string) string {
+	return cmd + "'s " + flag + " flag requires approval"
+}
+
+// builtinReason returns why no builtin rule approves cmd, or "" when one
+// does. The reason comes from the command's own rule when it has one, so it
+// names the subcommand, flag or argument at fault.
+func (e *ruleEngine) builtinReason(cmd parsedCommand) string {
+	if cmd.Name == "" {
+		return "part of it is not a plain command"
+	}
+	first := ""
+	for _, rule := range e.builtinRules {
+		if rule.Cmd != cmd.Name {
+			continue
+		}
+		reason := e.ruleReason(rule, cmd)
+		if reason == "" {
+			return ""
+		}
+		if first == "" {
+			first = reason
+		}
+	}
+	if first == "" {
+		return cmd.Name + " is not on the read-only allowlist"
+	}
+	return first
 }
 
 // loadBuiltinRules parses the embedded rules. They are compiled in, so a
@@ -146,6 +184,10 @@ func (e *ruleEngine) effectiveRule(rule Rule) Rule {
 	if len(rule.Parse.SubcommandValueFlags) == 0 {
 		rule.Parse.SubcommandValueFlags = append([]string(nil), meta.Parse.SubcommandValueFlags...)
 	}
+	if len(rule.Parse.BoolFlags) == 0 {
+		rule.Parse.BoolFlags = append([]string(nil), meta.Parse.BoolFlags...)
+	}
+	rule.Parse.WordFlags = rule.Parse.WordFlags || meta.Parse.WordFlags
 	return rule
 }
 
@@ -156,12 +198,15 @@ func cloneRules(rules []Rule) []Rule {
 			Cmd: rule.Cmd,
 			Parse: ParseRule{
 				SubcommandValueFlags: append([]string(nil), rule.Parse.SubcommandValueFlags...),
+				BoolFlags:            append([]string(nil), rule.Parse.BoolFlags...),
+				WordFlags:            rule.Parse.WordFlags,
 			},
 			Allow: AllowRule{
 				Subcommands: append([]string(nil), rule.Allow.Subcommands...),
 			},
 			Deny: DenyRule{
-				Flags: append([]string(nil), rule.Deny.Flags...),
+				Flags:       append([]string(nil), rule.Deny.Flags...),
+				GlobalFlags: append([]string(nil), rule.Deny.GlobalFlags...),
 			},
 		}
 	}

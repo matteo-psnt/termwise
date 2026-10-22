@@ -1,6 +1,7 @@
 package allowlist
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,7 +21,7 @@ func (e *ruleEngine) validateRedirects(redirs []*syntax.Redirect) error {
 
 func (e *ruleEngine) validateRedirect(redir *syntax.Redirect) error {
 	if redir == nil || redir.Word == nil || redir.Hdoc != nil {
-		return fmt.Errorf("unsupported redirect requires approval")
+		return errors.New("it uses a redirect other than > to /dev/null or a temp file")
 	}
 
 	switch redir.Op {
@@ -30,11 +31,14 @@ func (e *ruleEngine) validateRedirect(redir *syntax.Redirect) error {
 			fd = redir.N.Value
 		}
 		if fd != "" && fd != "0" {
-			return fmt.Errorf("unsupported input redirect fd")
+			return errors.New("it redirects input into a descriptor other than stdin")
 		}
 		target, ok := literalWord(redir.Word)
-		if !ok || target != "/dev/null" {
-			return fmt.Errorf("input redirection requires approval")
+		if !ok {
+			return errors.New("it reads input from a path only known when it runs")
+		}
+		if target != "/dev/null" {
+			return fmt.Errorf("it reads input from %s", target)
 		}
 		return nil
 
@@ -44,11 +48,14 @@ func (e *ruleEngine) validateRedirect(redir *syntax.Redirect) error {
 			fd = redir.N.Value
 		}
 		if fd != "" && fd != "1" && fd != "2" {
-			return fmt.Errorf("unsupported redirect fd")
+			return errors.New("it redirects a descriptor other than stdout or stderr")
 		}
 		target, ok := literalWord(redir.Word)
-		if !ok || !e.isSafeRedirectTarget(target) {
-			return fmt.Errorf("output redirection requires approval")
+		if !ok {
+			return errors.New("it writes output to a path only known when it runs")
+		}
+		if !e.isSafeRedirectTarget(target) {
+			return fmt.Errorf("it writes output to %s, outside the temp directory", target)
 		}
 		return nil
 
@@ -58,15 +65,15 @@ func (e *ruleEngine) validateRedirect(redir *syntax.Redirect) error {
 			srcFD = redir.N.Value
 		}
 		if srcFD != "1" && srcFD != "2" {
-			return fmt.Errorf("unsupported duplicate output fd")
+			return errors.New("it duplicates a descriptor other than stdout or stderr")
 		}
 		target, ok := literalWord(redir.Word)
 		if !ok || (target != "1" && target != "2") {
-			return fmt.Errorf("output duplication requires approval")
+			return errors.New("it duplicates output into a descriptor other than stdout or stderr")
 		}
 		return nil
 	default:
-		return fmt.Errorf("unsupported redirect requires approval")
+		return errors.New("it uses a redirect other than > to /dev/null or a temp file")
 	}
 }
 
@@ -127,7 +134,7 @@ func resolveExistingRedirectPath(target string) (string, error) {
 
 		parent := filepath.Dir(current)
 		if parent == current {
-			return "", fmt.Errorf("no existing path component")
+			return "", errors.New("no existing path component")
 		}
 		current = parent
 	}
