@@ -41,10 +41,10 @@ type histSearchState struct {
 }
 
 // Model is the bubbletea model for the agent TUI. Shared, always-relevant
-// state lives on the embedded shell; mode-local state (the active mode enum,
+// state lives on the embedded sharedState; mode-local state (the active mode enum,
 // pending tool, history-search buffer, open slash picker) lives here.
 type Model struct {
-	shell
+	sharedState
 
 	state        tuiState
 	pending      pendingToolState
@@ -118,11 +118,11 @@ func newModel(cfg modelConfig) Model {
 	ctx, cancel := newGenerationContext()
 	suggestionCtx, suggestionCancel := context.WithCancel(context.Background())
 
-	sh := shell{
+	sh := sharedState{
 		provider:         cfg.provider,
 		providerName:     cfg.providerName,
 		modelID:          cfg.modelID,
-		mode:             cfg.mode,
+		sessionMode:      cfg.mode,
 		system:           cfg.system,
 		toolDefs:         cfg.toolDefs,
 		contextWindow:    contextWindowFor(cfg.providerName, cfg.modelID),
@@ -165,7 +165,7 @@ func newModel(cfg modelConfig) Model {
 		})
 	}
 
-	return Model{shell: sh}
+	return Model{sharedState: sh}
 }
 
 // Init implements tea.Model.
@@ -179,11 +179,11 @@ func (m Model) Init() tea.Cmd {
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	newModel, cmd := m.updateInner(msg)
-	if mm, ok := newModel.(Model); ok {
-		newModel = mm.clampAnchor()
+	next, cmd := m.updateInner(msg)
+	if mm, ok := next.(Model); ok {
+		next = mm.clampAnchor()
 	}
-	return newModel, cmd
+	return next, cmd
 }
 
 func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -213,7 +213,21 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	return m.updateViewportOnly(msg)
+	return m.forwardToComponents(msg)
+}
+
+// forwardToComponents passes on a message no handler claimed (cursor blink,
+// wheel scroll and the like): always to the input, and to the viewport in the
+// states that let the thread scroll.
+func (m Model) forwardToComponents(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var inputCmd tea.Cmd
+	m.input, inputCmd = m.input.Update(msg)
+	if m.state != stateIdle && m.state != stateThinking && m.state != stateJudging && m.state != stateCommandProposal {
+		return m, inputCmd
+	}
+	var vpCmd tea.Cmd
+	m.vp, vpCmd = m.vp.Update(msg)
+	return m, tea.Batch(vpCmd, inputCmd)
 }
 
 // clampAnchor enforces tuiTopRow + totalViewHeight() <= m.height. When state

@@ -129,14 +129,3 @@ func (m Model) handleAllToolsDoneEvent(msg agent.AllToolsDoneEvent) (tea.Model, 
 	m.state = stateThinking
 	return m, m.startChat()
 }
-
-func (m Model) updateViewportOnly(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var inputCmd tea.Cmd
-	m.input, inputCmd = m.input.Update(msg)
-	if m.state != stateIdle && m.state != stateThinking && m.state != stateJudging && m.state != stateCommandProposal {
-		return m, inputCmd
-	}
-	var vpCmd tea.Cmd
-	m.vp, vpCmd = m.vp.Update(msg)
-	return m, tea.Batch(vpCmd, inputCmd)
-}

@@ -12,15 +12,15 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
-// shell holds state shared across every TUI mode. Mode-specific state (the
-// active mode enum, pending tool, history search buffer, open slash picker)
-// stays on Model.
-type shell struct {
+// sharedState holds state shared across every TUI mode. Mode-specific state
+// (the active mode enum, pending tool, history search buffer, open slash
+// picker) stays on Model.
+type sharedState struct {
 	// Session config
 	provider      provider.AgentClient
 	providerName  string
 	modelID       string
-	mode          sessionMode
+	sessionMode   sessionMode
 	system        string
 	toolDefs      []provider.ToolDef
 	contextWindow int

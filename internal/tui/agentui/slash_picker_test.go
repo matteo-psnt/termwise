@@ -15,7 +15,7 @@ import (
 // refreshViewport has somewhere to write.
 func pickerModel(themeName string) Model {
 	return Model{
-		shell: shell{
+		sharedState: sharedState{
 			input:     textarea.New(),
 			renderer:  newRenderer(true, theme.Get(themeName), 0),
 			hasDarkBg: true,
