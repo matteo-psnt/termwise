@@ -127,3 +127,31 @@ func TestConfigEditorCaptureCommitsKeybinding(t *testing.T) {
 		t.Fatalf("capture did not return to the chooser: phase %v", m.configEditor.phase)
 	}
 }
+
+// An env-only setup has a config file with no [providers] table. Writing the
+// effort or the active model must create the entry, not panic on a nil map.
+func TestConfigWritesSurviveMissingProvidersTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := config.SaveConfig(path, config.FileConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	m := pickerModel(theme.DefaultName)
+	m.cfgPath = path
+	m.providerName = "anthropic"
+	m.modelID = "claude-sonnet-4-6"
+
+	next, _ := runEffort(m, []string{"high"})
+	m = next.(Model)
+	if got := loadConfig(t, path).Providers["anthropic"].Effort; got != "high" {
+		t.Fatalf("effort on disk = %q, want high", got)
+	}
+
+	if err := config.SaveConfig(path, config.FileConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	m.persistActiveModel()
+	cfg := loadConfig(t, path)
+	if cfg.Providers["anthropic"].Model != "claude-sonnet-4-6" || cfg.SelectedProvider != "anthropic" {
+		t.Fatalf("persisted %+v selected %q", cfg.Providers, cfg.SelectedProvider)
+	}
+}

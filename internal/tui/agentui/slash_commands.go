@@ -84,7 +84,9 @@ func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
 	m.updateConfigFile(func(cfg *config.FileConfig) {
 		pc := cfg.Providers[m.providerName]
 		pc.Effort = m.effort
-		cfg.Providers[m.providerName] = pc
+		// SetProvider, not a map write: an env-only config file has no
+		// [providers] table, so the map can be nil.
+		config.SetProvider(cfg, m.providerName, pc)
 	})
 	return m.show(SystemEntry{Content: "Effort set to " + level + "."})
 }
