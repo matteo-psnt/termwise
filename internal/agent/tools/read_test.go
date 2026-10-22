@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -26,5 +28,33 @@ func TestReadRejectsFIFO(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("read blocked on a FIFO")
+	}
+}
+
+func writeTemp(t *testing.T, content string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "f.txt")
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestReadTrailingNewlineIsNotALine(t *testing.T) {
+	p := writeTemp(t, strings.Repeat("x\n", maxReadLines))
+	out, _ := read(context.Background(), map[string]any{"path": p})
+	if strings.Contains(out, "truncated") {
+		t.Fatalf("a %d-line file was reported truncated: %q", maxReadLines, out[len(out)-80:])
+	}
+	out, _ = read(context.Background(), map[string]any{"path": p, "offset": float64(maxReadLines)})
+	if !strings.Contains(out, fmt.Sprintf("File has %d lines", maxReadLines)) {
+		t.Fatalf("got %q", out)
+	}
+}
+
+func TestReadEmptyFile(t *testing.T) {
+	out, isErr := read(context.Background(), map[string]any{"path": writeTemp(t, "")})
+	if isErr || out != "[File is empty]" {
+		t.Fatalf("got (%q, %v)", out, isErr)
 	}
 }

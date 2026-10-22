@@ -96,7 +96,14 @@ func read(_ context.Context, input map[string]any) (string, bool) {
 		return formatBinaryNotice(path, info.Size()), false
 	}
 
-	lines := strings.Split(string(data), "\n")
+	if len(data) == 0 {
+		// Say so explicitly: an empty result reads as a failed tool call.
+		return "[File is empty]", false
+	}
+
+	// A final newline terminates the last line rather than starting another,
+	// so a 2000-line file must not count as 2001 and be reported truncated.
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
 	total := len(lines)
 
 	if offset >= total {
