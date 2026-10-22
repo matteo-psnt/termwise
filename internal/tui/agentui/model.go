@@ -166,7 +166,10 @@ func newModel(cfg modelConfig) Model {
 	if cfg.initialSession != nil && len(cfg.initialSession.Messages) > 0 {
 		sh.messages = cfg.initialSession.Messages
 		sh.thread = deserializeThread(cfg.initialSession.Thread)
-	} else if cfg.stdin != "" {
+	}
+	// Not an else: piped stdin is attached to the next message whether or not
+	// a session was resumed, and without the marker it went out unseen.
+	if cfg.stdin != "" {
 		sh.thread = append(sh.thread, UserEntry{
 			Content: fmt.Sprintf("[stdin: %d lines]", strings.Count(cfg.stdin, "\n")+1),
 		})

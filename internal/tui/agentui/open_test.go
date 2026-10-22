@@ -113,3 +113,24 @@ func TestResumeKeepsCurrentModelWhenSessionProviderUnavailable(t *testing.T) {
 		t.Fatalf("notices = %q, want one naming both models", notices)
 	}
 }
+
+// Piped stdin rides along with the next message even when a session is
+// resumed, so the thread must show it then too.
+func TestResumeStillShowsPipedStdin(t *testing.T) {
+	m := newModel(modelConfig{
+		providerName: "anthropic", modelID: "claude-sonnet-4-6",
+		themeName: theme.DefaultName, initialCursorRow: -1,
+		stdin: "ls -la\n",
+		initialSession: &history.Session{
+			ProviderName: "anthropic", ModelID: "claude-sonnet-4-6",
+			Messages: []provider.Message{{Role: "user", Content: "hi"}},
+			Thread:   []history.SerializedEntry{{Type: history.EntryTypeUser, Content: "hi"}},
+		},
+	})
+	if len(m.thread) != 2 {
+		t.Fatalf("thread = %#v, want the resumed entry and the stdin marker", m.thread)
+	}
+	if u, ok := m.thread[1].(UserEntry); !ok || !strings.HasPrefix(u.Content, "[stdin:") {
+		t.Errorf("last entry = %#v, want the stdin marker", m.thread[1])
+	}
+}
