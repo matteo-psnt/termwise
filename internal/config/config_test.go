@@ -601,3 +601,30 @@ func TestEnvOverrideRejectsUnknownProvider(t *testing.T) {
 		t.Errorf("err = %v, want it to name %s", err, EnvProvider)
 	}
 }
+
+func TestAuthMethodDefaultsToEnv(t *testing.T) {
+	for auth, want := range map[string]string{"": "env", "env": "env", "cmd": "cmd", "keychain": "keychain"} {
+		if got := (ProviderConfig{Auth: auth}).AuthMethod(); got != want {
+			t.Errorf("AuthMethod() with Auth=%q = %q, want %q", auth, got, want)
+		}
+	}
+}
+
+func TestShortenHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	tests := map[string]string{
+		home:                            "~",
+		home + "/":                      "~",
+		filepath.Join(home, ".zshrc"):   "~/.zshrc",
+		filepath.Join(home, "..dotdot"): "~/..dotdot", // a name starting with "..", still under $HOME
+		home + "x/.zshrc":               home + "x/.zshrc",
+		filepath.Dir(home):              filepath.Dir(home),
+		"relative/path":                 "relative/path",
+	}
+	for in, want := range tests {
+		if got := ShortenHome(in); got != want {
+			t.Errorf("ShortenHome(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

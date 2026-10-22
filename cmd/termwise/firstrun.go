@@ -31,7 +31,7 @@ func resolveTUIRuntimeOrSetup() (tuiRuntime, error) {
 	if serr := configui.Open(cfgPath, config.FileConfig{}, false); serr != nil {
 		return tuiRuntime{}, serr
 	}
-	if !configExists(cfgPath) {
+	if !config.ConfigExists(cfgPath) {
 		return tuiRuntime{}, fmt.Errorf("setup was not finished — run `%s config` when you're ready", cliname.Name())
 	}
 	offerShellIntegration(os.Stdin, os.Stdout)
@@ -42,42 +42,30 @@ func interactive() bool {
 	return tty.IsTerminal(os.Stdin) && tty.IsTerminal(os.Stdout)
 }
 
-func configExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
 // offerShellIntegration asks to add the integration to the user's rc file
 // once setup has produced a config. It stays quiet when the integration is
 // already loaded or already in the file, and when it cannot tell the shell.
 func offerShellIntegration(in io.Reader, out io.Writer) {
-	if os.Getenv(cliname.EnvVar) != "" {
-		return
-	}
-	shell, ok := shellrc.Detect()
-	if !ok {
-		return
-	}
-	path, err := shellrc.Path(shell)
-	if err != nil {
-		return
-	}
-	if installed, _ := shellrc.Installed(path); installed {
+	state, shell, path := detectShellIntegration()
+	if state == integrationInstalled {
 		_, _ = fmt.Fprintf(out, "Open a new terminal to get `tw` and %s — %s already loads them.\n",
-			keybinding.Label(readKeybinding()), displayPath(path))
+			keybinding.Label(readKeybinding()), config.ShortenHome(path))
+		return
+	}
+	if state != integrationNotInstalled {
 		return
 	}
 
 	_, _ = fmt.Fprintf(out, "\nAdd the `tw` command and the %s shortcut to %s? [Y/n] ",
-		keybinding.Label(readKeybinding()), displayPath(path))
+		keybinding.Label(readKeybinding()), config.ShortenHome(path))
 	answer, _ := bufio.NewReader(in).ReadString('\n')
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "", "y", "yes":
 		if err := installShellIntegration(shell); err != nil {
-			_, _ = fmt.Fprintf(out, "Could not update %s: %v\n", displayPath(path), err)
+			_, _ = fmt.Fprintf(out, "Could not update %s: %v\n", config.ShortenHome(path), err)
 		}
 	default:
 		_, _ = fmt.Fprintf(out, "Skipped. To add it later, run `termwise init --install`, or add this line to %s:\n  %s\n",
-			displayPath(path), shellrc.Line(shell))
+			config.ShortenHome(path), shellrc.Line(shell))
 	}
 }
