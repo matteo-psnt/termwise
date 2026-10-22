@@ -16,6 +16,14 @@ import (
 // The built-in slash commands registered in slash.go: each command's Run, and
 // where it has them, its live Preview and argument completions.
 
+// show appends entry to the thread and repaints: the whole result of most
+// commands is one line of feedback or one error.
+func (m Model) show(entry ThreadEntry) (tea.Model, tea.Cmd) {
+	m.appendThreadEntries(entry)
+	m.refreshViewport()
+	return m, nil
+}
+
 // --- /theme ----------------------------------------------------------------
 
 func themeArgOptions(_ Model) []string { return theme.Names() }
@@ -32,19 +40,15 @@ func runTheme(m Model, args []string) (tea.Model, tea.Cmd) {
 	}
 	name := theme.Normalize(args[0])
 	if !theme.IsValid(name) {
-		m.appendThreadEntries(ErrorEntry{
+		return m.show(ErrorEntry{
 			Content: "Unknown theme '" + args[0] + "' — valid: " + strings.Join(theme.Names(), ", "),
 		})
-		m.refreshViewport()
-		return m, nil
 	}
 	m = previewTheme(m, name)
 	if def, ok := config.FindSetting("theme"); ok {
 		m.persistConfigValue(def, name)
 	}
-	m.appendThreadEntries(SystemEntry{Content: "Theme set to " + name + "."})
-	m.refreshViewport()
-	return m, nil
+	return m.show(SystemEntry{Content: "Theme set to " + name + "."})
 }
 
 // previewTheme applies a theme in memory only, so moving the picker cursor
@@ -65,20 +69,16 @@ func effortArgOptions(_ Model) []string {
 func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
 	if !models.SupportsThinking(m.providerName, m.modelID) {
 		name := m.modelShortName()
-		m.appendThreadEntries(ErrorEntry{
+		return m.show(ErrorEntry{
 			Content: "Reasoning effort isn't supported by " + name + " — pick a thinking-capable model with /model.",
 		})
-		m.refreshViewport()
-		return m, nil
 	}
 	if len(args) == 0 {
 		return m.openSlashPicker("/effort", "Reasoning effort", "How much the model thinks before responding.", simpleOptions(effortArgOptions(m)), m.effort)
 	}
 	level := normalizeEffortInput(args[0])
 	if level == "" {
-		m.appendThreadEntries(ErrorEntry{Content: "Unknown effort level '" + args[0] + "' — valid: low, med, high"})
-		m.refreshViewport()
-		return m, nil
+		return m.show(ErrorEntry{Content: "Unknown effort level '" + args[0] + "' — valid: low, med, high"})
 	}
 	m = previewEffort(m, level)
 	m.updateConfigFile(func(cfg *config.FileConfig) {
@@ -86,9 +86,7 @@ func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
 		pc.Effort = m.effort
 		cfg.Providers[m.providerName] = pc
 	})
-	m.appendThreadEntries(SystemEntry{Content: "Effort set to " + level + "."})
-	m.refreshViewport()
-	return m, nil
+	return m.show(SystemEntry{Content: "Effort set to " + level + "."})
 }
 
 // previewEffort applies an effort level in memory only. Called by the picker
@@ -192,27 +190,19 @@ func runModel(m Model, args []string) (tea.Model, tea.Cmd) {
 	if len(args) == 0 {
 		opts := configuredModelOptions(m)
 		if len(opts) == 0 {
-			m.appendThreadEntries(ErrorEntry{Content: fmt.Sprintf("No providers configured — run `%s config` to add one.", cliname.Name())})
-			m.refreshViewport()
-			return m, nil
+			return m.show(ErrorEntry{Content: fmt.Sprintf("No providers configured — run `%s config` to add one.", cliname.Name())})
 		}
 		return m.openSlashPicker("/model", "Active model", "Switch the model used for this session.", opts, modelOptionFor(m.providerName, m.modelID))
 	}
 	providerName, modelID, ok := strings.Cut(args[0], "/")
 	if !ok || providerName == "" || modelID == "" {
-		m.appendThreadEntries(ErrorEntry{Content: "Usage: /model provider/model-id (e.g. anthropic/claude-sonnet-4-5)"})
-		m.refreshViewport()
-		return m, nil
+		return m.show(ErrorEntry{Content: "Usage: /model provider/model-id (e.g. anthropic/claude-sonnet-4-5)"})
 	}
 	if models.Find(providerName, modelID) == nil {
-		m.appendThreadEntries(ErrorEntry{Content: "Unknown model '" + args[0] + "'"})
-		m.refreshViewport()
-		return m, nil
+		return m.show(ErrorEntry{Content: "Unknown model '" + args[0] + "'"})
 	}
 	if err := m.applyModel(providerName, modelID); err != nil {
-		m.appendThreadEntries(ErrorEntry{Content: err.Error()})
-		m.refreshViewport()
-		return m, nil
+		return m.show(ErrorEntry{Content: err.Error()})
 	}
 	m.persistActiveModel()
 	m.refreshViewport()
@@ -280,7 +270,5 @@ func runHelp(m Model, _ []string) (tea.Model, tea.Cmd) {
 			b.WriteString("\n")
 		}
 	}
-	m.appendThreadEntries(SystemEntry{Content: b.String()})
-	m.refreshViewport()
-	return m, nil
+	return m.show(SystemEntry{Content: b.String()})
 }
