@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
@@ -316,6 +317,10 @@ func TestResolveAuthEnvFallsBackToCanonicalProviderVar(t *testing.T) {
 		t.Fatalf("ResolveAuth fallback: %v", err)
 	}
 	assertEqual(t, "APIKey", "sk-groq", auth.APIKey)
+	assertEqual(t, "Source", "$GROQ_API_KEY", auth.Source)
+	if auth.FallbackErr == nil || !strings.Contains(auth.FallbackErr.Error(), "TERMWISE_TEST_MISSING_VAR") {
+		t.Errorf("FallbackErr = %v, want the configured method's error", auth.FallbackErr)
+	}
 }
 
 func TestResolveAuthCmd(t *testing.T) {
@@ -629,4 +634,86 @@ func TestShortenHome(t *testing.T) {
 			t.Errorf("ShortenHome(%q) = %q, want %q", in, got, want)
 		}
 	}
+}
+
+func TestLoadEffectiveReportsOverridesWithoutAFile(t *testing.T) {
+	for _, p := range provider.Catalog() {
+		if p.DefaultEnvVar != "" {
+			t.Setenv(p.DefaultEnvVar, "")
+		}
+	}
+	t.Setenv(EnvProvider, "ollama")
+	t.Setenv(EnvModel, "")
+	eff, err := LoadEffective(filepath.Join(t.TempDir(), "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eff.Exists {
+		t.Error("Exists = true with no file")
+	}
+	assertEqual(t, "SelectedProvider", "ollama", eff.File.SelectedProvider)
+	if len(eff.Overrides) != 1 || eff.Overrides[0] != EnvProvider+"=ollama" {
+		t.Errorf("Overrides = %q, want [%s=ollama]", eff.Overrides, EnvProvider)
+	}
+}
+
+func TestResolveAuthCmdFailureKeepsOnlyFirstLineOfStderr(t *testing.T) {
+	mustUnsetenv(t, "GROQ_API_KEY")
+	long := strings.Repeat("x", 500)
+	pc := ProviderConfig{Auth: "cmd", APIKeyCmd: "printf '\\nvault locked: " + long + "\\nsecret-detail\\n' >&2; exit 1"}
+	_, err := ResolveAuth("groq", pc)
+	if err == nil {
+		t.Fatal("expected error for failing cmd")
+	}
+	msg := err.Error()
+	if !strings.HasPrefix(msg, "api_key_cmd failed: vault locked: ") {
+		t.Errorf("err = %q, want it to say api_key_cmd failed and give the first line", msg)
+	}
+	if strings.Contains(msg, "secret-detail") || len([]rune(msg)) > 250 {
+		t.Errorf("err = %q, want only the first line, truncated", msg)
+	}
+}
+
+func TestResolveAuthCmdTimesOut(t *testing.T) {
+	mustUnsetenv(t, "GROQ_API_KEY")
+	orig := apiKeyCmdTimeout
+	apiKeyCmdTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { apiKeyCmdTimeout = orig })
+
+	start := time.Now()
+	// read waits on stdin; sleep stands in for a prompt that never returns.
+	_, err := ResolveAuth("groq", ProviderConfig{Auth: "cmd", APIKeyCmd: "read x; sleep 30"})
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("err = %v, want a timeout", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("ResolveAuth took %s; the timeout did not stop it", d)
+	}
+}
+
+func TestSaveConfigWritesThroughSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "dotfiles", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte(`selected_provider = "openai"`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "config.toml")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SaveConfig(link, FileConfig{SelectedProvider: "groq"}); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("SaveConfig replaced the symlink with a regular file")
+	}
+	cfg, _, err := LoadConfig(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t, "target SelectedProvider", "groq", cfg.SelectedProvider)
 }

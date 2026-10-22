@@ -201,6 +201,30 @@ func (c *providerModelsCache) getOrFetch(ctx context.Context, desc modelCacheDes
 	return models, err
 }
 
+// fetchFresh always calls fetch, bypassing any cached entry, and caches a
+// successful result as a cold miss would.
+func (c *providerModelsCache) fetchFresh(ctx context.Context, desc modelCacheDescriptor, fetch modelCacheFetcher) ([]provider.Model, error) {
+	models, err := fetch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := c.now()
+	c.mu.Lock()
+	// Replacing the entry also makes any background refresh of the old one
+	// discard its result rather than overwrite this newer list.
+	c.entries[desc.Key] = &modelMemoEntry{
+		desc:       desc,
+		models:     cloneModels(models),
+		fetchedAt:  now,
+		lastUsedAt: now,
+	}
+	c.evictMemoryLocked(now)
+	c.mu.Unlock()
+
+	_ = c.saveDiskEntry(desc, models, now)
+	return models, nil
+}
+
 func (c *providerModelsCache) lookupMemoryLocked(key string, now time.Time) ([]provider.Model, bool, bool) {
 	entry, ok := c.entries[key]
 	if !ok || len(entry.models) == 0 {

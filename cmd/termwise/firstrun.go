@@ -58,7 +58,12 @@ func offerShellIntegration(in io.Reader, out io.Writer) {
 
 	_, _ = fmt.Fprintf(out, "\nAdd the `tw` command and the %s shortcut to %s? [Y/n] ",
 		keybinding.Label(readKeybinding()), config.ShortenHome(path))
-	answer, _ := bufio.NewReader(in).ReadString('\n')
+	answer, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && answer == "" {
+		// Ctrl+D or a closed stdin is not the Enter that means yes; don't
+		// edit an rc file nobody agreed to.
+		answer = "n"
+	}
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "", "y", "yes":
 		if err := installShellIntegration(shell); err != nil {

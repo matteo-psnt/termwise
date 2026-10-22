@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -32,6 +33,22 @@ func selectedProviderConfig(cfg config.FileConfig, name string) (string, config.
 		return "", config.ProviderConfig{}, fmt.Errorf("provider %q is not configured — run `%s config` to set it up", name, cliname.Name())
 	}
 	return name, pc, nil
+}
+
+// effectiveProviderConfig is selectedProviderConfig over the config the
+// runtime would run with — the env-only fallback and TERMWISE_* overrides
+// included — so commands that talk to the provider test what `tw` uses
+// rather than only what the file says.
+func effectiveProviderConfig(name string) (string, config.ProviderConfig, error) {
+	cfgPath, _, _, err := loadConfigFile()
+	if err != nil {
+		return "", config.ProviderConfig{}, err
+	}
+	eff, err := config.LoadEffective(cfgPath)
+	if err != nil {
+		return "", config.ProviderConfig{}, err
+	}
+	return selectedProviderConfig(eff.File, name)
 }
 
 // showStatus prints msg on stderr as a transient status line and returns a
@@ -146,15 +163,11 @@ var configModelListCmd = &cobra.Command{
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
-		_, cfg, _, err := loadConfigFile()
-		if err != nil {
-			return err
-		}
 		var name string
 		if len(args) == 1 {
 			name = args[0]
 		}
-		name, pc, err := selectedProviderConfig(cfg, name)
+		name, pc, err := effectiveProviderConfig(name)
 		if err != nil {
 			return err
 		}
@@ -163,7 +176,7 @@ var configModelListCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
 		defer cancel()
 
-		models, err := config.ListProviderModels(ctx, name, pc)
+		models, err := config.FetchProviderModels(ctx, name, pc)
 		done()
 		if err != nil {
 			return fmt.Errorf("listing models: %w", err)
@@ -193,7 +206,7 @@ var configModelSetCmd = &cobra.Command{
 			defer cancel()
 
 			done := showStatus("Validating model...")
-			models, err := config.ListProviderModels(ctx, name, pc)
+			models, err := config.FetchProviderModels(ctx, name, pc)
 			done()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not check the model against %s — saved anyway\n  %s\n",
@@ -219,11 +232,7 @@ var configTestCmd = &cobra.Command{
 	Short:        "Test connectivity for the selected provider",
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		_, cfg, _, err := loadConfigFile()
-		if err != nil {
-			return err
-		}
-		name, pc, err := selectedProviderConfig(cfg, "")
+		name, pc, err := effectiveProviderConfig("")
 		if err != nil {
 			return err
 		}
@@ -232,14 +241,26 @@ var configTestCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
 		defer cancel()
 
-		err = config.CheckProviderConnectivity(ctx, name, pc)
+		auth, err := config.ProbeProvider(ctx, name, pc)
 		done()
 		if err != nil {
 			return fmt.Errorf("connection failed: %w", err)
 		}
 		fmt.Printf("✓ %s is reachable\n", name)
+		reportAuthFallback(os.Stderr, auth)
 		return nil
 	},
+}
+
+// reportAuthFallback warns when the key that worked came from the provider's
+// default env var because the configured method failed: the connection is
+// fine today, but the config does not do what it says.
+func reportAuthFallback(w io.Writer, auth config.ResolvedAuth) {
+	if auth.FallbackErr == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "! The configured auth failed, so this used %s instead:\n  %s\n",
+		auth.Source, strings.ReplaceAll(auth.FallbackErr.Error(), "\n", "\n  "))
 }
 
 // ---------------------------------------------------------------------------

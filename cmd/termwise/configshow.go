@@ -28,17 +28,23 @@ var configShowCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		source := sourceFile
 		if !exists {
-			if notice := config.EnvOnlyNotice(cfgPath); notice != "" {
-				fmt.Fprintln(os.Stderr, notice)
-				return nil
+			// With no file the runtime runs from an API key in the
+			// environment. Show that config rather than nothing, so --json
+			// callers get a document to parse and can tell it apart by
+			// its source.
+			zero, ok := config.ZeroConfigDefaults()
+			if !ok {
+				return fmt.Errorf("no configuration file — run `%s config` to set up", cliname.Name())
 			}
-			return fmt.Errorf("no configuration file — run `%s config` to set up", cliname.Name())
+			cfg, source = zero, sourceEnvironment
+			fmt.Fprintln(os.Stderr, config.EnvOnlyNotice(cfgPath))
 		}
 		if asJSON {
-			return printShowJSON(cfgPath, cfg)
+			return printShowJSON(cfgPath, source, cfg)
 		}
-		return printShow(cfgPath, cfg)
+		return printShow(cfgPath, source, cfg)
 	},
 }
 
@@ -46,9 +52,19 @@ func init() {
 	configShowCmd.Flags().Bool("json", false, "Output as JSON")
 }
 
+// Where the config `show` prints came from.
+const (
+	sourceFile        = "file"
+	sourceEnvironment = "environment"
+)
+
 // printShow writes a human-readable view of the full configuration to stdout.
-func printShow(cfgPath string, cfg config.FileConfig) error {
-	fmt.Printf("Config: %s\n", cfgPath)
+func printShow(cfgPath, source string, cfg config.FileConfig) error {
+	if source == sourceEnvironment {
+		fmt.Printf("Config: none at %s — from the environment\n", cfgPath)
+	} else {
+		fmt.Printf("Config: %s\n", cfgPath)
+	}
 
 	// Providers section.
 	fmt.Println()
@@ -132,7 +148,10 @@ func sortedProviderNames(cfg config.FileConfig) []string {
 
 // showJSON is the JSON representation of the full effective configuration.
 type showJSON struct {
-	ConfigPath       string                      `json:"config_path"`
+	ConfigPath string `json:"config_path"`
+	// Source is "file", or "environment" when there is no file at
+	// ConfigPath and the config comes from an API key env var.
+	Source           string                      `json:"source"`
 	SelectedProvider string                      `json:"selected_provider"`
 	Providers        map[string]showProviderJSON `json:"providers"`
 	Settings         map[string]any              `json:"settings"`
@@ -150,7 +169,7 @@ type showAuthJSON struct {
 	Source string `json:"source,omitempty"`
 }
 
-func printShowJSON(cfgPath string, cfg config.FileConfig) error {
+func printShowJSON(cfgPath, source string, cfg config.FileConfig) error {
 	providers := make(map[string]showProviderJSON, len(cfg.Providers))
 	for name, pc := range cfg.Providers {
 		providers[name] = showProviderJSON{
@@ -168,6 +187,7 @@ func printShowJSON(cfgPath string, cfg config.FileConfig) error {
 
 	out := showJSON{
 		ConfigPath:       cfgPath,
+		Source:           source,
 		SelectedProvider: cfg.SelectedProvider,
 		Providers:        providers,
 		Settings:         settings,
@@ -212,10 +232,7 @@ func authSummary(providerName string, pc config.ProviderConfig) string {
 		if v == "" {
 			return "cmd (not set)"
 		}
-		if len(v) > 40 {
-			v = v[:37] + "..."
-		}
-		return "cmd (" + v + ")"
+		return "cmd (" + truncateRunes(v, 40) + ")"
 	case "keychain":
 		v := pc.KeychainEntry
 		if v == "" {
@@ -225,4 +242,15 @@ func authSummary(providerName string, pc config.ProviderConfig) string {
 	default:
 		return method
 	}
+}
+
+// truncateRunes shortens s to at most n runes, ending in "..." when cut. It
+// counts runes, not bytes, so a command with non-ASCII text is never cut
+// mid-character into invalid UTF-8.
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-3]) + "..."
 }
