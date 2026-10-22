@@ -332,6 +332,24 @@ func TestResolveAuthCmd(t *testing.T) {
 	assertEqual(t, "APIKey", "sk-from-cmd", auth.APIKey)
 }
 
+func TestResolveAuthCmdKeepsOutputWhenBackgroundChildHoldsStdout(t *testing.T) {
+	mustUnsetenv(t, "GROQ_API_KEY")
+	// The command exits 0 at once, but sleep inherits stdout and keeps it
+	// open past WaitDelay.
+	auth, err := ResolveAuth("groq", ProviderConfig{Auth: "cmd", APIKeyCmd: "echo sk-bg; sleep 3 &"})
+	if err != nil {
+		t.Fatalf("ResolveAuth: %v", err)
+	}
+	assertEqual(t, "APIKey", "sk-bg", auth.APIKey)
+}
+
+func TestResolveAuthCmdBackgroundChildWithoutOutputFails(t *testing.T) {
+	mustUnsetenv(t, "GROQ_API_KEY")
+	if _, err := ResolveAuth("groq", ProviderConfig{Auth: "cmd", APIKeyCmd: "sleep 3 &"}); err == nil {
+		t.Error("expected an error when the command printed nothing")
+	}
+}
+
 func TestResolveAuthCmdFailureReturnsError(t *testing.T) {
 	mustUnsetenv(t, "GROQ_API_KEY")
 	pc := ProviderConfig{Auth: "cmd", APIKeyCmd: "exit 1"}
