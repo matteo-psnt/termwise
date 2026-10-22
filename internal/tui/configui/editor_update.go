@@ -14,8 +14,8 @@ import (
 
 func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// The editor's own messages are handled before delegating: a sub-model
-	// would drop them, freezing the connectivity spinner and leaving connOK
-	// stale for the auth editor's "already connected" shortcut.
+	// would drop them, freezing the connectivity spinner and leaving the
+	// active provider's indicator stale.
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		// ctrl+c always quits without saving — intercepted before any sub-model sees it.
@@ -238,13 +238,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case rowProvAuth:
-		ae := newAuthEditor(
-			row.provider,
-			m.cfg.Providers[row.provider],
-			row.provider == m.cfg.SelectedProvider,
-			m.connOK,
-			m.styles,
-		)
+		ae := newAuthEditor(row.provider, m.cfg.Providers[row.provider], m.styles)
 		m.authEditor = &ae
 		return m, m.authEditor.Init()
 

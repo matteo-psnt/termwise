@@ -103,7 +103,7 @@ func TestAuthEditorBadKeyKeepsKeychain(t *testing.T) {
 	stored := mockKeychain(t, "sk-old")
 	srv := fakeOpenAI(t, "sk-good")
 	pc := config.ProviderConfig{Auth: "keychain", KeychainEntry: config.DefaultKeychainEntry("openai"), BaseURL: srv.URL}
-	m := newAuthEditor("openai", pc, false, false, newStylesForTheme(true, ""))
+	m := newAuthEditor("openai", pc, newStylesForTheme(true, ""))
 
 	m = pressAuth(m, keyEnter) // keychain, the current method
 	m.input.SetValue("sk-bad")
