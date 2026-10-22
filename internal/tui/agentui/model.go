@@ -318,19 +318,34 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// ? opens the help overlay unless the user is typing a message in idle.
-	if msg.String() == "?" {
-		typingInIdle := m.state == stateIdle && m.input.Value() != ""
-		if !typingInIdle {
-			m.showHelp = true
-			return m, nil
-		}
+	// ? opens the help overlay unless the user is typing text it belongs in.
+	if msg.String() == "?" && !m.typingText() {
+		m.showHelp = true
+		return m, nil
 	}
 
 	if md := modeFor(m.state); md != nil {
 		return md.handleKey(m, msg)
 	}
 	return m, nil
+}
+
+// typingText reports whether a printable key is text the user is
+// entering rather than a command: a message in idle, the command being edited
+// (globs like "file?.txt"), a Ctrl+R query, the ask picker's free-text "Other"
+// answer, or a keybinding being captured. Help must not swallow "?" there.
+func (m Model) typingText() bool {
+	switch m.state {
+	case stateIdle:
+		return m.input.Value() != ""
+	case stateCommandProposalEdit, stateHistSearch:
+		return true
+	case stateAskPicker:
+		return m.pending.picker != nil && m.pending.picker.onOther()
+	case stateConfigEditor:
+		return m.configEditor != nil && m.configEditor.phase == configPhaseCapture
+	}
+	return false
 }
 
 // modes maps each TUI state to the mode that owns key handling for it.

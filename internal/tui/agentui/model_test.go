@@ -383,3 +383,39 @@ func TestQuitKeysDoNotAcceptPendingProposal(t *testing.T) {
 		t.Fatalf("enter handed %q to the shell, want the proposal", cmd)
 	}
 }
+
+// "?" is text, not the help key, wherever the user is typing.
+func TestQuestionMarkIsTextWhereTheUserIsTyping(t *testing.T) {
+	question := tea.KeyPressMsg{Code: '?', Text: "?"}
+
+	edit := pickerModel("")
+	edit.state = stateCommandProposalEdit
+	edit.input.Focus()
+	edit.input.SetValue("ls file")
+	next, _ := edit.handleKey(question)
+	if got := next.(Model); got.showHelp || got.input.Value() != "ls file?" {
+		t.Errorf("edit mode: help=%v input=%q, want the ? typed", got.showHelp, got.input.Value())
+	}
+
+	search := pickerModel("")
+	search.state = stateHistSearch
+	next, _ = search.handleKey(question)
+	if got := next.(Model); got.showHelp || got.histSearch.query != "?" {
+		t.Errorf("hist search: help=%v query=%q, want the ? typed", got.showHelp, got.histSearch.query)
+	}
+
+	ask := pickerModel("")
+	ask.state = stateAskPicker
+	p := newPicker("Which?", nil, false) // no options: the cursor starts on Other
+	ask.pending.picker = &p
+	next, _ = ask.handleKey(question)
+	if got := next.(Model); got.showHelp || got.pending.picker.otherText != "?" {
+		t.Errorf("ask Other: help=%v text=%q, want the ? typed", got.showHelp, got.pending.picker.otherText)
+	}
+
+	idle := pickerModel("")
+	next, _ = idle.handleKey(question)
+	if !next.(Model).showHelp {
+		t.Error("? on an empty idle prompt should still open help")
+	}
+}
