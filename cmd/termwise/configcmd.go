@@ -37,6 +37,12 @@ var configCmd = &cobra.Command{
 		}
 		cfg, exists, err := config.LoadConfig(cfgPath)
 		if err != nil {
+			// Without a terminal there is no one to work an editor, and
+			// starting one would hang a script or CI job: say what is wrong
+			// and how to fix it instead.
+			if !interactive() {
+				return fmt.Errorf("%w\n  %s", err, repairHint())
+			}
 			// Config exists but failed to parse — open it in $EDITOR so the
 			// user can repair it directly. The TUI is recovery, not a dead end.
 			fmt.Fprintf(os.Stderr, "Warning: %s\n\nOpening file for repair — fix it and save, or delete it to start fresh.\n\n", err)
