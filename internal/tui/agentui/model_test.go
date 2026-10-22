@@ -311,3 +311,16 @@ func TestHandleResponseEventWithoutToolsClearsShellCommand(t *testing.T) {
 		t.Fatalf("expected shell result to clear after plain text response, got %q", got.shellCommand)
 	}
 }
+
+// Truncation counts and cuts runes, so a multi-byte character at the limit is
+// never split into invalid UTF-8.
+func TestSanitizeSuggestionTextIsRuneSafe(t *testing.T) {
+	text := strings.Repeat("é", 20)
+	got := sanitizeSuggestionText(text, 10)
+	if want := strings.Repeat("é", 7) + "..."; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if got := sanitizeSuggestionText(strings.Repeat("é", 10), 10); got != strings.Repeat("é", 10) {
+		t.Fatalf("text within the limit was truncated: %q", got)
+	}
+}

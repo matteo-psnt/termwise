@@ -2,6 +2,9 @@ package agentui
 
 import (
 	"testing"
+	"unicode/utf8"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/theme"
@@ -54,5 +57,17 @@ func TestHistSearchCancelRestoresTheDraft(t *testing.T) {
 	}
 	if m.histSearch.query != "" || m.histSearch.matches != nil {
 		t.Fatalf("esc left search state behind: %+v", m.histSearch)
+	}
+}
+
+// Backspace removes a whole character, not the last byte of a multi-byte one.
+func TestHistSearchBackspaceIsRuneSafe(t *testing.T) {
+	m := histSearchModel(t, "café", "café au lait")
+	m = pressKey(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	if m.histSearch.query != "caf" {
+		t.Fatalf("query after backspace = %q, want %q", m.histSearch.query, "caf")
+	}
+	if !utf8.ValidString(m.input.Value()) {
+		t.Fatalf("input holds invalid UTF-8: %q", m.input.Value())
 	}
 }
