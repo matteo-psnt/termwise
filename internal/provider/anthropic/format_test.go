@@ -118,3 +118,28 @@ func TestToolResultsPrecedeUserText(t *testing.T) {
 		t.Fatalf("got %+v, want tool_result then text", p.Content)
 	}
 }
+
+func TestNoEmptyTextBlocks(t *testing.T) {
+	asst, err := toAssistantMessageParam(provider.Message{
+		Role:      "assistant",
+		Content:   "\n\n",
+		ToolCalls: []provider.ToolCall{{ID: "tu_1", Name: "read", Input: map[string]any{}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asst.Content) != 1 || asst.Content[0].OfToolUse == nil {
+		t.Fatalf("whitespace-only assistant text was sent: %+v", asst.Content)
+	}
+
+	user, err := toUserMessageParam(provider.Message{
+		Role:        "user",
+		ToolResults: []provider.ToolResult{{ToolCallID: "tu_1", Content: ""}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr := user.Content[0].OfToolResult; tr == nil || len(tr.Content) != 0 {
+		t.Fatalf("empty tool result should carry no text block: %+v", user.Content[0])
+	}
+}

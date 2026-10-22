@@ -3,6 +3,7 @@ package anthropic
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
@@ -70,12 +71,13 @@ func toUserMessageParam(m provider.Message) (sdk.MessageParam, error) {
 	// tool_result blocks first: the API rejects a user turn that answers
 	// tool_use with any text ahead of the results.
 	for _, tr := range m.ToolResults {
-		content := []sdk.ToolResultBlockParamContentUnion{
-			{OfText: &sdk.TextBlockParam{Text: tr.Content}},
-		}
-		block := sdk.ToolResultBlockParam{
-			ToolUseID: tr.ToolCallID,
-			Content:   content,
+		block := sdk.ToolResultBlockParam{ToolUseID: tr.ToolCallID}
+		// Content is optional, but an empty text block is rejected, and a
+		// tool can legitimately return nothing (e.g. reading an empty file).
+		if hasText(tr.Content) {
+			block.Content = []sdk.ToolResultBlockParamContentUnion{
+				{OfText: &sdk.TextBlockParam{Text: tr.Content}},
+			}
 		}
 		if tr.IsError {
 			block.IsError = param.NewOpt(true)
@@ -85,7 +87,7 @@ func toUserMessageParam(m provider.Message) (sdk.MessageParam, error) {
 		})
 	}
 
-	if m.Content != "" {
+	if hasText(m.Content) {
 		blocks = append(blocks, sdk.ContentBlockParamUnion{
 			OfText: &sdk.TextBlockParam{Text: m.Content},
 		})
@@ -111,7 +113,7 @@ func toAssistantMessageParam(m provider.Message) (sdk.MessageParam, error) {
 		blocks = append(blocks, thinking...)
 	}
 
-	if m.Content != "" {
+	if hasText(m.Content) {
 		blocks = append(blocks, sdk.ContentBlockParamUnion{
 			OfText: &sdk.TextBlockParam{Text: m.Content},
 		})
@@ -131,6 +133,13 @@ func toAssistantMessageParam(m provider.Message) (sdk.MessageParam, error) {
 		Role:    sdk.MessageParamRoleAssistant,
 		Content: blocks,
 	}, nil
+}
+
+// hasText reports whether s is worth a text block. The API rejects text
+// blocks that are empty or only whitespace, and a model can return just "\n"
+// ahead of a tool call, which would otherwise be echoed back and fail.
+func hasText(s string) bool {
+	return strings.TrimSpace(s) != ""
 }
 
 // toToolParams converts our internal ToolDef slice to SDK ToolUnionParam slice.
