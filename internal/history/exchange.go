@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -64,7 +65,13 @@ func (l *ExchangeLog) Append(e Exchange) error {
 		e.Ts = time.Now()
 	}
 	if len(e.Response) > maxStoredResponse {
-		e.Response = e.Response[:maxStoredResponse] + "…[truncated]"
+		// Back up to a rune boundary so a multi-byte character is not split
+		// into invalid UTF-8, which json.Marshal would turn into U+FFFD.
+		cut := maxStoredResponse
+		for cut > 0 && !utf8.RuneStart(e.Response[cut]) {
+			cut--
+		}
+		e.Response = e.Response[:cut] + "…[truncated]"
 	}
 
 	l.mu.Lock()
