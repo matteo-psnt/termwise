@@ -742,10 +742,7 @@ func printShowJSON(cfgPath string, cfg config.FileConfig) error {
 }
 
 func buildAuthJSON(name string, pc config.ProviderConfig) showAuthJSON {
-	method := pc.Auth
-	if method == "" {
-		method = "env"
-	}
+	method := pc.AuthMethod()
 	var source string
 	switch method {
 	case "env":
@@ -766,11 +763,7 @@ func authSummary(providerName string, pc config.ProviderConfig) string {
 	if provider.HasNoAuth(providerName) {
 		return "(no auth)"
 	}
-	method := pc.Auth
-	if method == "" {
-		method = "env"
-	}
-	switch method {
+	switch method := pc.AuthMethod(); method {
 	case "env":
 		v := pc.EnvVar
 		if v == "" {

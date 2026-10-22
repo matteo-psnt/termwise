@@ -601,3 +601,11 @@ func TestEnvOverrideRejectsUnknownProvider(t *testing.T) {
 		t.Errorf("err = %v, want it to name %s", err, EnvProvider)
 	}
 }
+
+func TestAuthMethodDefaultsToEnv(t *testing.T) {
+	for auth, want := range map[string]string{"": "env", "env": "env", "cmd": "cmd", "keychain": "keychain"} {
+		if got := (ProviderConfig{Auth: auth}).AuthMethod(); got != want {
+			t.Errorf("AuthMethod() with Auth=%q = %q, want %q", auth, got, want)
+		}
+	}
+}

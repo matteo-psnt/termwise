@@ -67,11 +67,7 @@ func validateProviderConfig(name string, pc ProviderConfig) []string {
 		))
 	}
 
-	method := pc.Auth
-	if method == "" {
-		method = "env"
-	}
-	switch method {
+	switch method := pc.AuthMethod(); method {
 	case "env", "cmd", "keychain":
 		// valid
 	default:

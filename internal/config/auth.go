@@ -38,11 +38,7 @@ func ResolveAuth(name string, pc ProviderConfig) (ResolvedAuth, error) {
 // resolveKey returns the API key for pc and a description of where it came
 // from.
 func resolveKey(name string, pc ProviderConfig) (string, string, error) {
-	method := pc.Auth
-	if method == "" {
-		method = "env"
-	}
-
+	method := pc.AuthMethod()
 	switch method {
 	case "env":
 		envVar := pc.EnvVar
