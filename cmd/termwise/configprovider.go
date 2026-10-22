@@ -175,7 +175,7 @@ var configModelListCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
 		defer cancel()
 
-		models, err := config.ListProviderModels(ctx, name, pc)
+		models, err := config.FetchProviderModels(ctx, name, pc)
 		done()
 		if err != nil {
 			return fmt.Errorf("listing models: %w", err)
@@ -205,7 +205,7 @@ var configModelSetCmd = &cobra.Command{
 			defer cancel()
 
 			done := showStatus("Validating model...")
-			models, err := config.ListProviderModels(ctx, name, pc)
+			models, err := config.FetchProviderModels(ctx, name, pc)
 			done()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not check the model against %s — saved anyway\n  %s\n",
