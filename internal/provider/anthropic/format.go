@@ -15,7 +15,7 @@ import (
 // raised when thinking is enabled to leave room for the visible response.
 func toParams(model, system string, messages []sdk.MessageParam, tools []sdk.ToolUnionParam, effort string) sdk.MessageNewParams {
 	const (
-		maxTokensDefault  = 8096
+		maxTokensDefault  = 8192
 		maxTokensThinking = 16000
 	)
 	maxTokens := int64(maxTokensDefault)

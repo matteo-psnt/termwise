@@ -95,3 +95,12 @@ func TestSessionWithoutProviderStateLoads(t *testing.T) {
 		t.Fatalf("got %+v, want a single text block", p.Content)
 	}
 }
+
+func TestMaxTokens(t *testing.T) {
+	if got := toParams("m", "", nil, nil, "").MaxTokens; got != 8192 {
+		t.Fatalf("default max_tokens = %d, want 8192", got)
+	}
+	if got := toParams("m", "", nil, nil, "high").MaxTokens; got != 16000 {
+		t.Fatalf("thinking max_tokens = %d, want 16000", got)
+	}
+}
