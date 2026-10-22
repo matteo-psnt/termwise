@@ -1,6 +1,8 @@
 package configui
 
 import (
+	"fmt"
+
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
@@ -19,7 +21,9 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		// ctrl+c always quits without saving — intercepted before any sub-model sees it.
+		// Keys written this session are discarded along with the rest.
 		if msg.String() == "ctrl+c" {
+			m.restoreKeychain()
 			return m, tea.Quit
 		}
 
@@ -190,11 +194,23 @@ func (m editorModel) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // revertToSnapshot rolls in-memory edits back to the config as it was when the
 // editor opened. The editor stays open; nothing is written to disk.
 func (m editorModel) revertToSnapshot() (tea.Model, tea.Cmd) {
+	m.restoreKeychain()
 	m.cfg = m.initial.Clone()
 	m.styles = newStylesForTheme(m.hasDarkBg, m.cfg.Settings.Theme)
 	m.buildRows()
 	m.resetConnectivity()
 	return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
+}
+
+// restoreKeychain puts back the keychain entries written since the snapshot.
+// It runs inline rather than as a Cmd so a key written right after a revert
+// can't race it; no write is ever in flight here, since the auth editor and
+// wizard take no keys while verifying. A failure is reported on exit, as the
+// editor has nowhere else to show it.
+func (m *editorModel) restoreKeychain() {
+	if err := m.keychain.restore(); err != nil {
+		m.err = fmt.Errorf("restoring keychain: %w", err)
+	}
 }
 
 func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
@@ -238,7 +254,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case rowProvAuth:
-		ae := newAuthEditor(row.provider, m.cfg.Providers[row.provider], m.styles)
+		ae := newAuthEditor(row.provider, m.cfg.Providers[row.provider], m.keychain, m.styles)
 		m.authEditor = &ae
 		return m, m.authEditor.Init()
 
@@ -251,6 +267,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		// The window size arrived before the wizard existed; it sizes its
 		// model list from it.
 		wiz.width, wiz.height = m.width, m.height
+		wiz.keychain = m.keychain
 		m.addWizard = &wiz
 		return m, m.addWizard.Init()
 

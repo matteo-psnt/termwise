@@ -43,6 +43,10 @@ type wizardModel struct {
 	spin    spinner.Model
 	exclude map[string]bool // providers to hide (already configured)
 
+	// keychain records keys written, so the editor that embeds the wizard
+	// can undo them on revert. Nil for the first-run wizard.
+	keychain *keychainJournal
+
 	step   wizardStep
 	cursor int
 
@@ -337,12 +341,13 @@ func (m wizardModel) fetchModelsCmd() tea.Cmd {
 	provider := m.provider
 	inputVal := m.input.Value()
 	pc := buildProviderConfigFromAuthInput(provider, m.authMethod, inputVal, m.input.fallback)
+	journal := m.keychain
 
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
-		models, err := listModelsFor(ctx, provider, pc, inputVal)
+		models, err := listModelsFor(ctx, provider, pc, inputVal, journal)
 		if err != nil {
 			return wizModelsMsg{err: fmt.Errorf("listing models: %w", err)}
 		}

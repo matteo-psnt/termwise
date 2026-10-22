@@ -20,7 +20,7 @@ func pressAuth(m authEditorModel, keys ...tea.KeyPressMsg) authEditorModel {
 func TestAuthEditorPrefillsExistingValue(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 	pc := config.ProviderConfig{Auth: "keychain", APIKeyCmd: "pass show openai"}
-	m := newAuthEditor("openai", pc, newStylesForTheme(true, ""))
+	m := newAuthEditor("openai", pc, nil, newStylesForTheme(true, ""))
 
 	m = pressAuth(m, keyDown, keyDown, keyEnter) // env, keychain, cmd
 	if m.step != authStepEnterValue {
@@ -36,7 +36,7 @@ func TestAuthEditorPrefillsExistingValue(t *testing.T) {
 }
 
 func TestAuthEditorRequiresAPIKey(t *testing.T) {
-	m := newAuthEditor("openai", config.ProviderConfig{}, newStylesForTheme(true, ""))
+	m := newAuthEditor("openai", config.ProviderConfig{}, nil, newStylesForTheme(true, ""))
 	m = pressAuth(m, keyDown, keyEnter) // keychain
 	if m.input.EchoMode != textinput.EchoPassword {
 		t.Error("API key is not masked")

@@ -26,6 +26,7 @@ type authEditorModel struct {
 	spin     spinner.Model
 	provider string
 	existing config.ProviderConfig
+	keychain *keychainJournal // the editor's; records a key written here
 
 	step         authStep
 	methodCursor int
@@ -41,7 +42,7 @@ type authEditorModel struct {
 	cancelled bool
 }
 
-func newAuthEditor(provider string, pc config.ProviderConfig, styles configStyles) authEditorModel {
+func newAuthEditor(provider string, pc config.ProviderConfig, keychain *keychainJournal, styles configStyles) authEditorModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
@@ -60,6 +61,7 @@ func newAuthEditor(provider string, pc config.ProviderConfig, styles configStyle
 		input:        newAuthInput(),
 		provider:     provider,
 		existing:     pc,
+		keychain:     keychain,
 		methodCursor: methodCursor,
 	}
 
@@ -209,11 +211,12 @@ func (m authEditorModel) verifyCmd() tea.Cmd {
 	provider := m.provider
 	inputVal := m.input.Value()
 	pc := m.buildResult()
+	journal := m.keychain
 
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_, err := listModelsFor(ctx, provider, pc, inputVal)
+		_, err := listModelsFor(ctx, provider, pc, inputVal, journal)
 		return editorAuthMsg{err: err}
 	}
 }
