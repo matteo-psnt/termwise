@@ -1,7 +1,6 @@
 package keybinding
 
 import (
-	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -29,12 +28,47 @@ func Label(s string) string {
 	return s
 }
 
-// ToBash converts ^X notation to \C-x for bash's bind -x.
+// ToBash converts zsh caret notation (^X, and \e^X for Alt+Ctrl) to readline
+// key-sequence syntax for bash's bind -x. Readline has no caret notation, so
+// passing ^X through would bind the two keys '^' and 'X'. Anything else (\eX,
+// escape sequences) is already valid readline syntax and passes through.
 func ToBash(kb string) string {
-	if len(kb) == 2 && kb[0] == '^' {
-		return fmt.Sprintf(`\C-%c`, kb[1]+'a'-'A')
+	prefix, caret := "", kb
+	if strings.HasPrefix(kb, `\e^`) {
+		prefix, caret = `\e`, kb[2:]
+	}
+	if len(caret) == 2 && caret[0] == '^' {
+		if seq, ok := bashCtrl(caret[1]); ok {
+			return prefix + seq
+		}
 	}
 	return kb
+}
+
+// bashCtrl returns the readline sequence for Ctrl plus the caret-notation
+// character c. Lowercasing letters only works for A–Z: the punctuation
+// controls each need their own form.
+func bashCtrl(c byte) (string, bool) {
+	switch {
+	case c >= 'A' && c <= 'Z':
+		return `\C-` + string(c-'A'+'a'), true
+	case c >= 'a' && c <= 'z':
+		return `\C-` + string(c), true
+	}
+	switch c {
+	case '@', ']', '^', '_':
+		return `\C-` + string(c), true
+	case '?':
+		// Readline special-cases \C-? as DEL (0x7f), which is what ^? means.
+		return `\C-?`, true
+	case '[':
+		return `\e`, true
+	case '\\':
+		// In \C-\ readline would take the backslash as the start of an
+		// escape, so spell FS (0x1c) in octal.
+		return `\034`, true
+	}
+	return "", false
 }
 
 // ToFish converts a stored zsh bindkey string to a fish 4 key name, e.g.
