@@ -184,6 +184,10 @@ rules:
         - tree
         - version
         - help
+    deny:
+      # --config KEY=VALUE or a config file can set build.rustc or a target
+      # runner; cargo metadata and tree run rustc to learn the target.
+      flags: [--config]
 
   # ── Node ecosystem ───────────────────────────────────────────────────────────
   - cmd: npm
@@ -213,17 +217,26 @@ rules:
       bool_flags: [-q, --quiet, -v, --verbose, --isolated, --no-color, --disable-pip-version-check, --no-input, --require-virtualenv]
     allow:
       subcommands: [list, show, freeze, check, inspect, index]
+    deny:
+      # --python re-runs pip under the named interpreter.
+      flags: [--python]
   - cmd: pip3
     parse:
       bool_flags: [-q, --quiet, -v, --verbose, --isolated, --no-color, --disable-pip-version-check, --no-input, --require-virtualenv]
     allow:
       subcommands: [list, show, freeze, check, inspect, index]
+    deny:
+      # --python re-runs pip under the named interpreter.
+      flags: [--python]
   - cmd: uv
     parse:
       subcommand_value_flags: [--config-file, --directory, --project]
       bool_flags: [-q, --quiet, -v, --verbose, --offline, --no-cache, --no-progress]
     allow:
       subcommands: [tree]
+    deny:
+      # --python picks the interpreter uv runs to query the environment.
+      flags: [-p, --python]
   - cmd: poetry
     parse:
       bool_flags: [-q, --quiet, -v, -vv, -vvv, --verbose, -n, --no-interaction, --no-ansi, --ansi]
@@ -263,6 +276,10 @@ rules:
         - diff
         - port
         - history
+    deny:
+      # The config directory's config.json names credential helpers and
+      # CLI plugin hooks, which docker runs.
+      flags: [--config]
   - cmd: docker-compose
     parse:
       subcommand_value_flags: [-f, -p, --context, --env-file, --host, --project-directory, --project-name]
@@ -274,6 +291,10 @@ rules:
       bool_flags: [-r, --remote]
     allow:
       subcommands: [ps, images, logs, inspect, stats, version, info, diff, history]
+    deny:
+      # Each names a program podman runs (OCI runtime, conmon, network
+      # helper, overlay mount_program) or loads a containers.conf that can.
+      flags: [--runtime, --conmon, --network-cmd-path, --storage-opt, --module]
 
   # ── Kubernetes ──────────────────────────────────────────────────────────────
   - cmd: kubectl
@@ -291,12 +312,20 @@ rules:
         - explain
         - api-resources
         - api-versions
+    deny:
+      # A kubeconfig can name an exec credential plugin that kubectl runs.
+      flags: [--kubeconfig]
   - cmd: helm
     parse:
       subcommand_value_flags: [-n, --kube-context, --kubeconfig, --namespace, --registry-config, --repository-cache, --repository-config]
       bool_flags: [--debug]
     allow:
       subcommands: [list, status, history, get, show, version, env, search]
+    deny:
+      # A kubeconfig can name an exec credential plugin; a registry config
+      # (docker config.json) can name a credential helper program. The
+      # repository config only holds URLs and TLS file paths, so it stays.
+      flags: [--kubeconfig, --registry-config]
 
   # ── GitHub CLI ──────────────────────────────────────────────────────────────
   - cmd: gh

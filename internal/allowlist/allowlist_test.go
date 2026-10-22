@@ -914,3 +914,41 @@ func TestXargsOnlyRunsArgumentProofCommands(t *testing.T) {
 		`printf 'a\nb\n' | xargs echo`,
 	)
 }
+
+// Flags that load a config file able to name a program the tool runs
+// (kubeconfig exec credential plugins, docker credential helpers, cargo's
+// build.rustc) or that name the program directly.
+func TestConfigFlagsThatRunProgramsNeedApproval(t *testing.T) {
+	t.Parallel()
+	requireApproval(t,
+		`kubectl --kubeconfig /tmp/kc get pods`,
+		`kubectl --kubeconfig=/tmp/kc get pods`,
+		`kubectl get pods --kubeconfig /tmp/kc`,
+		`helm --kubeconfig /tmp/kc list`,
+		`helm list --kubeconfig=/tmp/kc`,
+		`helm --registry-config /tmp/r.json show chart oci://x/y`,
+		`helm show chart oci://x/y --registry-config=/tmp/r.json`,
+		`docker --config /tmp/d ps`,
+		`docker --config=/tmp/d ps`,
+		`cargo --config build.rustc="/tmp/x" metadata`,
+		`cargo metadata --config=build.rustc="/tmp/x"`,
+		`pip --python /tmp/x list`,
+		`pip3 list --python=/tmp/x`,
+		`uv tree --python /tmp/x`,
+		`uv --python=/tmp/x tree`,
+		`podman --runtime=/tmp/x ps`,
+		`podman --conmon=/tmp/x ps`,
+		`podman --storage-opt=overlay.mount_program=/tmp/x ps`,
+		`podman --module=/tmp/x.conf ps`,
+	)
+	requireSafe(t,
+		`kubectl --context prod get pods`,
+		`helm list -n web`,
+		`helm --kube-context prod status web`,
+		`docker --context prod ps`,
+		`cargo metadata --format-version 1`,
+		`pip list --outdated`,
+		`uv tree --depth 1`,
+		`podman ps -a`,
+	)
+}
