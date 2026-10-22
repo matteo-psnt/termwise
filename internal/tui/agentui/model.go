@@ -277,6 +277,8 @@ func (m *Model) clearShellCommand() {
 	m.shellCommand = ""
 }
 
+// exitShellCommand is the command the model proposed. Whatever it holds when
+// the TUI exits is handed to the shell widget as the result.
 func (m Model) exitShellCommand() string {
 	return m.shellCommand
 }

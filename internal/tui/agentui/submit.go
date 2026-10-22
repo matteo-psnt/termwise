@@ -62,7 +62,7 @@ func (m Model) submitMessage(text string) (tea.Model, tea.Cmd) {
 		m.stdin = ""
 	}
 
-	m.thread = append(m.thread, UserEntry{Content: text})
+	m.appendThreadEntries(UserEntry{Content: text})
 	m.messages = append(m.messages, provider.Message{Role: "user", Content: content})
 	m.messages = trimContext(m.messages, m.contextWindow)
 	m.beginGeneration()

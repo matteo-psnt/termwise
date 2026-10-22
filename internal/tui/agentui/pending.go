@@ -21,10 +21,6 @@ func (p pendingToolState) result(content string, isError bool) provider.ToolResu
 	}
 }
 
-func (m *Model) appendThreadEntries(entries ...ThreadEntry) {
-	m.thread = append(m.thread, entries...)
-}
-
 func (m *Model) setPendingTool(tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) {
 	m.pending = pendingToolState{
 		toolCall:  tc,

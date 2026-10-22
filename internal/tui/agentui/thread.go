@@ -69,6 +69,10 @@ type ThreadEntry interface {
 	render(r Renderer) string
 }
 
+func (m *Model) appendThreadEntries(entries ...ThreadEntry) {
+	m.thread = append(m.thread, entries...)
+}
+
 // threadGutter is the width every thread entry is indented by — the "◆ " or
 // "› " symbol and the hanging indent that lines continuation up under it. Wrap
 // width has to account for it or wrapped lines overrun the pane by exactly this

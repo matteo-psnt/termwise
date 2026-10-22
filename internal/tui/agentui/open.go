@@ -258,12 +258,12 @@ func openProgram(cfg openProgramConfig) (string, error) {
 	// terminal-selectable) inside the TUI — stderr text is wiped by the alt-screen.
 	if cfg.cfgPath != "" {
 		if warnings := config.CheckConfigWarnings(cfg.cfgPath); len(warnings) > 0 {
-			m.thread = append(m.thread, SystemEntry{
+			m.appendThreadEntries(SystemEntry{
 				Content: "Config warnings:\n" + strings.Join(warnings, "\n"),
 			})
 		}
 		if notice := config.EnvOnlyNotice(cfg.cfgPath); notice != "" {
-			m.thread = append(m.thread, SystemEntry{Content: notice})
+			m.appendThreadEntries(SystemEntry{Content: notice})
 		}
 	}
 
