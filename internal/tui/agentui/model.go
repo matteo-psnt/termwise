@@ -283,6 +283,7 @@ func (m *Model) saveSession() {
 	}
 	s := history.Session{
 		ID:           m.sessionID,
+		Mode:         m.sessionMode.historyName(),
 		ProviderName: m.providerName,
 		ModelID:      m.modelID,
 		Messages:     m.messages,
