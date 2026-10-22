@@ -171,13 +171,11 @@ func isBinary(data []byte) bool {
 	if len(sample) > 8192 {
 		sample = sample[:8192]
 	}
+	nonPrintable := 0
 	for _, b := range sample {
 		if b == 0 {
 			return true
 		}
-	}
-	nonPrintable := 0
-	for _, b := range sample {
 		if b < 8 || (b > 13 && b < 32) {
 			nonPrintable++
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -29,7 +30,7 @@ var GlobDef = provider.ToolDef{
 Usage:
 - Use glob to find files by name pattern (e.g. "**/*.go", "src/**/*.ts").
 - Supports brace expansion (e.g. "**/*.{ts,tsx}").
-- Returns matching file paths sorted by modification time (newest first), capped at 100.
+- Returns matching file paths sorted by modification time (newest first), capped at ` + strconv.Itoa(defaultGlobLimit) + `.
 - Respects .gitignore and skips .git/.svn/.hg by default.
 - For open-ended searches that require multiple rounds of globbing/grepping, use grep with the glob filter directly.`,
 	InputSchema: map[string]any{
@@ -107,7 +108,7 @@ func glob(ctx context.Context, input map[string]any) (string, bool) {
 	head := fmt.Sprintf("Found %d %s", len(rel), pluralFiles(len(rel)))
 	body := head + "\n" + strings.Join(rel, "\n")
 	if truncated {
-		body += "\n(Results truncated at 100. Use a more specific pattern or path.)"
+		body += fmt.Sprintf("\n(Results truncated at %d. Use a more specific pattern or path.)", defaultGlobLimit)
 	}
 	return body, false
 }
