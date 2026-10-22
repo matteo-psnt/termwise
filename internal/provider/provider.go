@@ -27,7 +27,7 @@ type CompleteRequest struct {
 	Prompt string // user prompt (query + stdin already combined by caller)
 }
 
-// CompleteResponse is the output of Provider.Complete.
+// CompleteResponse is the output of Client.Complete.
 type CompleteResponse struct {
 	Content      string // raw model response text
 	InputTokens  int
@@ -49,7 +49,7 @@ type Message struct {
 // ToolCall is a single tool invocation requested by the model.
 type ToolCall struct {
 	ID    string         // provider-assigned call ID
-	Name  string         // tool name: "bash", "read", "ask", "respond"
+	Name  string         // tool name, e.g. "bash", "read", "grep", "glob", "ask", "command"
 	Input map[string]any // parsed JSON input
 }
 
@@ -89,9 +89,12 @@ type ChatRequest struct {
 
 // ChatResponse is the output of AgentClient.Chat.
 type ChatResponse struct {
-	Content      string // bare text if model responded without tool calls
-	ToolCalls    []ToolCall
-	StopReason   string // "end_turn" or "tool_use"
+	Content   string // bare text if model responded without tool calls
+	ToolCalls []ToolCall
+	// StopReason is the provider's raw stop/finish reason, passed through
+	// unnormalised: Anthropic reports e.g. "end_turn" or "tool_use", OpenAI-
+	// compatible APIs e.g. "stop" or "tool_calls".
+	StopReason   string
 	InputTokens  int
 	OutputTokens int
 }
@@ -113,8 +116,8 @@ type Client interface {
 }
 
 // AgentClient extends Client with multi-turn conversation and tool use.
-// Used for agent mode (TUI). Both the Anthropic and OpenAI-compatible clients
-// implement this interface.
+// Used for agent mode, both in the TUI and on the headless path. Both the
+// Anthropic and OpenAI-compatible clients implement this interface.
 type AgentClient interface {
 	Client
 	Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
