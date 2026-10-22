@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestReadRejectsFIFO(t *testing.T) {
@@ -56,5 +57,17 @@ func TestReadEmptyFile(t *testing.T) {
 	out, isErr := read(context.Background(), map[string]any{"path": writeTemp(t, "")})
 	if isErr || out != "[File is empty]" {
 		t.Fatalf("got (%q, %v)", out, isErr)
+	}
+}
+
+func TestReadCapsLongLines(t *testing.T) {
+	long := strings.Repeat("é", maxReadLineBytes) // twice the cap in bytes
+	out, _ := read(context.Background(), map[string]any{"path": writeTemp(t, "short\n"+long+"\n")})
+	first, second, _ := strings.Cut(out, "\n")
+	if first != "short" {
+		t.Fatalf("short line changed: %q", first)
+	}
+	if !strings.Contains(second, "[line truncated") || len(second) > maxReadLineBytes+64 || !utf8.ValidString(second) {
+		t.Fatalf("long line not capped cleanly: %d bytes", len(second))
 	}
 }

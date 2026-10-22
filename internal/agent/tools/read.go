@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
@@ -14,6 +15,9 @@ import (
 const (
 	maxReadLines      = 2000
 	maxDirListEntries = 500
+	// maxReadLineBytes caps each line. A minified bundle or data file can be
+	// one multi-megabyte line, which would flood the context on its own.
+	maxReadLineBytes = 2000
 )
 
 func init() {
@@ -112,7 +116,11 @@ func read(_ context.Context, input map[string]any) (string, bool) {
 
 	end := min(offset+limit, total)
 
-	result := strings.Join(lines[offset:end], "\n")
+	shown := lines[offset:end]
+	for i, line := range shown {
+		shown[i] = truncateLine(line)
+	}
+	result := strings.Join(shown, "\n")
 	if end < total {
 		result += fmt.Sprintf(
 			"\n[truncated — showing lines %d–%d of %d. Use offset/limit to read more.]",
@@ -120,6 +128,18 @@ func read(_ context.Context, input map[string]any) (string, bool) {
 		)
 	}
 	return result, false
+}
+
+// truncateLine cuts line to maxReadLineBytes on a rune boundary.
+func truncateLine(line string) string {
+	if len(line) <= maxReadLineBytes {
+		return line
+	}
+	cut := maxReadLineBytes
+	for cut > 0 && !utf8.RuneStart(line[cut]) {
+		cut--
+	}
+	return line[:cut] + fmt.Sprintf("… [line truncated, %d bytes total]", len(line))
 }
 
 func formatBinaryNotice(path string, size int64) string {
