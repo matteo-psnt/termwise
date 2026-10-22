@@ -77,6 +77,7 @@ func (m Model) handleToolExecutedEvent(msg toolExecutedEvent) (tea.Model, tea.Cm
 	m.appendThreadEntries(
 		ToolResultEntry{Content: display, IsError: msg.Result.IsError},
 	)
+	m.turnResults = msg.Collected
 	m.refreshViewport()
 	return m, m.wrapActiveGeneration(processToolsCmd(m.ctx, msg.Remaining, msg.Collected))
 }

@@ -91,6 +91,7 @@ func (m *Model) startChat() tea.Cmd {
 func (m *Model) interruptActiveTurn() {
 	m.resetGenerationContext()
 	m.finishGeneration()
+	m.flushTurnResults()
 	m.clearPendingTool()
 	m.state = stateIdle
 	m.appendThreadEntries(ErrorEntry{Content: "Request interrupted."})

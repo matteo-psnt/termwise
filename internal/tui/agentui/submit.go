@@ -75,7 +75,10 @@ func (m Model) submitMessage(text string) (tea.Model, tea.Cmd) {
 }
 
 // notRunResult is the tool result recorded for a tool call that never ran.
-const notRunResult = "Not run: the turn ended before this tool call was processed."
+// notRunResult answers a call whose outcome is unknown: the turn ended while
+// it was pending or running. It may have run (Esc during a slow command), so
+// the model is told to check rather than assume.
+const notRunResult = "Interrupted: the turn ended before this tool call finished. It may or may not have run; check before repeating it."
 
 // closeDanglingToolCalls gives every tool call in the history a result.
 //

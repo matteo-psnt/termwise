@@ -52,8 +52,13 @@ type histSearchState struct {
 type Model struct {
 	sharedState
 
-	state        tuiState
-	pending      pendingToolState
+	state   tuiState
+	pending pendingToolState
+	// turnResults are the tool results the current turn has produced so far,
+	// not yet in messages: they are added in one message when the turn's
+	// tool calls are all done. Kept here so an interrupted turn can still
+	// record what actually ran (see flushTurnResults).
+	turnResults  []provider.ToolResult
 	histSearch   histSearchState
 	slashPicker  *slashPicker
 	configEditor *configEditor
@@ -290,6 +295,7 @@ func (m Model) clampAnchor() Model {
 func (m Model) quit() (tea.Model, tea.Cmd) {
 	m.suggestionCancel()
 	m.cancel()
+	m.flushTurnResults()
 	m.saveSession()
 	m.quitting = true
 	return m, tea.Quit

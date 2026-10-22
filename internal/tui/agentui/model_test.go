@@ -604,3 +604,50 @@ func TestCommandToolResultsStayOnePerCall(t *testing.T) {
 		})
 	}
 }
+
+// A call that already ran keeps its real result when the turn is
+// interrupted later (here at the judge, while the next call awaits
+// approval); only the unfinished call is answered as interrupted. Reporting
+// both as not run invited the model to repeat a command that had run.
+func TestInterruptKeepsResultsOfToolsThatRan(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	m := Model{
+		sharedState: sharedState{
+			ctx:              ctx,
+			cancel:           cancel,
+			suggestionCtx:    ctx,
+			suggestionCancel: func() {},
+			activeGeneration: 1,
+			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
+			messages: []provider.Message{
+				{Role: "user", Content: "do it"},
+				{Role: "assistant", ToolCalls: []provider.ToolCall{{ID: "a", Name: "bash"}, {ID: "b", Name: "bash"}}},
+			},
+		},
+		state: stateThinking,
+	}
+	m.contextWindow = 200_000
+	ran := provider.ToolResult{ToolCallID: "a", Content: "created dir"}
+	next, _ := m.handleNeedsApprovalEvent(needsApprovalEvent{
+		ToolCall: provider.ToolCall{ID: "b", Name: "bash"}, Command: "rm x", Collected: []provider.ToolResult{ran},
+	})
+	m = next.(Model)
+	m.state = stateJudging
+	next, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	next, _ = next.(Model).submitMessage("next")
+	msgs := next.(Model).messages
+
+	var results []provider.ToolResult
+	for _, msg := range msgs {
+		results = append(results, msg.ToolResults...)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d tool results, want one per call: %#v", len(results), msgs)
+	}
+	if results[0] != ran {
+		t.Errorf("call a = %+v, want its real result %+v", results[0], ran)
+	}
+	if results[1].ToolCallID != "b" || !results[1].IsError {
+		t.Errorf("call b = %+v, want an interrupted error result", results[1])
+	}
+}
