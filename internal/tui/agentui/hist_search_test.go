@@ -2,6 +2,9 @@ package agentui
 
 import (
 	"testing"
+	"unicode/utf8"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/theme"
@@ -54,5 +57,47 @@ func TestHistSearchCancelRestoresTheDraft(t *testing.T) {
 	}
 	if m.histSearch.query != "" || m.histSearch.matches != nil {
 		t.Fatalf("esc left search state behind: %+v", m.histSearch)
+	}
+}
+
+// Backspace removes a whole character, not the last byte of a multi-byte one.
+func TestHistSearchBackspaceIsRuneSafe(t *testing.T) {
+	m := histSearchModel(t, "café", "café au lait")
+	m = pressKey(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	if m.histSearch.query != "caf" {
+		t.Fatalf("query after backspace = %q, want %q", m.histSearch.query, "caf")
+	}
+	if !utf8.ValidString(m.input.Value()) {
+		t.Fatalf("input holds invalid UTF-8: %q", m.input.Value())
+	}
+}
+
+// Ctrl+R from the middle of Up/Down browsing ends the browsing: Down after
+// accepting a match must not swap it for the entry browsed to before.
+func TestHistSearchFromHistoryNavKeepsTheAcceptedMatch(t *testing.T) {
+	h := history.NewPromptHistory(t.TempDir())
+	for _, p := range []string{"git status", "ls -la", "make test"} {
+		if err := h.Push(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := pickerModel(theme.DefaultName)
+	m.promptHistory = h
+
+	m = pressKey(t, m, keyUp) // browsing: "make test"
+	m = pressKey(t, m, tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
+	for range "make test" { // the search is seeded with the browsed entry
+		m = pressKey(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	}
+	for _, r := range "git" {
+		m = pressKey(t, m, tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	m = pressKey(t, m, keyEnter)
+	if v := m.input.Value(); v != "git status" {
+		t.Fatalf("accepted %q, want git status", v)
+	}
+	m = pressKey(t, m, keyDown)
+	if v := m.input.Value(); v != "git status" {
+		t.Fatalf("down after accepting replaced the match with %q", v)
 	}
 }

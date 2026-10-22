@@ -84,7 +84,9 @@ func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
 	m.updateConfigFile(func(cfg *config.FileConfig) {
 		pc := cfg.Providers[m.providerName]
 		pc.Effort = m.effort
-		cfg.Providers[m.providerName] = pc
+		// SetProvider, not a map write: an env-only config file has no
+		// [providers] table, so the map can be nil.
+		config.SetProvider(cfg, m.providerName, pc)
 	})
 	return m.show(SystemEntry{Content: "Effort set to " + level + "."})
 }
@@ -212,13 +214,14 @@ func runModel(m Model, args []string) (tea.Model, tea.Cmd) {
 // previewModel updates the displayed provider+model in memory only. The actual
 // provider client is not rebuilt — that happens on submit via runModel → applyModel —
 // keeping cursor-move latency off the LoadConfig/ResolveAuth/NewClient hot path.
-// Errors fall through silently; runModel re-validates on submit.
+// Malformed values fall through silently; runModel re-validates on submit.
+//
+// No catalog check here: the picker also calls this with the value it opened
+// on to revert, and that can be a custom model ID the catalog doesn't list.
+// Rejecting it would leave the previewed model in place.
 func previewModel(m Model, value string) Model {
 	providerName, modelID, ok := strings.Cut(value, "/")
 	if !ok || providerName == "" || modelID == "" {
-		return m
-	}
-	if models.Find(providerName, modelID) == nil {
 		return m
 	}
 	m.providerName = providerName

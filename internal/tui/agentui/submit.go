@@ -2,6 +2,7 @@ package agentui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -63,6 +64,7 @@ func (m Model) submitMessage(text string) (tea.Model, tea.Cmd) {
 	}
 
 	m.appendThreadEntries(UserEntry{Content: text})
+	m.messages = closeDanglingToolCalls(m.messages)
 	m.messages = append(m.messages, provider.Message{Role: "user", Content: content})
 	m.messages = trimContext(m.messages, m.contextWindow)
 	m.beginGeneration()
@@ -70,6 +72,58 @@ func (m Model) submitMessage(text string) (tea.Model, tea.Cmd) {
 	m.refreshViewport()
 
 	return m, m.startChat()
+}
+
+// notRunResult is the tool result recorded for a tool call that never ran.
+const notRunResult = "Not run: the turn ended before this tool call was processed."
+
+// closeDanglingToolCalls gives every tool call in the history a result.
+//
+// Providers reject a history where an assistant tool call is not answered in
+// the very next message, and a turn can end with calls unanswered: Esc while a
+// tool runs (or the model is mid-loop), quitting at an approval prompt and
+// resuming, or the command tool ending the turn before the calls after it.
+// Without this every later message in the session fails. Missing results are
+// added to the tool-result message that follows, or as a new one. The input is
+// not modified.
+func closeDanglingToolCalls(messages []provider.Message) []provider.Message {
+	out := make([]provider.Message, 0, len(messages)+1)
+	for i := 0; i < len(messages); i++ {
+		msg := messages[i]
+		out = append(out, msg)
+		if msg.Role != "assistant" || len(msg.ToolCalls) == 0 {
+			continue
+		}
+
+		var next *provider.Message
+		if i+1 < len(messages) && messages[i+1].Role == "user" && len(messages[i+1].ToolResults) > 0 {
+			next = &messages[i+1]
+		}
+		answered := make(map[string]bool)
+		if next != nil {
+			for _, tr := range next.ToolResults {
+				answered[tr.ToolCallID] = true
+			}
+		}
+		var missing []provider.ToolResult
+		for _, tc := range msg.ToolCalls {
+			if !answered[tc.ID] {
+				missing = append(missing, provider.ToolResult{ToolCallID: tc.ID, Content: notRunResult, IsError: true})
+			}
+		}
+
+		switch {
+		case len(missing) == 0:
+		case next != nil:
+			patched := *next
+			patched.ToolResults = slices.Concat(next.ToolResults, missing)
+			out = append(out, patched)
+			i++
+		default:
+			out = append(out, provider.Message{Role: "user", ToolResults: missing})
+		}
+	}
+	return out
 }
 
 // chatRequest builds the ChatRequest from current state.
@@ -129,6 +183,12 @@ func trimContext(messages []provider.Message, contextWindow int) []provider.Mess
 	copy(out, messages)
 
 	for i := range out {
+		if len(out[i].ToolResults) > 0 {
+			// copy(out, messages) shares each ToolResults backing array with
+			// the caller; clone before rewriting so the session's own history
+			// (what gets saved and resumed) keeps the full results.
+			out[i].ToolResults = slices.Clone(out[i].ToolResults)
+		}
 		for j := range out[i].ToolResults {
 			if out[i].ToolResults[j].Content != dropped {
 				out[i].ToolResults[j].Content = dropped

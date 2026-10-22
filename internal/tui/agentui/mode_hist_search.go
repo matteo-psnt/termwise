@@ -26,11 +26,13 @@ func (histSearchMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cm
 
 	switch msg.Code {
 	case tea.KeyBackspace, tea.KeyDelete:
-		q := m.histSearch.query
+		// Drop the last rune, not the last byte: a byte cut leaves a broken
+		// UTF-8 tail that matches nothing and renders as garbage.
+		q := []rune(m.histSearch.query)
 		if len(q) > 0 {
 			q = q[:len(q)-1]
 		}
-		m.setHistQuery(q)
+		m.setHistQuery(string(q))
 	default:
 		// Printable character: extend the search query.
 		if msg.Text != "" {

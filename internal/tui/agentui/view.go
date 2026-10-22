@@ -238,9 +238,14 @@ func effortLabel(effort string) string {
 	return effort
 }
 
+// formatTokens groups n's digits in threes ("1,234,567"). Splitting once at
+// 1000 printed "1000,000" for a million.
 func formatTokens(n int) string {
+	if n < 0 {
+		return "-" + formatTokens(-n)
+	}
 	if n < 1000 {
 		return fmt.Sprintf("%d", n)
 	}
-	return fmt.Sprintf("%d,%03d", n/1000, n%1000)
+	return fmt.Sprintf("%s,%03d", formatTokens(n/1000), n%1000)
 }

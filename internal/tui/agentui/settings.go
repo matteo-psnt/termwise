@@ -70,7 +70,9 @@ func (m *Model) persistActiveModel() {
 	m.updateConfigFile(func(cfg *config.FileConfig) {
 		pc := cfg.Providers[m.providerName]
 		pc.Model = m.modelID
-		cfg.Providers[m.providerName] = pc
+		// SetProvider, not a map write: an env-only config file has no
+		// [providers] table, so the map can be nil.
+		config.SetProvider(cfg, m.providerName, pc)
 		cfg.SelectedProvider = m.providerName
 	})
 }

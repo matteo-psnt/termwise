@@ -1,10 +1,9 @@
 package agentui
 
 import (
-	"strings"
-
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
@@ -16,33 +15,18 @@ const popupHeight = 30
 
 // inputRowHeight returns the row count of the input section between the
 // viewport's bottom separator and the status line's top separator.
+//
+// It measures exactly what renderedView draws in that slot rather than
+// assuming per state: most input rows are variable height (a textarea grown to
+// several lines, a wrapped command box, a picker), and a per-state guess that
+// missed one — edit mode, hist search, the help overlay — threw off the anchor
+// and mouse-row math by the difference.
 func (m Model) inputRowHeight() int {
-	switch m.state {
-	case stateApproval, stateCommandProposal:
-		// The command block wraps to the viewport width and approval adds a
-		// reason line, so both are variable height — measure rather than assume.
-		if md := modeFor(m.state); md != nil {
-			vpW, _ := m.viewportDims()
-			return strings.Count(md.renderInputRow(m, vpW), "\n") + 1
-		}
-		return 4
-	case stateAskPicker:
-		if m.pending.picker != nil {
-			return strings.Count(m.pending.picker.View(m.renderer), "\n") + 1
-		}
-	case stateSlashPicker:
-		if m.slashPicker != nil {
-			return strings.Count(m.slashPicker.View(m.renderer), "\n") + 1
-		}
-	case stateConfigEditor:
-		if m.configEditor != nil {
-			return strings.Count(configEditorMode{}.renderInputRow(m, 0), "\n") + 1
-		}
-	case stateIdle:
-		// The idle prompt is a textarea that grows with multi-line input.
-		return strings.Count(idleMode{}.renderInputRow(m, 0), "\n") + 1
+	if m.showHelp {
+		return lipgloss.Height(m.renderHelpOverlay())
 	}
-	return 1
+	vpW, _ := m.viewportDims()
+	return lipgloss.Height(m.renderInputRow(vpW))
 }
 
 // totalViewHeight returns the total row count of the View() output for the

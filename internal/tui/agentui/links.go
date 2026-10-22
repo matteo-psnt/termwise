@@ -4,6 +4,7 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 )
@@ -11,6 +12,9 @@ import (
 // urlRegex matches bare http(s) URLs, stopping at whitespace, ANSI escapes,
 // or common boundary punctuation.
 var urlRegex = regexp.MustCompile(`https?://[^\s\x1b"'<>()\[\]]+`)
+
+// urlTrailingPunct is trimmed from the end of a matched URL.
+const urlTrailingPunct = ".,;:!?"
 
 // ansiEscape matches ANSI CSI sequences for stripping styling before column math.
 var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
@@ -37,11 +41,14 @@ func findLinks(content string) []linkPosition {
 			line := content[start:i]
 			plain := stripANSI(line)
 			for _, idx := range urlRegex.FindAllStringIndex(plain, -1) {
+				// Sentence punctuation after a URL ("see https://x.dev.") is
+				// not part of it; opening it with the dot attached 404s.
+				url := strings.TrimRight(plain[idx[0]:idx[1]], urlTrailingPunct)
 				out = append(out, linkPosition{
-					URL:    plain[idx[0]:idx[1]],
+					URL:    url,
 					Line:   lineIdx,
 					StartX: lipgloss.Width(plain[:idx[0]]),
-					EndX:   lipgloss.Width(plain[:idx[1]]),
+					EndX:   lipgloss.Width(plain[:idx[0]+len(url)]),
 				})
 			}
 			lineIdx++

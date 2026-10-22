@@ -4,7 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
 // Every row of the box must be exactly the requested width, or the border
@@ -76,5 +79,57 @@ func TestWrapToWidthHardBreaksUnbrokenTokens(t *testing.T) {
 func TestWrapToWidthLeavesShortLinesAlone(t *testing.T) {
 	if got := wrapToWidth("ls -la", 40); len(got) != 1 || got[0] != "ls -la" {
 		t.Errorf("wrapToWidth() = %q", got)
+	}
+}
+
+func TestFormatTokens(t *testing.T) {
+	for n, want := range map[int]string{
+		0:          "0",
+		999:        "999",
+		1000:       "1,000",
+		1001:       "1,001",
+		999_999:    "999,999",
+		1_000_000:  "1,000,000",
+		1_234_567:  "1,234,567",
+		12_000_050: "12,000,050",
+	} {
+		if got := formatTokens(n); got != want {
+			t.Errorf("formatTokens(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// layoutModel is a sized, ready Model built the way Open builds one.
+func layoutModel(t *testing.T) Model {
+	t.Helper()
+	m := newModel(modelConfig{providerName: "anthropic", modelID: "claude-sonnet-4-6", themeName: theme.DefaultName, initialCursorRow: -1})
+	next, _ := m.handleWindowSize(tea.WindowSizeMsg{Width: 80, Height: 40})
+	return next.(Model)
+}
+
+// totalViewHeight drives the anchor and mouse-row math, so it must agree with
+// what renderedView draws, including states whose input row is a textarea
+// that has grown to several lines, and the help overlay.
+func TestTotalViewHeightMatchesRenderedView(t *testing.T) {
+	multi := "first line\nsecond line\nthird line"
+	cases := map[string]func(Model) Model{
+		"idle multi-line": func(m Model) Model { m.input.SetValue(multi); return m },
+		"proposal edit multi-line": func(m Model) Model {
+			m.state = stateCommandProposalEdit
+			m.input.SetValue(multi)
+			return m
+		},
+		"hist search multi-line": func(m Model) Model {
+			m.state = stateHistSearch
+			m.input.SetValue(multi)
+			return m
+		},
+		"help overlay": func(m Model) Model { m.showHelp = true; return m },
+	}
+	for name, setup := range cases {
+		m := setup(layoutModel(t))
+		if got, want := m.totalViewHeight(), lipgloss.Height(m.renderedView()); got != want {
+			t.Errorf("%s: totalViewHeight = %d, rendered %d rows", name, got, want)
+		}
 	}
 }

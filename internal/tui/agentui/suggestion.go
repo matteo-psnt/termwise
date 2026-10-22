@@ -222,10 +222,13 @@ func sanitizeSuggestionText(text string, maxChars int) string {
 		return ""
 	}
 	text = strings.Join(strings.Fields(text), " ")
-	if len(text) <= maxChars {
+	// Count and cut in runes: a byte cut can split a multi-byte character and
+	// send invalid UTF-8 to the provider.
+	runes := []rune(text)
+	if len(runes) <= maxChars {
 		return text
 	}
-	return strings.TrimSpace(text[:maxChars-3]) + "..."
+	return strings.TrimSpace(string(runes[:max(maxChars-3, 0)])) + "..."
 }
 
 func shouldFilterSuggestion(s string) bool {

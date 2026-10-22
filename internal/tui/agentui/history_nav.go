@@ -61,6 +61,10 @@ func (m Model) historyForward() Model {
 
 // enterHistSearch switches to stateHistSearch and seeds the initial match list.
 func (m Model) enterHistSearch() Model {
+	// Search replaces any Up/Down browsing in progress. Left set, the stale
+	// index survived the search: Down afterwards swapped the accepted match
+	// for the entry browsed to before it, and the dropdowns stayed hidden.
+	m.histIdx = -1
 	m.histDraft = m.input.Value()
 	m.histSearch = histSearchState{}
 	m.state = stateHistSearch

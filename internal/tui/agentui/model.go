@@ -154,6 +154,7 @@ func newModel(cfg modelConfig) Model {
 		exchanges:        cfg.exchanges,
 		cfgPath:          cfg.cfgPath,
 		cwd:              workDirFull(),
+		slashCache:       &slashMatchCache{},
 		tuiTopRow:        cfg.initialCursorRow,
 	}
 	// Cursor query failed; clampAnchor will pin to the bottom on first WindowSizeMsg.
@@ -233,6 +234,11 @@ func (m Model) forwardToComponents(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var vpCmd tea.Cmd
 	m.vp, vpCmd = m.vp.Update(msg)
+	// Track wheel scrolling like PgUp/PgDn: without it, the next refresh
+	// snapped a reader scrolled up by wheel back to the bottom.
+	if _, ok := msg.(tea.MouseWheelMsg); ok {
+		m.userScrolled = !m.vp.AtBottom()
+	}
 	return m, tea.Batch(vpCmd, inputCmd)
 }
 
@@ -258,6 +264,16 @@ func (m Model) quit() (tea.Model, tea.Cmd) {
 	m.saveSession()
 	m.quitting = true
 	return m, tea.Quit
+}
+
+// abort quits without accepting a pending command proposal. The proposal
+// screen has its own accept key; Ctrl+C and the close key mean "get me out",
+// and handing the unaccepted command to the shell widget would overwrite the
+// line the user had typed with a command they never chose (or, from edit
+// mode, with the original rather than their edit).
+func (m Model) abort() (tea.Model, tea.Cmd) {
+	m.clearShellCommand()
+	return m.quit()
 }
 
 // saveSession persists the current conversation to disk if a session ID is set.
@@ -292,11 +308,14 @@ func (m Model) exitShellCommand() string {
 // handleKey handles all keyboard input based on current state.
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
-		return m.quit()
+		return m.abort()
 	}
-	if m.closeKey != "" {
+	// While /config is capturing a new hotkey, the current one is a key to
+	// record (re-picking it, say), not a request to close.
+	capturing := m.state == stateConfigEditor && m.configEditor != nil && m.configEditor.phase == configPhaseCapture
+	if m.closeKey != "" && !capturing {
 		if zsh, ok := keybinding.KeyMsgToZsh(msg.Key()); ok && zsh == m.closeKey {
-			return m.quit()
+			return m.abort()
 		}
 	}
 
@@ -307,19 +326,34 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// ? opens the help overlay unless the user is typing a message in idle.
-	if msg.String() == "?" {
-		typingInIdle := m.state == stateIdle && m.input.Value() != ""
-		if !typingInIdle {
-			m.showHelp = true
-			return m, nil
-		}
+	// ? opens the help overlay unless the user is typing text it belongs in.
+	if msg.String() == "?" && !m.typingText() {
+		m.showHelp = true
+		return m, nil
 	}
 
 	if md := modeFor(m.state); md != nil {
 		return md.handleKey(m, msg)
 	}
 	return m, nil
+}
+
+// typingText reports whether a printable key is text the user is
+// entering rather than a command: a message in idle, the command being edited
+// (globs like "file?.txt"), a Ctrl+R query, the ask picker's free-text "Other"
+// answer, or a keybinding being captured. Help must not swallow "?" there.
+func (m Model) typingText() bool {
+	switch m.state {
+	case stateIdle:
+		return m.input.Value() != ""
+	case stateCommandProposalEdit, stateHistSearch:
+		return true
+	case stateAskPicker:
+		return m.pending.picker != nil && m.pending.picker.onOther()
+	case stateConfigEditor:
+		return m.configEditor != nil && m.configEditor.phase == configPhaseCapture
+	}
+	return false
 }
 
 // modes maps each TUI state to the mode that owns key handling for it.
