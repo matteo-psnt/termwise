@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -26,10 +27,49 @@ var (
 // bug report from a dev build actionable, so it is included whenever there is
 // one to show.
 func versionString() string {
-	if commit == "none" {
-		return version
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		info = nil
 	}
-	return fmt.Sprintf("%s (%s)", version, commit)
+	v, c := buildVersion(version, commit, info)
+	if c == "none" {
+		return v
+	}
+	return fmt.Sprintf("%s (%s)", v, c)
+}
+
+// buildVersion fills in what ldflags left at its default from the Go build
+// info: `go install …@latest` stamps the module version, and a build from a
+// checkout stamps the VCS revision. Values set by goreleaser always win.
+func buildVersion(version, commit string, info *debug.BuildInfo) (string, string) {
+	if info == nil {
+		return version, commit
+	}
+	if version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		version = info.Main.Version
+	}
+	if commit == "none" {
+		var rev string
+		var modified bool
+		for _, s := range info.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				rev = s.Value
+			case "vcs.modified":
+				modified = s.Value == "true"
+			}
+		}
+		if rev != "" {
+			if len(rev) > 12 {
+				rev = rev[:12]
+			}
+			if modified {
+				rev += "-dirty"
+			}
+			commit = rev
+		}
+	}
+	return version, commit
 }
 
 func main() {
