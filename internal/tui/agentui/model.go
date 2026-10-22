@@ -33,6 +33,12 @@ const (
 	stateConfigEditor                 // /config two-level settings editor
 )
 
+// isBusy reports whether a turn is in flight: waiting on the model or on the
+// LLM safety judge. These are the states the spinner animates in.
+func (m Model) isBusy() bool {
+	return m.state == stateThinking || m.state == stateJudging
+}
+
 // histSearchState holds the state for Ctrl+R reverse search.
 type histSearchState struct {
 	query   string
@@ -222,7 +228,7 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) forwardToComponents(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var inputCmd tea.Cmd
 	m.input, inputCmd = m.input.Update(msg)
-	if m.state != stateIdle && m.state != stateThinking && m.state != stateJudging && m.state != stateCommandProposal {
+	if m.state != stateIdle && !m.isBusy() && m.state != stateCommandProposal {
 		return m, inputCmd
 	}
 	var vpCmd tea.Cmd

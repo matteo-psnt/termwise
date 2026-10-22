@@ -8,6 +8,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+// copyToastDuration is how long the "Copied …" confirmation stays up.
+const copyToastDuration = 2500 * time.Millisecond
+
 // copyToastTimeoutMsg fires after the copy confirmation should disappear.
 type copyToastTimeoutMsg struct{}
 
@@ -111,8 +114,8 @@ func (m Model) finishSelection() (Model, tea.Cmd) {
 		unit = "char"
 	}
 	m.copyToastMsg = fmt.Sprintf("Copied %d %s to clipboard", n, unit)
-	m.copyToastUntil = time.Now().Add(2500 * time.Millisecond)
-	return m, tea.Tick(2500*time.Millisecond, func(time.Time) tea.Msg {
+	m.copyToastUntil = time.Now().Add(copyToastDuration)
+	return m, tea.Tick(copyToastDuration, func(time.Time) tea.Msg {
 		return copyToastTimeoutMsg{}
 	})
 }

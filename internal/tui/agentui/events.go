@@ -14,7 +14,7 @@ import (
 )
 
 func (m Model) handleSpinnerTick(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
-	if m.state != stateThinking && m.state != stateJudging {
+	if !m.isBusy() {
 		return m, nil
 	}
 	var cmd tea.Cmd

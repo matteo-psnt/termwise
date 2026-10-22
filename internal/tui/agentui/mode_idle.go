@@ -116,6 +116,10 @@ func (idleMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m.updateInputAndResetCompletions(msg)
 }
 
+// escDoubleTapWindow is how soon a second Esc must follow the first to clear
+// the input.
+const escDoubleTapWindow = 500 * time.Millisecond
+
 // idleEsc implements the two-tap Esc gesture: the first Esc arms a 500ms timer
 // (shown in the status line), a second Esc within the window stashes the draft
 // to history and clears the input.
@@ -123,7 +127,7 @@ func (m Model) idleEsc() (tea.Model, tea.Cmd) {
 	if m.input.Value() == "" {
 		return m, nil
 	}
-	if !m.lastEscAt.IsZero() && time.Since(m.lastEscAt) < 500*time.Millisecond {
+	if !m.lastEscAt.IsZero() && time.Since(m.lastEscAt) < escDoubleTapWindow {
 		text := m.input.Value()
 		m.input.SetValue("")
 		m.input.CursorEnd()
@@ -132,7 +136,7 @@ func (m Model) idleEsc() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.lastEscAt = time.Now()
-	return m, tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
+	return m, tea.Tick(escDoubleTapWindow, func(time.Time) tea.Msg {
 		return escTimeoutMsg{}
 	})
 }
