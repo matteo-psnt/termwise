@@ -52,8 +52,13 @@ type histSearchState struct {
 type Model struct {
 	sharedState
 
-	state        tuiState
-	pending      pendingToolState
+	state   tuiState
+	pending pendingToolState
+	// turnResults are the tool results the current turn has produced so far,
+	// not yet in messages: they are added in one message when the turn's
+	// tool calls are all done. Kept here so an interrupted turn can still
+	// record what actually ran (see flushTurnResults).
+	turnResults  []provider.ToolResult
 	histSearch   histSearchState
 	slashPicker  *slashPicker
 	configEditor *configEditor
@@ -154,6 +159,7 @@ func newModel(cfg modelConfig) Model {
 		exchanges:        cfg.exchanges,
 		cfgPath:          cfg.cfgPath,
 		cwd:              workDirFull(),
+		slashCache:       &slashMatchCache{},
 		tuiTopRow:        cfg.initialCursorRow,
 	}
 	// Cursor query failed; clampAnchor will pin to the bottom on first WindowSizeMsg.
@@ -165,13 +171,42 @@ func newModel(cfg modelConfig) Model {
 	if cfg.initialSession != nil && len(cfg.initialSession.Messages) > 0 {
 		sh.messages = cfg.initialSession.Messages
 		sh.thread = deserializeThread(cfg.initialSession.Thread)
-	} else if cfg.stdin != "" {
+	}
+	// Not an else: piped stdin is attached to the next message whether or not
+	// a session was resumed, and without the marker it went out unseen.
+	if cfg.stdin != "" {
 		sh.thread = append(sh.thread, UserEntry{
 			Content: fmt.Sprintf("[stdin: %d lines]", strings.Count(cfg.stdin, "\n")+1),
 		})
 	}
 
-	return Model{sharedState: sh}
+	m := Model{sharedState: sh}
+	if cfg.initialSession != nil && len(cfg.initialSession.Messages) > 0 {
+		m.restoreSessionModel(*cfg.initialSession)
+	}
+	return m
+}
+
+// restoreSessionModel switches to the provider and model the resumed session
+// was using. The conversation was shaped by that model (and Anthropic's
+// thinking state is only valid for it), so silently continuing on whatever is
+// selected today changes who you are talking to mid-thread. When it can't be
+// restored, the current model stays and a notice says so. The switch is not
+// persisted: resuming one session shouldn't change the default for new ones.
+func (m *Model) restoreSessionModel(s history.Session) {
+	if s.ProviderName == "" || s.ModelID == "" {
+		return
+	}
+	if s.ProviderName == m.providerName && s.ModelID == m.modelID {
+		return
+	}
+	if err := m.applyModel(s.ProviderName, s.ModelID); err == nil {
+		return
+	}
+	m.thread = append(m.thread, SystemEntry{Content: fmt.Sprintf(
+		"This session used %s, which isn't available now; continuing on %s.",
+		modelOptionFor(s.ProviderName, s.ModelID), modelOptionFor(m.providerName, m.modelID),
+	)})
 }
 
 // Init implements tea.Model.
@@ -233,6 +268,11 @@ func (m Model) forwardToComponents(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var vpCmd tea.Cmd
 	m.vp, vpCmd = m.vp.Update(msg)
+	// Track wheel scrolling like PgUp/PgDn: without it, the next refresh
+	// snapped a reader scrolled up by wheel back to the bottom.
+	if _, ok := msg.(tea.MouseWheelMsg); ok {
+		m.userScrolled = !m.vp.AtBottom()
+	}
 	return m, tea.Batch(vpCmd, inputCmd)
 }
 
@@ -255,9 +295,20 @@ func (m Model) clampAnchor() Model {
 func (m Model) quit() (tea.Model, tea.Cmd) {
 	m.suggestionCancel()
 	m.cancel()
+	m.flushTurnResults()
 	m.saveSession()
 	m.quitting = true
 	return m, tea.Quit
+}
+
+// abort quits without accepting a pending command proposal. The proposal
+// screen has its own accept key; Ctrl+C and the close key mean "get me out",
+// and handing the unaccepted command to the shell widget would overwrite the
+// line the user had typed with a command they never chose (or, from edit
+// mode, with the original rather than their edit).
+func (m Model) abort() (tea.Model, tea.Cmd) {
+	m.clearShellCommand()
+	return m.quit()
 }
 
 // saveSession persists the current conversation to disk if a session ID is set.
@@ -267,6 +318,7 @@ func (m *Model) saveSession() {
 	}
 	s := history.Session{
 		ID:           m.sessionID,
+		Mode:         m.sessionMode.historyName(),
 		ProviderName: m.providerName,
 		ModelID:      m.modelID,
 		Messages:     m.messages,
@@ -292,11 +344,14 @@ func (m Model) exitShellCommand() string {
 // handleKey handles all keyboard input based on current state.
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
-		return m.quit()
+		return m.abort()
 	}
-	if m.closeKey != "" {
+	// While /config is capturing a new hotkey, the current one is a key to
+	// record (re-picking it, say), not a request to close.
+	capturing := m.state == stateConfigEditor && m.configEditor != nil && m.configEditor.phase == configPhaseCapture
+	if m.closeKey != "" && !capturing {
 		if zsh, ok := keybinding.KeyMsgToZsh(msg.Key()); ok && zsh == m.closeKey {
-			return m.quit()
+			return m.abort()
 		}
 	}
 
@@ -307,19 +362,34 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// ? opens the help overlay unless the user is typing a message in idle.
-	if msg.String() == "?" {
-		typingInIdle := m.state == stateIdle && m.input.Value() != ""
-		if !typingInIdle {
-			m.showHelp = true
-			return m, nil
-		}
+	// ? opens the help overlay unless the user is typing text it belongs in.
+	if msg.String() == "?" && !m.typingText() {
+		m.showHelp = true
+		return m, nil
 	}
 
 	if md := modeFor(m.state); md != nil {
 		return md.handleKey(m, msg)
 	}
 	return m, nil
+}
+
+// typingText reports whether a printable key is text the user is
+// entering rather than a command: a message in idle, the command being edited
+// (globs like "file?.txt"), a Ctrl+R query, the ask picker's free-text "Other"
+// answer, or a keybinding being captured. Help must not swallow "?" there.
+func (m Model) typingText() bool {
+	switch m.state {
+	case stateIdle:
+		return m.input.Value() != ""
+	case stateCommandProposalEdit, stateHistSearch:
+		return true
+	case stateAskPicker:
+		return m.pending.picker != nil && m.pending.picker.onOther()
+	case stateConfigEditor:
+		return m.configEditor != nil && m.configEditor.phase == configPhaseCapture
+	}
+	return false
 }
 
 // modes maps each TUI state to the mode that owns key handling for it.

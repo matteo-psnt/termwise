@@ -26,6 +26,12 @@ type Message struct {
 	Content     string       // text content (for user messages or bare assistant text)
 	ToolCalls   []ToolCall   // tool calls made by the assistant in this turn
 	ToolResults []ToolResult // tool results sent by the user in this turn
+	// ProviderState is opaque provider-specific data copied from the
+	// ChatResponse that produced this assistant turn, which the same provider
+	// needs back verbatim when the conversation continues (Anthropic's signed
+	// thinking blocks). Other providers ignore it. omitempty keeps saved
+	// sessions without it loading unchanged.
+	ProviderState json.RawMessage `json:",omitempty"`
 }
 
 // ToolCall is a single tool invocation requested by the model.
@@ -79,6 +85,25 @@ type ChatResponse struct {
 	StopReason   string
 	InputTokens  int
 	OutputTokens int
+	// ProviderState must be copied onto the assistant Message built from
+	// this response; see Message.ProviderState.
+	ProviderState json.RawMessage
+	// HistoryStateDropped reports that the provider rejected the
+	// ProviderState replayed in the request's history and answered without
+	// it. The caller must drop it from its own history too (WithoutState),
+	// or every later request will be rejected and retried the same way.
+	HistoryStateDropped bool
+}
+
+// WithoutState returns a copy of msgs with every ProviderState removed;
+// text, tool calls and tool results are kept.
+func WithoutState(msgs []Message) []Message {
+	out := make([]Message, len(msgs))
+	for i, m := range msgs {
+		m.ProviderState = nil
+		out[i] = m
+	}
+	return out
 }
 
 // ----------------------------------------------------------------------------
@@ -109,8 +134,13 @@ type Config struct {
 // Helpers for client packages
 // ----------------------------------------------------------------------------
 
-// DefaultRequestTimeout bounds each HTTP request a client makes.
-const DefaultRequestTimeout = 30 * time.Second
+// DefaultRequestTimeout bounds each HTTP request a client makes. Requests are
+// not streamed, so it must cover a whole response: a 16k-token thinking turn
+// at a slow ~40 tokens/s takes close to 7 minutes, and the Anthropic SDK itself
+// expects up to 7.5 minutes for that budget. Ten minutes matches the SDK's own
+// non-streaming default. The cap only catches a stalled connection: Esc and
+// ctrl+c cancel the request context, which ends it immediately.
+const DefaultRequestTimeout = 10 * time.Minute
 
 // ParseToolInput unmarshals a tool call's raw JSON arguments into a map.
 // Empty input yields an empty map, since models may omit arguments for a

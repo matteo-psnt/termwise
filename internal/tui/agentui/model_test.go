@@ -311,3 +311,343 @@ func TestHandleResponseEventWithoutToolsClearsShellCommand(t *testing.T) {
 		t.Fatalf("expected shell result to clear after plain text response, got %q", got.shellCommand)
 	}
 }
+
+// Truncation counts and cuts runes, so a multi-byte character at the limit is
+// never split into invalid UTF-8.
+func TestSanitizeSuggestionTextIsRuneSafe(t *testing.T) {
+	text := strings.Repeat("é", 20)
+	got := sanitizeSuggestionText(text, 10)
+	if want := strings.Repeat("é", 7) + "..."; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if got := sanitizeSuggestionText(strings.Repeat("é", 10), 10); got != strings.Repeat("é", 10) {
+		t.Fatalf("text within the limit was truncated: %q", got)
+	}
+}
+
+// trimContext returns a trimmed copy and leaves its input alone; the caller
+// decides what becomes the history.
+func TestTrimContextDoesNotMutateInput(t *testing.T) {
+	large := strings.Repeat("x", 2_000)
+	messages := []provider.Message{{
+		Role: "user",
+		ToolResults: []provider.ToolResult{
+			{ToolCallID: "1", Content: large},
+			{ToolCallID: "2", Content: large},
+		},
+	}}
+
+	trimmed := trimContext(messages, 2_000)
+	if !strings.Contains(trimmed[0].ToolResults[0].Content, "result dropped") {
+		t.Fatalf("expected the trimmed copy to drop a result")
+	}
+	for i, tr := range messages[0].ToolResults {
+		if tr.Content != large {
+			t.Fatalf("input ToolResults[%d] was rewritten to %q", i, tr.Content)
+		}
+	}
+}
+
+// Ctrl+C and the close key abort: a proposal the user never accepted must not
+// reach the shell widget. Enter on the proposal still does.
+func TestQuitKeysDoNotAcceptPendingProposal(t *testing.T) {
+	proposal := func(state tuiState) Model {
+		ctx, cancel := context.WithCancel(context.Background())
+		sctx, scancel := context.WithCancel(context.Background())
+		m := pickerModel("")
+		m.ctx, m.cancel = ctx, cancel
+		m.suggestionCtx, m.suggestionCancel = sctx, scancel
+		m.closeKey = "^T"
+		m.shellCommand = "rm -rf build"
+		m.state = state
+		return m
+	}
+	for name, key := range map[string]tea.KeyPressMsg{
+		"ctrl+c":    {Code: 'c', Mod: tea.ModCtrl},
+		"close key": {Code: 't', Mod: tea.ModCtrl},
+	} {
+		for _, state := range []tuiState{stateCommandProposal, stateCommandProposalEdit} {
+			next, _ := proposal(state).handleKey(key)
+			got := next.(Model)
+			if !got.quitting {
+				t.Fatalf("%s in state %v did not quit", name, state)
+			}
+			if cmd := got.exitShellCommand(); cmd != "" {
+				t.Errorf("%s in state %v handed %q to the shell", name, state, cmd)
+			}
+		}
+	}
+
+	next, _ := proposal(stateCommandProposal).handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd := next.(Model).exitShellCommand(); cmd != "rm -rf build" {
+		t.Fatalf("enter handed %q to the shell, want the proposal", cmd)
+	}
+}
+
+// "?" is text, not the help key, wherever the user is typing.
+func TestQuestionMarkIsTextWhereTheUserIsTyping(t *testing.T) {
+	question := tea.KeyPressMsg{Code: '?', Text: "?"}
+
+	edit := pickerModel("")
+	edit.state = stateCommandProposalEdit
+	edit.input.Focus()
+	edit.input.SetValue("ls file")
+	next, _ := edit.handleKey(question)
+	if got := next.(Model); got.showHelp || got.input.Value() != "ls file?" {
+		t.Errorf("edit mode: help=%v input=%q, want the ? typed", got.showHelp, got.input.Value())
+	}
+
+	search := pickerModel("")
+	search.state = stateHistSearch
+	next, _ = search.handleKey(question)
+	if got := next.(Model); got.showHelp || got.histSearch.query != "?" {
+		t.Errorf("hist search: help=%v query=%q, want the ? typed", got.showHelp, got.histSearch.query)
+	}
+
+	ask := pickerModel("")
+	ask.state = stateAskPicker
+	p := newPicker("Which?", nil, false) // no options: the cursor starts on Other
+	ask.pending.picker = &p
+	next, _ = ask.handleKey(question)
+	if got := next.(Model); got.showHelp || got.pending.picker.otherText != "?" {
+		t.Errorf("ask Other: help=%v text=%q, want the ? typed", got.showHelp, got.pending.picker.otherText)
+	}
+
+	idle := pickerModel("")
+	next, _ = idle.handleKey(question)
+	if !next.(Model).showHelp {
+		t.Error("? on an empty idle prompt should still open help")
+	}
+}
+
+func toolResultIDs(msg provider.Message) []string {
+	var ids []string
+	for _, tr := range msg.ToolResults {
+		ids = append(ids, tr.ToolCallID)
+	}
+	return ids
+}
+
+// A turn interrupted after the model asked for tools leaves calls with no
+// results; the next message must answer them or the provider rejects it.
+func TestSubmitAfterInterruptAnswersDanglingToolCalls(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	m := Model{
+		sharedState: sharedState{
+			ctx:              ctx,
+			cancel:           cancel,
+			suggestionCtx:    ctx,
+			suggestionCancel: func() {},
+			activeGeneration: 3,
+			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
+			messages: []provider.Message{
+				{Role: "user", Content: "list files"},
+				{Role: "assistant", ToolCalls: []provider.ToolCall{{ID: "a", Name: "bash"}, {ID: "b", Name: "read"}}},
+			},
+		},
+		state: stateThinking,
+	}
+	next, _ := thinkingMode{}.handleKey(m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	next, _ = next.(Model).submitMessage("never mind")
+	msgs := next.(Model).messages
+
+	if len(msgs) != 4 {
+		t.Fatalf("got %d messages, want prompt, calls, results, new prompt: %#v", len(msgs), msgs)
+	}
+	if ids := toolResultIDs(msgs[2]); len(ids) != 2 || ids[0] != "a" || ids[1] != "b" || !msgs[2].ToolResults[0].IsError {
+		t.Fatalf("results message = %#v, want error results for a and b", msgs[2])
+	}
+	if msgs[3].Content != "never mind" {
+		t.Fatalf("last message = %#v, want the new prompt", msgs[3])
+	}
+}
+
+// Calls answered only in part (the command tool ends the turn before the
+// calls after it) get the missing results added to the existing message.
+func TestCloseDanglingToolCallsCompletesPartialResults(t *testing.T) {
+	results := []provider.ToolResult{{ToolCallID: "cmd", Content: "ok"}}
+	in := []provider.Message{
+		{Role: "assistant", ToolCalls: []provider.ToolCall{{ID: "cmd"}, {ID: "x"}}},
+		{Role: "user", ToolResults: results},
+		{Role: "assistant", Content: "done"},
+	}
+	out := closeDanglingToolCalls(in)
+	if len(out) != 3 {
+		t.Fatalf("got %d messages, want 3", len(out))
+	}
+	if ids := toolResultIDs(out[1]); len(ids) != 2 || ids[0] != "cmd" || ids[1] != "x" {
+		t.Fatalf("results = %v, want cmd and x", ids)
+	}
+	if len(in[1].ToolResults) != 1 || len(results) != 1 {
+		t.Fatal("input was modified")
+	}
+
+	complete := closeDanglingToolCalls(out)
+	if len(complete) != 3 || len(complete[1].ToolResults) != 2 {
+		t.Fatalf("a complete history changed: %#v", complete)
+	}
+}
+
+// Scrolling up with the wheel must hold the position when the thread refreshes
+// (a tool result arriving), the same as PgUp does.
+func TestWheelScrollUpSurvivesRefresh(t *testing.T) {
+	m := pickerModel("")
+	for i := range 40 {
+		m.thread = append(m.thread, SystemEntry{Content: strings.Repeat("line ", 3) + string(rune('a'+i%26))})
+	}
+	m.refreshViewport()
+	if !m.vp.AtBottom() {
+		t.Fatal("setup: viewport should start at the bottom")
+	}
+
+	next, _ := m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	m = next.(Model)
+	if m.vp.AtBottom() {
+		t.Fatal("wheel up did not scroll")
+	}
+	offset := m.vp.YOffset()
+	m.refreshViewport()
+	if m.vp.YOffset() != offset {
+		t.Fatalf("refresh moved a wheel-scrolled view from %d to %d", offset, m.vp.YOffset())
+	}
+}
+
+// Dropping an earlier tool result edits history, which invalidates every
+// later thinking block; replaying them is a 400 on Anthropic. All provider
+// state goes once anything is trimmed, and stays when nothing is.
+func TestTrimContextClearsProviderStateOnlyWhenItTrims(t *testing.T) {
+	state := []byte(`{"thinking":"signed"}`)
+	large := strings.Repeat("x", 4_000)
+	messages := []provider.Message{
+		{Role: "assistant", ToolCalls: []provider.ToolCall{{ID: "1", Name: "read"}}, ProviderState: state},
+		{Role: "user", ToolResults: []provider.ToolResult{{ToolCallID: "1", Content: large}}},
+		{Role: "assistant", Content: "done", ProviderState: state},
+	}
+
+	trimmed := trimContext(messages, 2_000)
+	for i, msg := range trimmed {
+		if msg.ProviderState != nil {
+			t.Errorf("trimmed[%d].ProviderState = %s, want nil", i, msg.ProviderState)
+		}
+	}
+	if messages[0].ProviderState == nil {
+		t.Error("input ProviderState was cleared")
+	}
+
+	kept := trimContext(messages, 1_000_000)
+	if kept[0].ProviderState == nil || kept[2].ProviderState == nil {
+		t.Error("ProviderState cleared although nothing was trimmed")
+	}
+}
+
+// The command tool ends the turn, and today the agent loop drops the calls
+// after it, so the next submit answers them with notRunResult. When the agent
+// package starts answering those calls itself, its results must be kept as
+// they are: one result per call, nothing duplicated or overwritten.
+func TestCommandToolResultsStayOnePerCall(t *testing.T) {
+	calls := []provider.ToolCall{
+		{ID: "cmd", Name: "command", Input: map[string]any{"content": "ls"}},
+		{ID: "read", Name: "read", Input: map[string]any{"path": "x"}},
+	}
+	for name, tc := range map[string]struct {
+		collected []provider.ToolResult
+		readWant  string
+	}{
+		"agent drops later calls": {
+			collected: []provider.ToolResult{{ToolCallID: "cmd", Content: "ok"}},
+			readWant:  notRunResult,
+		},
+		"agent answers later calls": {
+			collected: []provider.ToolResult{{ToolCallID: "cmd", Content: "ok"}, {ToolCallID: "read", Content: "file body"}},
+			readWant:  "file body",
+		},
+		"agent answers them first": {
+			collected: []provider.ToolResult{{ToolCallID: "read", Content: "file body"}, {ToolCallID: "cmd", Content: "ok"}},
+			readWant:  "file body",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			m := Model{
+				sharedState: sharedState{
+					ctx:              ctx,
+					cancel:           cancel,
+					suggestionCtx:    ctx,
+					suggestionCancel: func() {},
+					contextWindow:    32_000,
+					vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
+					messages: []provider.Message{
+						{Role: "user", Content: "list files"},
+						{Role: "assistant", ToolCalls: calls},
+					},
+				},
+				state: stateThinking,
+			}
+			next, _ := m.handleRespondEvent(respondEvent{Content: "ls", Collected: tc.collected})
+			next, _ = next.(Model).submitMessage("thanks")
+			msgs := next.(Model).messages
+
+			if len(msgs) != 4 {
+				t.Fatalf("got %d messages, want prompt, calls, results, new prompt: %#v", len(msgs), msgs)
+			}
+			got := map[string][]string{}
+			for _, tr := range msgs[2].ToolResults {
+				got[tr.ToolCallID] = append(got[tr.ToolCallID], tr.Content)
+			}
+			if len(msgs[2].ToolResults) != 2 || len(got["cmd"]) != 1 || len(got["read"]) != 1 {
+				t.Fatalf("results = %#v, want exactly one for cmd and one for read", msgs[2].ToolResults)
+			}
+			if got["read"][0] != tc.readWant {
+				t.Errorf("read result = %q, want %q", got["read"][0], tc.readWant)
+			}
+		})
+	}
+}
+
+// A call that already ran keeps its real result when the turn is
+// interrupted later (here at the judge, while the next call awaits
+// approval); only the unfinished call is answered as interrupted. Reporting
+// both as not run invited the model to repeat a command that had run.
+func TestInterruptKeepsResultsOfToolsThatRan(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	m := Model{
+		sharedState: sharedState{
+			ctx:              ctx,
+			cancel:           cancel,
+			suggestionCtx:    ctx,
+			suggestionCancel: func() {},
+			activeGeneration: 1,
+			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
+			messages: []provider.Message{
+				{Role: "user", Content: "do it"},
+				{Role: "assistant", ToolCalls: []provider.ToolCall{{ID: "a", Name: "bash"}, {ID: "b", Name: "bash"}}},
+			},
+		},
+		state: stateThinking,
+	}
+	m.contextWindow = 200_000
+	ran := provider.ToolResult{ToolCallID: "a", Content: "created dir"}
+	next, _ := m.handleNeedsApprovalEvent(needsApprovalEvent{
+		ToolCall: provider.ToolCall{ID: "b", Name: "bash"}, Command: "rm x", Collected: []provider.ToolResult{ran},
+	})
+	m = next.(Model)
+	m.state = stateJudging
+	next, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	next, _ = next.(Model).submitMessage("next")
+	msgs := next.(Model).messages
+
+	var results []provider.ToolResult
+	for _, msg := range msgs {
+		results = append(results, msg.ToolResults...)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d tool results, want one per call: %#v", len(results), msgs)
+	}
+	if results[0] != ran {
+		t.Errorf("call a = %+v, want its real result %+v", results[0], ran)
+	}
+	if results[1].ToolCallID != "b" || !results[1].IsError {
+		t.Errorf("call b = %+v, want an interrupted error result", results[1])
+	}
+}

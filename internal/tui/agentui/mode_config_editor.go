@@ -53,6 +53,7 @@ func openConfigValuePicker(m Model, def config.SettingDef) Model {
 		m.configEditor.setting = def
 		m.configEditor.original = def.Resolve(m.configEditor.cfg)
 		m.configEditor.valuePicker = nil
+		m.configEditor.captureNotice = ""
 		m.configEditor.phase = configPhaseCapture
 		return m
 	}
@@ -72,7 +73,9 @@ func openConfigValuePicker(m Model, def config.SettingDef) Model {
 // handleConfigCaptureKey reads a single keypress as the new keybinding value.
 // Esc cancels (no change). Any other key with a canonical zsh translation is
 // captured, applied in memory, and persisted. Keys with no translation (e.g.
-// raw modifier-only events) are ignored so the user can try again.
+// raw modifier-only events) are ignored so the user can try again, and keys
+// the shell needs for basic editing (keybinding.Reserved) are refused with
+// the reason, the same as in `termwise config`.
 func handleConfigCaptureKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.Code == tea.KeyEscape {
 		m = backToChooser(m)
@@ -83,6 +86,12 @@ func handleConfigCaptureKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if reason, reserved := keybinding.Reserved(zsh); reserved {
+		m.configEditor.captureNotice = keybinding.Label(zsh) + " can't be used: " + reason + "."
+		m.refreshViewport()
+		return m, nil
+	}
+	m.configEditor.captureNotice = ""
 	return commitConfigValue(m, m.configEditor.setting, zsh), nil
 }
 
@@ -113,7 +122,9 @@ func handleConfigValueKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // chooser. Shared by the value picker and keybinding capture.
 func commitConfigValue(m Model, def config.SettingDef, val string) Model {
 	m = applyConfigValue(m, def, val)
-	m.persistConfigValue(def, val)
+	if err := m.persistConfigValue(def, val); err != nil {
+		m.appendThreadEntries(saveFailedEntry(err))
+	}
 	def.Set(&m.configEditor.cfg, val)
 	m.configEditor.chooser = rebuildChooser(m.configEditor.chooser, m.configEditor.cfg)
 	m = backToChooser(m)
@@ -169,6 +180,9 @@ func renderCaptureView(m Model) string {
 	}
 	b.WriteString("\n")
 	b.WriteString(m.renderer.styles.InputPrompt.Render("  Press a key…") + "\n")
+	if n := m.configEditor.captureNotice; n != "" {
+		b.WriteString(m.renderer.styles.Error.Render("  "+n) + "\n")
+	}
 	b.WriteString("\n")
 	b.WriteString(m.renderer.styles.ActionHints.Render("  esc cancel"))
 	return b.String()

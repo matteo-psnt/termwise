@@ -27,6 +27,12 @@ func (slashPickerMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.C
 		m.slashPicker = nil
 		m.state = stateIdle
 		if cmd != nil {
+			// Undo the preview first so Run starts from the real state. Run only
+			// commits on success; a failed /model commit would otherwise leave
+			// the previewed providerName/modelID paired with the old client.
+			if cmd.Preview != nil {
+				m = cmd.Preview(m, originalValue)
+			}
 			return cmd.Run(m, []string{choice})
 		}
 	case pickerMoved:

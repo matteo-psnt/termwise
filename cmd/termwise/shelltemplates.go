@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/config"
@@ -65,8 +66,8 @@ while IFS= read -r _tw_key; do
     bindkey -r "$_tw_key"
 done < <(bindkey | awk '/_termwise_widget$/{gsub(/"/, "", $1); print $1}')
 unset _tw_key
-bindkey '%[2]s' _termwise_widget
-`, cliname.EnvVar, binding)
+bindkey %[2]s _termwise_widget
+`, cliname.EnvVar, shQuote(binding))
 }
 
 func bashSetup(binding string) string {
@@ -118,8 +119,8 @@ while IFS= read -r _tw_key; do
     bind -r "\"$_tw_key\"" 2>/dev/null
 done < <(bind -X 2>/dev/null | awk '/_termwise_widget/{gsub(/^""|"": .*/, "", $0); print}')
 unset _tw_key
-bind -x '"%[2]s": _termwise_widget'
-`, cliname.EnvVar, bashKey)
+bind -x %[2]s
+`, cliname.EnvVar, shQuote(`"`+readlineKeyseq(bashKey)+`": _termwise_widget`))
 }
 
 func fishSetup(binding string) string {
@@ -171,4 +172,24 @@ for _tw_key in (bind --user | string replace -rf -- '^bind (\\S+) _termwise_widg
 end
 bind -- %[2]s _termwise_widget
 `, cliname.EnvVar, fishKey)
+}
+
+// shQuote single-quotes s for bash and zsh. The keybinding comes from the
+// config file, and Alt+' is stored as \e' — pasted between bare single
+// quotes it leaves one open, and the whole eval'd script then fails to
+// parse, taking `tw` down with it.
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// readlineKeyseq escapes key for use inside a double-quoted readline key
+// sequence: a `"` (Alt+") would end it early, and a trailing lone backslash
+// (Alt+\ is stored as \e\) would escape the closing quote.
+func readlineKeyseq(key string) string {
+	key = strings.ReplaceAll(key, `"`, `\"`)
+	trailing := len(key) - len(strings.TrimRight(key, `\`))
+	if trailing%2 == 1 {
+		key += `\`
+	}
+	return key
 }

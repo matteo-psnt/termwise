@@ -56,3 +56,13 @@ func TestOfferShellIntegrationSilentWhenLoaded(t *testing.T) {
 		t.Errorf("printed %q with the integration already loaded", out.String())
 	}
 }
+
+func TestOfferShellIntegrationTreatsEOFAsNo(t *testing.T) {
+	rc := setupShellHome(t)
+	var out bytes.Buffer
+	offerShellIntegration(strings.NewReader(""), &out)
+
+	if _, err := os.Stat(rc); !os.IsNotExist(err) {
+		t.Errorf("rc file written after Ctrl+D at the prompt")
+	}
+}

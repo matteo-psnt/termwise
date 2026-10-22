@@ -16,14 +16,35 @@ const (
 	sessionMaxAge = 30 * 24 * time.Hour
 )
 
+// Session modes. The TUI runs either the default agent or explain mode, and
+// the two have different system prompts and tool sets, so a session saved in
+// one must never be resumed in the other.
+const (
+	SessionModeAgent   = "agent"
+	SessionModeExplain = "explain"
+)
+
 // Session is the full persistent state of one agent conversation.
 type Session struct {
-	ID           string             `json:"id"`
+	ID string `json:"id"`
+	// Mode is SessionModeAgent or SessionModeExplain. Files written before the
+	// field existed have it empty; read it through SessionMode.
+	Mode         string             `json:"mode,omitempty"`
 	ProviderName string             `json:"provider_name"`
 	ModelID      string             `json:"model_id"`
 	Messages     []provider.Message `json:"messages"`
 	Thread       []SerializedEntry  `json:"thread"`
 	SavedAt      time.Time          `json:"saved_at"`
+}
+
+// SessionMode returns the mode the session was saved in. Sessions saved before
+// the mode was recorded predate explain's own session slot only by a few
+// releases and were overwhelmingly agent sessions, so empty means agent.
+func (s Session) SessionMode() string {
+	if s.Mode == "" {
+		return SessionModeAgent
+	}
+	return s.Mode
 }
 
 // SerializedEntry is a JSON-serializable form of a ThreadEntry.

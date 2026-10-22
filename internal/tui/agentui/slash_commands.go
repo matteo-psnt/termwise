@@ -2,6 +2,7 @@ package agentui
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -46,7 +47,9 @@ func runTheme(m Model, args []string) (tea.Model, tea.Cmd) {
 	}
 	m = previewTheme(m, name)
 	if def, ok := config.FindSetting("theme"); ok {
-		m.persistConfigValue(def, name)
+		if err := m.persistConfigValue(def, name); err != nil {
+			return m.show(saveFailedEntry(err))
+		}
 	}
 	return m.show(SystemEntry{Content: "Theme set to " + name + "."})
 }
@@ -62,8 +65,10 @@ func previewTheme(m Model, value string) Model {
 
 // --- /effort ---------------------------------------------------------------
 
+// effortArgOptions reads config.EffortLevels rather than keeping a copy, so
+// the picker offers exactly what the config accepts as models gain levels.
 func effortArgOptions(_ Model) []string {
-	return []string{"low", "medium", "high"}
+	return slices.Clone(config.EffortLevels)
 }
 
 func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
@@ -78,14 +83,19 @@ func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
 	}
 	level := normalizeEffortInput(args[0])
 	if level == "" {
-		return m.show(ErrorEntry{Content: "Unknown effort level '" + args[0] + "' — valid: low, med, high"})
+		return m.show(ErrorEntry{Content: "Unknown effort level '" + args[0] + "' — valid: " + strings.Join(config.EffortLevels, ", ")})
 	}
 	m = previewEffort(m, level)
-	m.updateConfigFile(func(cfg *config.FileConfig) {
+	err := m.updateConfigFile(func(cfg *config.FileConfig) {
 		pc := cfg.Providers[m.providerName]
 		pc.Effort = m.effort
-		cfg.Providers[m.providerName] = pc
+		// SetProvider, not a map write: an env-only config file has no
+		// [providers] table, so the map can be nil.
+		config.SetProvider(cfg, m.providerName, pc)
 	})
+	if err != nil {
+		return m.show(saveFailedEntry(err))
+	}
 	return m.show(SystemEntry{Content: "Effort set to " + level + "."})
 }
 
@@ -106,13 +116,13 @@ func previewEffort(m Model, value string) Model {
 }
 
 func normalizeEffortInput(s string) string {
-	switch strings.ToLower(s) {
-	case "low":
-		return "low"
-	case "med", "medium":
-		return "medium"
-	case "high":
-		return "high"
+	s = strings.ToLower(s)
+	// "med" matches the status bar's abbreviation of medium.
+	if s == "med" {
+		s = "medium"
+	}
+	if slices.Contains(config.EffortLevels, s) {
+		return s
 	}
 	return ""
 }
@@ -196,7 +206,7 @@ func runModel(m Model, args []string) (tea.Model, tea.Cmd) {
 	}
 	providerName, modelID, ok := strings.Cut(args[0], "/")
 	if !ok || providerName == "" || modelID == "" {
-		return m.show(ErrorEntry{Content: "Usage: /model provider/model-id (e.g. anthropic/claude-sonnet-4-5)"})
+		return m.show(ErrorEntry{Content: "Usage: /model provider/model-id (e.g. anthropic/claude-sonnet-5-5)"})
 	}
 	if models.Find(providerName, modelID) == nil {
 		return m.show(ErrorEntry{Content: "Unknown model '" + args[0] + "'"})
@@ -204,7 +214,9 @@ func runModel(m Model, args []string) (tea.Model, tea.Cmd) {
 	if err := m.applyModel(providerName, modelID); err != nil {
 		return m.show(ErrorEntry{Content: err.Error()})
 	}
-	m.persistActiveModel()
+	if err := m.persistActiveModel(); err != nil {
+		return m.show(saveFailedEntry(err))
+	}
 	m.refreshViewport()
 	return m, nil
 }
@@ -212,13 +224,14 @@ func runModel(m Model, args []string) (tea.Model, tea.Cmd) {
 // previewModel updates the displayed provider+model in memory only. The actual
 // provider client is not rebuilt — that happens on submit via runModel → applyModel —
 // keeping cursor-move latency off the LoadConfig/ResolveAuth/NewClient hot path.
-// Errors fall through silently; runModel re-validates on submit.
+// Malformed values fall through silently; runModel re-validates on submit.
+//
+// No catalog check here: the picker also calls this with the value it opened
+// on to revert, and that can be a custom model ID the catalog doesn't list.
+// Rejecting it would leave the previewed model in place.
 func previewModel(m Model, value string) Model {
 	providerName, modelID, ok := strings.Cut(value, "/")
 	if !ok || providerName == "" || modelID == "" {
-		return m
-	}
-	if models.Find(providerName, modelID) == nil {
 		return m
 	}
 	m.providerName = providerName

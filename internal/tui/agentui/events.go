@@ -36,10 +36,14 @@ func (m Model) handleResponseEvent(msg responseEvent) (tea.Model, tea.Cmd) {
 	resp := msg.Resp
 	m.inputTokens += resp.InputTokens
 	m.outputTokens += resp.OutputTokens
+	if resp.HistoryStateDropped {
+		m.messages = provider.WithoutState(m.messages)
+	}
 	m.messages = append(m.messages, provider.Message{
-		Role:      "assistant",
-		Content:   resp.Content,
-		ToolCalls: resp.ToolCalls,
+		Role:          "assistant",
+		Content:       resp.Content,
+		ToolCalls:     resp.ToolCalls,
+		ProviderState: resp.ProviderState,
 	})
 
 	if resp.Content != "" {
@@ -73,6 +77,7 @@ func (m Model) handleToolExecutedEvent(msg toolExecutedEvent) (tea.Model, tea.Cm
 	m.appendThreadEntries(
 		ToolResultEntry{Content: display, IsError: msg.Result.IsError},
 	)
+	m.turnResults = msg.Collected
 	m.refreshViewport()
 	return m, m.wrapActiveGeneration(processToolsCmd(m.ctx, msg.Remaining, msg.Collected))
 }

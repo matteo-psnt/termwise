@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -62,21 +61,12 @@ var ErrNoConfig = errors.New("no configuration found")
 // LoadAndResolve loads, validates, and resolves the config at path, returning
 // both the raw FileConfig (for settings access) and the resolved runtime config.
 func LoadAndResolve(path string) (FileConfig, ResolvedConfig, error) {
-	cfg, exists, err := LoadConfig(path)
+	eff, err := LoadEffective(path)
 	if err != nil {
 		return FileConfig{}, ResolvedConfig{}, err
 	}
-	if !exists {
-		var ok bool
-		cfg, ok = ZeroConfigDefaults()
-		if !ok && os.Getenv(EnvProvider) == "" {
-			return FileConfig{}, ResolvedConfig{}, fmt.Errorf("%w — run `%s config` to set up, or export an API key such as ANTHROPIC_API_KEY or OPENAI_API_KEY", ErrNoConfig, cliname.Name())
-		}
-	}
-	if err := applyEnvOverrides(&cfg); err != nil {
-		return FileConfig{}, ResolvedConfig{}, err
-	}
-	if err := validateForRuntime(cfg); err != nil {
+	cfg := eff.File
+	if err := validateForRuntime(eff); err != nil {
 		return FileConfig{}, ResolvedConfig{}, err
 	}
 	rc, err := resolveConfig(cfg)

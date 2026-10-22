@@ -5,8 +5,14 @@
 # Format per entry:
 #   cmd: <executable basename>              (required)
 #   parse.subcommand_value_flags: [...]     (optional — flags whose value precedes the real subcommand)
+#   parse.bool_flags: [...]                 (optional — valueless global flags allowed before the subcommand;
+#                                            with allow.subcommands, any other flag there needs approval
+#                                            unless written --flag=value)
 #   allow.subcommands: [sub1, sub2, ...]    (optional — first effective subcommand must be in list)
+#   parse.word_flags: true                  (optional — single-dash flags are whole words matched by their
+#                                            leading letters, as xxd does; no bundles)
 #   deny.flags: [-f1, --flag2, ...]         (optional — denied if any of these appear)
+#   deny.global_flags: [...]                (optional — denied only before the subcommand)
 
 rules:
 
@@ -18,9 +24,16 @@ rules:
   - cmd: eza
   - cmd: tree
     deny:
-      flags: [-o]
+      # -o writes the listing to a file; -R reruns tree in each directory
+      # with -o 00Tree.html. tree keeps reading letters after -I/-P/-H/-T
+      # and takes their values from the next words, so -Inode_modules a b
+      # is -I a -n -o b: scanning the whole bundle is right here.
+      flags: [-o, -R]
   - cmd: stat
   - cmd: file
+    deny:
+      # -C compiles a magic file and writes the .mgc next to it.
+      flags: [-C, --compile]
   - cmd: du
   - cmd: df
   - cmd: cd
@@ -32,19 +45,25 @@ rules:
 
   # ── File reading ────────────────────────────────────────────────────────────
   - cmd: cat
-  - cmd: bat
+  - cmd: bat   # bat cache --build/--clear rewrites its cache (validateBatCommand)
     deny:
       flags: [--pager]
   - cmd: head
   - cmd: tail
   - cmd: less
     deny:
-      flags: [-o, -O]
+      # -o/-O and --log-file/--LOG-FILE copy the input to a file. A lesskey
+      # file can set LESSOPEN, which less runs as a preprocessor.
+      flags: [-o, -O, --log-file, --LOG-FILE, -k, --lesskey-file, --lesskey-src, --lesskey-content]
   - cmd: more
   - cmd: wc
   - cmd: strings
   - cmd: xxd
+    parse:
+      word_flags: true
     deny:
+      # -r turns a hex dump back into binary. A second positional argument
+      # is an output file (validateXxdCommand).
       flags: [-r]
   - cmd: od
 
@@ -52,7 +71,8 @@ rules:
   - cmd: grep
   - cmd: rg
     deny:
-      flags: [--pre]
+      # --pre and --hostname-bin name programs rg runs.
+      flags: [--pre, --hostname-bin]
   - cmd: ag
     deny:
       flags: [--pager]
@@ -66,8 +86,9 @@ rules:
   # ── Text processing ──────────────────────────────────────────────────────────
   - cmd: sort
     deny:
-      flags: [-o, --output]
-  - cmd: uniq
+      # --compress-program runs the named program on temp files.
+      flags: [-o, --output, --compress-program]
+  - cmd: uniq   # a second positional argument is an output file (validateUniqCommand)
   - cmd: cut
   - cmd: tr
   - cmd: diff
@@ -89,21 +110,25 @@ rules:
   - cmd: jq
   - cmd: yq
     deny:
-      flags: [-i, --inplace]
+      # -i/--inplace (mikefarah) and --in-place (python yq) rewrite the input;
+      # -s/--split-exp/--split-exp-file write one file per result.
+      flags: [-i, --inplace, --in-place, -s, --split-exp, --split-exp-file]
   - cmd: tomlq
-  - cmd: dasel
-  - cmd: fx
-
-  # ── System info ─────────────────────────────────────────────────────────────
+    deny:
+      flags: [-i, --in-place]
+  - cmd: dasel   # put and delete write the file (validateDaselCommand)
+    deny:
+      # -o/--out writes the result to a file.
+      flags: [-o, --out]
   - cmd: pwd
   - cmd: which
   - cmd: whereis
   - cmd: type
   - cmd: echo
   - cmd: printf
-  - cmd: date
+  - cmd: date   # -s/--set or a bare datetime operand sets the clock (validateDateCommand)
   - cmd: uname
-  - cmd: hostname
+  - cmd: hostname   # a name operand or -F/-b sets the hostname (validateHostnameCommand)
   - cmd: whoami
   - cmd: id
   - cmd: uptime
@@ -118,7 +143,7 @@ rules:
   - cmd: top
   - cmd: htop
   - cmd: btop
-  - cmd: nvidia-smi
+  - cmd: nvidia-smi   # most flags change GPU state, so only known queries pass (validateNvidiaSmiCommand)
 
   # ── Network inspection ──────────────────────────────────────────
   - cmd: dig
@@ -130,11 +155,15 @@ rules:
   - cmd: traceroute
   - cmd: netstat
   - cmd: ss
+    deny:
+      # -K/--kill closes sockets; -D/--diag dumps to a file.
+      flags: [-K, --kill, -D, --diag]
 
   # ── Git ─────────────────────────────────────────────────────────────────────
   - cmd: git
     parse:
       subcommand_value_flags: [-C, -c, --git-dir, --work-tree, --namespace, --super-prefix, --exec-path, --config-env]
+      bool_flags: [--no-pager, -P, --no-optional-locks, --literal-pathspecs, --glob-pathspecs, --noglob-pathspecs, --icase-pathspecs, --no-replace-objects, --bare]
     allow:
       subcommands:
         - status
@@ -151,7 +180,14 @@ rules:
         - help
         - version
     deny:
-      flags: [-c, --config-env]
+      # -c and --config-env set config such as core.fsmonitor or
+      # diff.external, which name programs git runs; --exec-path moves where
+      # git finds its helper programs; --ext-diff runs a configured external
+      # diff; --output writes the diff or log to a file.
+      flags: [--config-env, --exec-path, --ext-diff, --output]
+      # -c sets config only before the subcommand; after it, git log -c is a
+      # diff format and -S/-G/-L values can hold any letter.
+      global_flags: [-c]
 
   # ── Go ──────────────────────────────────────────────────────────────────────
   - cmd: go
@@ -167,57 +203,78 @@ rules:
 
   # ── Rust / Cargo ────────────────────────────────────────────────────────────
   - cmd: cargo
+    parse:
+      bool_flags: [-q, --quiet, -v, --verbose, --locked, --offline, --frozen]
     allow:
       subcommands:
         - metadata
         - tree
         - version
         - help
+    deny:
+      # --config KEY=VALUE or a config file can set build.rustc or a target
+      # runner; cargo metadata and tree run rustc to learn the target.
+      flags: [--config]
 
   # ── Node ecosystem ───────────────────────────────────────────────────────────
   - cmd: npm
     parse:
       subcommand_value_flags: [-C, --prefix, --userconfig, --workspace]
+      bool_flags: [-g, --global, --json, -s, --silent, -q, --quiet]
     allow:
       subcommands: [list, ls, info, show, outdated, view]
   - cmd: pnpm
     parse:
       subcommand_value_flags: [-C, --dir, --prefix, --store-dir, --workspace-dir]
+      bool_flags: [-r, --recursive, -g, --global, -s, --silent]
     allow:
       subcommands: [list, ls, info, outdated, audit, why]
     deny:
       flags: [--fix]
-  - cmd: yarn
-    parse:
-      subcommand_value_flags: [--cwd]
-    allow:
-      subcommands: [list, info, outdated, why, check, licenses]
+
+  # Not here on purpose: tools whose behaviour the repository itself can
+  # turn into running code, so a cloned repo could run anything through an
+  # "allowed" command. yarn runs .yarnrc.yml's yarnPath; bundle evaluates the
+  # Gemfile (Ruby); uv tree can resolve and build packages and rewrite
+  # uv.lock; fx evaluates JavaScript arguments. (ruff check is allowed only
+  # with --no-fix, because pyproject can set fix = true.)
 
   # ── Python package tools ─────────────────────────────────────────────────────
   - cmd: pip
-    allow:
-      subcommands: [list, show, freeze, check, inspect, index]
-  - cmd: pip3
-    allow:
-      subcommands: [list, show, freeze, check, inspect, index]
-  - cmd: uv
     parse:
-      subcommand_value_flags: [--config-file, --directory, --project]
+      bool_flags: [-q, --quiet, -v, --verbose, --isolated, --no-color, --disable-pip-version-check, --no-input, --require-virtualenv]
     allow:
-      subcommands: [tree]
+      subcommands: [list, show, freeze, check, inspect, index]
+    deny:
+      # --python re-runs pip under the named interpreter.
+      flags: [--python]
+  - cmd: pip3
+    parse:
+      bool_flags: [-q, --quiet, -v, --verbose, --isolated, --no-color, --disable-pip-version-check, --no-input, --require-virtualenv]
+    allow:
+      subcommands: [list, show, freeze, check, inspect, index]
+    deny:
+      # --python re-runs pip under the named interpreter.
+      flags: [--python]
   - cmd: poetry
+    parse:
+      bool_flags: [-q, --quiet, -v, -vv, -vvv, --verbose, -n, --no-interaction, --no-ansi, --ansi]
     allow:
+      # version with an argument bumps the version in pyproject.toml
+      # (validatePoetryCommand).
       subcommands: [show, check, version, export]
     deny:
       flags: [-o, --output]
-  - cmd: ruff
+  - cmd: ruff   # check must carry --no-fix (validateRuffCommand)
+    parse:
+      bool_flags: [-q, --quiet, -v, --verbose, -s, --silent]
     allow:
       subcommands: [check, --version]
+    deny:
+      # These edit the checked files or write a report file.
+      flags: [--fix, --fix-only, --unsafe-fixes, --add-noqa, -o, --output-file]
 
   # ── Ruby / Bundler ───────────────────────────────────────────────────────────
-  - cmd: bundle
-    allow:
-      subcommands: [list, show, check, outdated, version, info]
   - cmd: gem
     allow:
       subcommands: [list, info, outdated, contents, dependency, search, spec]
@@ -226,6 +283,7 @@ rules:
   - cmd: docker
     parse:
       subcommand_value_flags: [-H, --config, --context, --host]
+      bool_flags: [-D, --debug, --tls, --tlsverify]
     allow:
       subcommands:
         - ps
@@ -239,19 +297,31 @@ rules:
         - diff
         - port
         - history
+    deny:
+      # The config directory's config.json names credential helpers and
+      # CLI plugin hooks, which docker runs.
+      flags: [--config]
   - cmd: docker-compose
     parse:
       subcommand_value_flags: [-f, -p, --context, --env-file, --host, --project-directory, --project-name]
+      bool_flags: [--verbose, --no-ansi, --compatibility, --all-resources]
     allow:
       subcommands: [ps, logs, config, version, images, top]
   - cmd: podman
+    parse:
+      bool_flags: [-r, --remote]
     allow:
       subcommands: [ps, images, logs, inspect, stats, version, info, diff, history]
+    deny:
+      # Each names a program podman runs (OCI runtime, conmon, network
+      # helper, overlay mount_program) or loads a containers.conf that can.
+      flags: [--runtime, --conmon, --network-cmd-path, --storage-opt, --module]
 
   # ── Kubernetes ──────────────────────────────────────────────────────────────
   - cmd: kubectl
     parse:
       subcommand_value_flags: [-n, --cluster, --context, --kubeconfig, --namespace, --server, --user]
+      bool_flags: [--insecure-skip-tls-verify, --match-server-version, --warnings-as-errors]
     allow:
       subcommands:
         - get
@@ -263,11 +333,20 @@ rules:
         - explain
         - api-resources
         - api-versions
+    deny:
+      # A kubeconfig can name an exec credential plugin that kubectl runs.
+      flags: [--kubeconfig]
   - cmd: helm
     parse:
       subcommand_value_flags: [-n, --kube-context, --kubeconfig, --namespace, --registry-config, --repository-cache, --repository-config]
+      bool_flags: [--debug]
     allow:
       subcommands: [list, status, history, get, show, version, env, search]
+    deny:
+      # A kubeconfig can name an exec credential plugin; a registry config
+      # (docker config.json) can name a credential helper program. The
+      # repository config only holds URLs and TLS file paths, so it stays.
+      flags: [--kubeconfig, --registry-config]
 
   # ── GitHub CLI ──────────────────────────────────────────────────────────────
   - cmd: gh
@@ -287,6 +366,16 @@ rules:
   - cmd: rpm
     allow:
       subcommands: [-q, -qi, -ql, -qa, --query]
+    deny:
+      # Macro expansion runs %(shell) and %{lua:} code; --pipe runs a
+      # command on the output.
+      flags: [--eval, -E, --define, -D, --macros, --rcfile, --load, --pipe]
   - cmd: pacman
     allow:
-      subcommands: [-Q, -Qi, -Ql, -Qs, -Si, -Ss, --query, --sync]
+      # --sync alone installs; -Si and -Ss only read.
+      subcommands: [-Q, -Qi, -Ql, -Qs, -Si, -Ss, --query]
+    deny:
+      # With -S: -y refreshes the databases, -u upgrades, -c cleans the
+      # cache, -w downloads. --config and --hookdir can name programs pacman
+      # runs.
+      flags: [-y, -u, -c, -w, --refresh, --sysupgrade, --clean, --downloadonly, --sync, --config, --hookdir]

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -52,22 +53,34 @@ func runDoctor(cfgPath string, online bool) bool {
 
 	fmt.Printf("Config: %s\n\n", cfgPath)
 
-	cfg, exists, parseErr := config.LoadConfig(cfgPath)
-	if parseErr != nil {
-		fail("File: " + parseErr.Error())
+	// Check what the runtime would run with, not just the file: with no file
+	// it falls back to an API key in the environment, and TERMWISE_PROVIDER /
+	// TERMWISE_MODEL override the file for the run.
+	if _, _, err := config.LoadConfig(cfgPath); err != nil {
+		fail("File: " + err.Error())
 		hint("%s", repairHint())
 		return false
 	}
-	if exists {
-		pass("File: exists and valid TOML")
-	} else if zero, ok := config.ZeroConfigDefaults(); ok {
-		pass("File: none — running from an API key in the environment")
-		hint("Run `%s config` to save a config", cliname.Name())
-		cfg = zero
-	} else {
+	eff, err := config.LoadEffective(cfgPath)
+	switch {
+	case errors.Is(err, config.ErrNoConfig):
 		fail("File: not found, and no provider API key in the environment")
 		hint("Run `%s config` to set up", cliname.Name())
 		return false
+	case err != nil:
+		// The file loaded, so this is a bad TERMWISE_* override.
+		fail(err.Error())
+		return false
+	}
+	cfg := eff.File
+	if eff.Exists {
+		pass("File: exists and valid TOML")
+	} else {
+		pass("File: none — running from the environment")
+		hint("Run `%s config` to save a config", cliname.Name())
+	}
+	for _, o := range eff.Overrides {
+		warn("Override: " + o + " (from the environment, not the file)")
 	}
 
 	// selected_provider set and known.
@@ -94,13 +107,9 @@ func runDoctor(cfgPath string, online bool) bool {
 	}
 	pass("[providers." + cfg.SelectedProvider + "]: block found")
 
-	// Model.
-	if pc.Model != "" {
-		pass("Model: " + pc.Model)
-	} else {
-		fail("Model: not set")
-		hint("Run `%s config model set <model>`", cliname.Name())
-	}
+	doctorModel(pass, fail, hint, eff, pc)
+
+	doctorEffort(pass, warn, hint, pc)
 
 	// Auth credentials.
 	authOk := true
@@ -108,10 +117,18 @@ func runDoctor(cfgPath string, online bool) bool {
 		pass("Auth: not required")
 	} else {
 		authDesc := authSummary(cfg.SelectedProvider, pc)
-		_, authErr := config.ResolveAuth(cfg.SelectedProvider, pc)
-		if authErr == nil {
-			pass("Auth: " + authDesc + " — key resolved")
-		} else {
+		auth, authErr := config.ResolveAuth(cfg.SelectedProvider, pc)
+		switch {
+		case authErr == nil && auth.FallbackErr != nil:
+			// ResolveAuth fell back to the provider's default env var: it works
+			// today, but not the way the config says.
+			warn("Auth: " + authDesc + " failed, using " + auth.Source + " instead")
+			hint("%s", strings.ReplaceAll(auth.FallbackErr.Error(), "\n", "\n      "))
+		case authErr == nil && auth.Source == "":
+			pass("Auth: no key needed")
+		case authErr == nil:
+			pass("Auth: key from " + auth.Source)
+		default:
 			fail("Auth: " + authDesc + " — " + authErr.Error())
 			authOk = false
 		}
@@ -159,6 +176,38 @@ func runDoctor(cfgPath string, online bool) bool {
 		fmt.Println("All checks passed.")
 	}
 	return allOk
+}
+
+// doctorModel checks the selected provider has a model.
+func doctorModel(pass, fail func(string), hint func(string, ...any), eff config.Effective, pc config.ProviderConfig) {
+	if pc.Model != "" {
+		pass("Model: " + pc.Model)
+		return
+	}
+	fail("Model: not set")
+	if !eff.Exists || os.Getenv(config.EnvProvider) != "" {
+		// `config model set` edits the file's selected provider: with no
+		// file it fails with "no provider selected", and with
+		// TERMWISE_PROVIDER it would set the wrong provider's model.
+		hint("Set %s=<model>, or run `%s config use %s --model <model>`",
+			config.EnvModel, cliname.Name(), eff.File.SelectedProvider)
+	} else {
+		hint("Run `%s config model set <model>`", cliname.Name())
+	}
+}
+
+// doctorEffort checks the provider's reasoning effort. A bad value is
+// ignored at runtime rather than sent, so it is a warning: the user still
+// gets the default, just not what they asked for.
+func doctorEffort(pass, warn func(string), hint func(string, ...any), pc config.ProviderConfig) {
+	switch {
+	case pc.Effort == "":
+	case config.ValidEffort(pc.Effort):
+		pass("Effort: " + pc.Effort)
+	default:
+		warn(fmt.Sprintf("Effort: %q is not a valid level — ignored, using the default", pc.Effort))
+		hint("Valid levels: %s", strings.Join(config.EffortLevels, ", "))
+	}
 }
 
 // doctorShell checks the pieces outside the config file that `tw` and the

@@ -8,6 +8,10 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
+// notRunAfterCommand is the result for tool calls that follow a command call in
+// the same turn: the command ends the turn, so they are never executed.
+const notRunAfterCommand = "not run: a command was proposed first"
+
 // NextToolStep processes pending tool calls until the next externally-visible
 // step. Auto-executed tools run immediately; gated tools (bash) run immediately
 // too unless needsApproval rejects the command, in which case they pause for
@@ -29,11 +33,22 @@ func NextToolStep(ctx context.Context, toolCalls []provider.ToolCall, collected 
 
 		switch step.Kind {
 		case tools.StepRespond:
+			collected = append(collected, provider.ToolResult{ToolCallID: tc.ID, Content: "ok"})
+			// The turn ends here, but both APIs reject a tool_use without a
+			// matching tool_result, so every call after the command still
+			// needs one or the next request in this session fails.
+			for _, rest := range toolCalls[i+1:] {
+				collected = append(collected, provider.ToolResult{
+					ToolCallID: rest.ID,
+					Content:    notRunAfterCommand,
+					IsError:    true,
+				})
+			}
 			return ToolStep{
 				Kind:      ToolStepRespond,
 				ToolCall:  tc,
 				Content:   step.Content,
-				Collected: append(collected, provider.ToolResult{ToolCallID: tc.ID, Content: "ok"}),
+				Collected: collected,
 			}
 
 		case tools.StepAsk:

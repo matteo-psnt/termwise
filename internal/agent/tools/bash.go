@@ -6,14 +6,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 const maxBashOutputBytes = 64 * 1024 // 64KB per stream
+
+// bashWaitDelay is how long a cancelled or finished command's output pipes may
+// stay open before Run gives up on them.
+const bashWaitDelay = 500 * time.Millisecond
 
 func init() {
 	stepFns[BashDef.Name] = func(tc provider.ToolCall) Step {
@@ -73,33 +78,87 @@ func bash(ctx context.Context, input map[string]any) (string, bool) {
 		return "error: 'command' is required", true
 	}
 
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
+	// Stop the command once it has produced more output than can be shown:
+	// past the cap the output would be thrown away anyway, and an endless
+	// writer (cat /dev/zero, yes) would otherwise run, and grow memory, until
+	// the user noticed.
+	runCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	stdout := &cappedBuffer{max: maxBashOutputBytes, onFull: stop}
+	stderr := &cappedBuffer{max: maxBashOutputBytes, onFull: stop}
 
-	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, shell, "-c", command)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd := exec.CommandContext(runCtx, commandShell(), "-c", command)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	killProcessGroup(cmd)
+	// Backstop for anything that escaped the group (e.g. a daemon that
+	// called setsid) but still holds the output pipes.
+	cmd.WaitDelay = bashWaitDelay
 
 	err := cmd.Run()
+	if ctx.Err() != nil {
+		return "error: command cancelled", true
+	}
 	exitCode := 0
-	if err != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) {
-			return fmt.Sprintf("error starting command: %s", err), true
-		}
+	var exitErr *exec.ExitError
+	switch {
+	case err == nil:
+	case errors.As(err, &exitErr):
 		exitCode = exitErr.ExitCode()
+	case errors.Is(err, exec.ErrWaitDelay):
+		// The command itself finished; a background child it started was
+		// still holding the output pipes when WaitDelay closed them. The
+		// output so far and bash's own exit status are the result.
+		exitCode = cmd.ProcessState.ExitCode()
+	default:
+		return fmt.Sprintf("error starting command: %s", err), true
 	}
 
 	result := bashResult{
-		Stdout:   truncateBashOutput(stdout.String()),
-		Stderr:   truncateBashOutput(stderr.String()),
+		Stdout:   stdout.text(),
+		Stderr:   stderr.text(),
 		ExitCode: exitCode,
+	}
+	if stdout.full || stderr.full {
+		result.Stderr += "\n[command stopped: output passed the 64KB limit]"
 	}
 	data, _ := json.Marshal(result)
 	return string(data), exitCode != 0
+}
+
+// cappedBuffer keeps the first max bytes written to it and calls onFull once
+// when more arrive. It never returns an error, so the writer is not killed
+// by EPIPE before onFull has stopped it cleanly.
+type cappedBuffer struct {
+	buf    bytes.Buffer
+	max    int
+	full   bool
+	onFull func()
+	mu     sync.Mutex
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	kept := min(max(b.max-b.buf.Len(), 0), len(p))
+	b.buf.Write(p[:kept])
+	if kept < len(p) && !b.full {
+		b.full = true
+		if b.onFull != nil {
+			b.onFull()
+		}
+	}
+	return len(p), nil
+}
+
+// text returns what was kept, marked when the rest was dropped.
+func (b *cappedBuffer) text() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.full {
+		return b.buf.String() + "\n[output truncated — 64KB limit]"
+	}
+	return b.buf.String()
 }
 
 // formatDisplay formats a bash tool result JSON string for human display,
@@ -119,9 +178,15 @@ func formatDisplay(jsonContent string) string {
 	return strings.Join(parts, "\n")
 }
 
-func truncateBashOutput(s string) string {
-	if len(s) <= maxBashOutputBytes {
-		return s
+// commandShell is the shell the bash tool runs commands in. It has to be the
+// language the allowlist parses (bash), not the user's $SHELL: the approval
+// decision is made on a bash reading of the text, and fish, nu or zsh can
+// read the same text differently, so a command judged read-only could do
+// something else when it runs. /bin/sh is the fallback on the rare system
+// with no bash; the parser's bash dialect is a superset of what it accepts.
+func commandShell() string {
+	if path, err := exec.LookPath("bash"); err == nil {
+		return path
 	}
-	return s[:maxBashOutputBytes] + "\n[output truncated — 64KB limit]"
+	return "/bin/sh"
 }

@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 var (
@@ -110,5 +112,121 @@ func TestThemePickerCommitsToSetting(t *testing.T) {
 	m = press(t, m, keyEnter)
 	if got := m.cfg.Settings.Theme; got != want {
 		t.Errorf("Theme = %q, want %q", got, want)
+	}
+}
+
+func modelRow(r editorRow) bool { return r.kind == rowProvModel }
+
+func update(t *testing.T, m editorModel, msg tea.Msg) (editorModel, tea.Cmd) {
+	t.Helper()
+	next, cmd := m.Update(msg)
+	return next.(editorModel), cmd
+}
+
+func TestEditorTakesConnResultWithSubModelOpen(t *testing.T) {
+	m := openRow(t, thinkingEditor(""), modelRow)
+	if m.modelPicker == nil {
+		t.Fatal("model row did not open the picker")
+	}
+	m, _ = update(t, m, editorConnMsg{provider: "anthropic", seq: m.connSeq})
+	if !m.connChecked || !m.connOK {
+		t.Errorf("connChecked = %v, connOK = %v; want the result recorded", m.connChecked, m.connOK)
+	}
+}
+
+func TestEditorSpinnerTicksWithSubModelOpen(t *testing.T) {
+	m := openRow(t, thinkingEditor(""), modelRow)
+	before := m.spin.View()
+	m, cmd := update(t, m, m.spin.Tick())
+	if cmd == nil || m.spin.View() == before {
+		t.Error("editor spinner did not advance while the picker was open")
+	}
+}
+
+func TestEditorResizeWithSubModelOpen(t *testing.T) {
+	m := openRow(t, thinkingEditor(""), modelRow)
+	m, _ = update(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	if m.width != 120 || m.height != 40 {
+		t.Errorf("editor size = %dx%d, want 120x40", m.width, m.height)
+	}
+	if m.modelPicker.height != 40 {
+		t.Errorf("picker height = %d, want 40", m.modelPicker.height)
+	}
+}
+
+func TestAddWizardOpensWithEditorSize(t *testing.T) {
+	m, _ := update(t, thinkingEditor(""), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = openRow(t, m, func(r editorRow) bool { return r.kind == rowAddProvider })
+	if m.addWizard == nil {
+		t.Fatal("add row did not open the wizard")
+	}
+	if m.addWizard.height != 30 {
+		t.Errorf("wizard height = %d, want 30", m.addWizard.height)
+	}
+}
+
+func TestEditorDropsStaleConnResult(t *testing.T) {
+	m := thinkingEditor("")
+	first := m.connSeq
+	m = press(t, m, keyEsc) // revert starts a new check
+	m, _ = update(t, m, editorConnMsg{provider: "anthropic", seq: first})
+	if m.connChecked {
+		t.Error("accepted the result of a superseded check")
+	}
+	m, _ = update(t, m, editorConnMsg{provider: "openai", seq: m.connSeq})
+	if m.connChecked {
+		t.Error("accepted a result for a provider that isn't active")
+	}
+	m, _ = update(t, m, editorConnMsg{provider: "anthropic", seq: m.connSeq})
+	if !m.connChecked || !m.connOK {
+		t.Error("dropped the current result")
+	}
+}
+
+func TestModelPickerDropsCancelledPickersResult(t *testing.T) {
+	cfg := config.FileConfig{
+		SelectedProvider: "anthropic",
+		Providers: map[string]config.ProviderConfig{
+			"anthropic": {Model: "claude-sonnet-4-6"},
+			"openai":    {Model: "gpt-5"},
+		},
+	}
+	m := newEditorModel("", cfg, true)
+	m = openRow(t, m, func(r editorRow) bool { return r.kind == rowProvModel && r.provider == "anthropic" })
+	stale := editorModelsMsg{provider: "anthropic", seq: m.modelPicker.seq, models: []provider.Model{{ID: "claude-x"}}}
+	m = press(t, m, keyEsc)
+
+	m = openRow(t, m, func(r editorRow) bool { return r.kind == rowProvModel && r.provider == "openai" })
+	m, _ = update(t, m, stale)
+	if !m.modelPicker.loading || len(m.modelPicker.models) != 0 {
+		t.Errorf("openai picker took anthropic's late list: %+v", m.modelPicker.models)
+	}
+
+	// Same provider reopened: still a different request.
+	m = press(t, m, keyEsc)
+	m = openRow(t, m, func(r editorRow) bool { return r.kind == rowProvModel && r.provider == "anthropic" })
+	m, _ = update(t, m, stale)
+	if !m.modelPicker.loading {
+		t.Error("reopened picker took the cancelled picker's list")
+	}
+
+	m, _ = update(t, m, editorModelsMsg{provider: "anthropic", seq: m.modelPicker.seq, models: []provider.Model{{ID: "claude-y"}}})
+	if m.modelPicker.loading || len(m.modelPicker.models) != 1 {
+		t.Error("picker dropped its own result")
+	}
+}
+
+// The editor box must fit the screen at any cursor position, even on short,
+// narrow terminals where long descriptions wrap to many lines.
+func TestEditorFitsShortNarrowTerminals(t *testing.T) {
+	for _, size := range []struct{ w, h int }{{40, 12}, {20, 15}, {60, 10}, {80, 24}} {
+		m, _ := update(t, thinkingEditor(""), tea.WindowSizeMsg{Width: size.w, Height: size.h})
+		for i := range m.rows {
+			m.cursor = i
+			if h := lipgloss.Height(m.styles.Outer.Render(m.renderInner())); h > size.h {
+				t.Errorf("%dx%d, row %d: box is %d lines tall", size.w, size.h, i, h)
+				break
+			}
+		}
 	}
 }

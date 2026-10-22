@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/models"
@@ -176,20 +178,47 @@ func boolSetting(key, label, description string, defaultOn bool, get func(FileCo
 	}
 }
 
-// EffortLevels lists valid reasoning effort values.
-var EffortLevels = []string{"low", "medium", "high"}
+// EffortLevels lists valid reasoning effort values, lowest first.
+var EffortLevels = []string{"low", "medium", "high", "xhigh", "max"}
 
 // DefaultEffort is the effective effort when none is configured.
 const DefaultEffort = "medium"
 
+// ValidEffort reports whether s is a reasoning effort level termwise can
+// send. Empty is valid: it means the default.
+func ValidEffort(s string) bool {
+	return s == "" || slices.Contains(EffortLevels, s)
+}
+
+// EffortProblems describes each provider whose configured effort is not a
+// valid level, in provider-name order. An invalid effort is not fatal — the
+// runtime ignores it — so these are warnings, not Validate errors.
+func EffortProblems(cfg FileConfig) []string {
+	names := make([]string, 0, len(cfg.Providers))
+	for name := range cfg.Providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var out []string
+	for _, name := range names {
+		if e := cfg.Providers[name].Effort; !ValidEffort(e) {
+			out = append(out, fmt.Sprintf("unknown effort %q in [providers.%s] (ignored; valid: %s)",
+				e, name, strings.Join(EffortLevels, ", ")))
+		}
+	}
+	return out
+}
+
 // EffectiveEffort returns the effort to send for a model on a given provider:
 // the configured value, or DefaultEffort for thinking-capable models, or empty
-// for models without thinking support.
+// for models without thinking support. A configured value that is not a valid
+// level is treated as unset rather than sent to the API to be rejected there;
+// CheckConfigWarnings tells the user about it.
 func EffectiveEffort(provider, modelID, configured string) string {
 	if !models.SupportsThinking(provider, modelID) {
 		return ""
 	}
-	if configured != "" {
+	if configured != "" && ValidEffort(configured) {
 		return configured
 	}
 	return DefaultEffort

@@ -18,12 +18,19 @@ type editorModel struct {
 	cfg     config.FileConfig
 	initial config.FileConfig // snapshot taken on open; restored on esc
 
+	// keychain records the keys written since the snapshot, which are
+	// stored as soon as they verify, so esc can restore those too.
+	keychain *keychainJournal
+
 	rows   []editorRow
 	cursor int
 
 	// Connectivity check for the active provider.
 	connChecked bool
 	connOK      bool
+	connSeq     int // bumped per check; see editorConnMsg
+
+	pickerSeq int // bumped per model picker opened; see editorModelsMsg
 
 	// Sub-models — at most one non-nil at a time.
 	modelPicker *modelPickerModel
@@ -52,6 +59,7 @@ func newEditorModel(cfgPath string, cfg config.FileConfig, hasDarkBg bool) edito
 		cfgPath:   cfgPath,
 		cfg:       cfg,
 		initial:   cfg.Clone(),
+		keychain:  newKeychainJournal(),
 	}
 	m.buildRows()
 	return m

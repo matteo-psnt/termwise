@@ -234,3 +234,43 @@ func TestSlashLineGetsNoPathCompletion(t *testing.T) {
 		t.Fatalf("@ dropdown opened on a slash line: %v", labels(matches))
 	}
 }
+
+// A path with a space completed bare ("@my file.txt") reads as "@my" plus a
+// stray word. Such paths complete to the quoted form, and the dropdown keeps
+// working inside an open quote.
+func TestAtCompletionQuotesPathsWithSpaces(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "my dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"my file.txt", filepath.Join("my dir", "inner.go")} {
+		if err := os.WriteFile(filepath.Join(root, f), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tab := func(value string) string {
+		t.Helper()
+		got, _ := idleMode{}.handleKey(atModel(t, value, root, ""), tea.KeyPressMsg{Code: tea.KeyTab})
+		return got.(Model).input.Value()
+	}
+
+	steps := []struct{ value, want string }{
+		{"read @my f", "read @my f"}, // bare token ends at the space: no dropdown
+		{"read @my", `read @"my dir/`},
+		{`read @"my dir/`, `read @"my dir/inner.go" `},
+		{`read @"my f`, `read @"my file.txt" `},
+		{`read @"my file.txt`, `read @"my file.txt" `},
+	}
+	for _, s := range steps {
+		if got := tab(s.value); got != s.want {
+			t.Errorf("Tab on %q gave %q, want %q", s.value, got, s.want)
+		}
+	}
+
+	if m := atModel(t, `read @"my file.txt" `, root, ""); len(m.visibleAtMatches()) != 0 {
+		t.Error("dropdown still open after the closing quote")
+	}
+	if m := atModel(t, `say "hi" @"my`, root, ""); len(m.visibleAtMatches()) == 0 {
+		t.Error("an earlier closed quote stopped the quoted @ token from completing")
+	}
+}

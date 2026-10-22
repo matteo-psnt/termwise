@@ -100,3 +100,16 @@ func TestAgentPromptCarriesVerifyPolicy(t *testing.T) {
 		}
 	}
 }
+
+// The TUI completes @ paths with spaces as @"…", so both prompts must tell
+// the model the quotes are not part of the path.
+func TestPromptsExplainQuotedAtPaths(t *testing.T) {
+	for name, prompt := range map[string]string{
+		"agent":   Agent(agenttools.Defs, testEnv),
+		"explain": Explain(agenttools.ExplainDefs, testEnv),
+	} {
+		if !strings.Contains(prompt, `@"my notes.txt"`) {
+			t.Errorf("%s prompt does not explain quoted @ paths", name)
+		}
+	}
+}

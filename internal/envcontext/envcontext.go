@@ -24,6 +24,12 @@ import (
 // delay the first prompt; a missing git block is better than a stalled session.
 const probeTimeout = 1500 * time.Millisecond
 
+// probeWaitDelay bounds how long a probe's output pipe may stay open after
+// git exits or is killed. The context timeout only kills git itself; a child
+// it spawned (a hook, an fsmonitor daemon) can inherit stdout and would
+// otherwise keep Output waiting long after the deadline.
+const probeWaitDelay = 200 * time.Millisecond
+
 // Context is the resolved environment for one session.
 type Context struct {
 	OS      string
@@ -195,6 +201,12 @@ func detectGit(ctx context.Context, dir string) *GitInfo {
 func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	// git status refreshes the index and takes .git/index.lock to do it. A
+	// background probe holding that lock makes the user's own git commands
+	// in the same repo fail with "index.lock exists"; optional locks off
+	// makes status read-only, as git documents for exactly this case.
+	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+	cmd.WaitDelay = probeWaitDelay
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

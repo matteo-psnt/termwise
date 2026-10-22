@@ -8,6 +8,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/matteo-psnt/termwise/internal/tty"
 )
 
 // View implements tea.Model. MouseMode is set per-frame (v2 moved mouse and
@@ -119,7 +122,7 @@ func (m Model) renderCommandBlock(label, content string, w int) string {
 	top := "╭" + labelPart + strings.Repeat("─", fillCount) + "╮"
 
 	lines := []string{top}
-	for _, raw := range strings.Split(content, "\n") {
+	for _, raw := range strings.Split(tty.VisibleControls(content), "\n") {
 		for _, seg := range wrapToWidth(raw, body) {
 			gap := max(inner-lipgloss.Width(seg)-pad, 0)
 			lines = append(lines, "│"+strings.Repeat(" ", pad)+seg+strings.Repeat(" ", gap)+"│")
@@ -145,35 +148,32 @@ func wrapToWidth(s string, width int) []string {
 		return []string{s}
 	}
 
+	// Measure in terminal cells, not runes: a CJK character or an emoji is one
+	// rune but two cells, and counting runes let such lines overflow the box.
 	var out []string
-	runes := []rune(s)
+	rest := s
 	indent := ""
-	for len(runes) > 0 {
-		limit := width - len([]rune(indent))
-		if limit < 1 {
-			limit = 1
-		}
-		if len(runes) <= limit {
-			out = append(out, indent+string(runes))
+	for rest != "" {
+		limit := max(width-ansi.StringWidth(indent), 1)
+		if ansi.StringWidth(rest) <= limit {
+			out = append(out, indent+rest)
 			break
 		}
-		// Prefer the last space inside the limit so words stay intact.
-		cut := -1
-		for i := limit; i > 0; i-- {
-			if runes[i-1] == ' ' {
-				cut = i
-				break
-			}
+		head := ansi.Truncate(rest, limit, "")
+		if head == "" {
+			// A two-cell character at a one-cell limit. Overflowing by one
+			// cell beats looping forever.
+			head = ansi.Truncate(rest, 2, "")
 		}
-		if cut <= 0 {
-			cut = limit // one long token: hard-break it
+		// Prefer the last space inside the limit so words stay intact; a long
+		// unbroken token is hard-broken at the limit instead.
+		cut := len(head)
+		if i := strings.LastIndexByte(head, ' '); i > 0 {
+			cut = i + 1
 		}
-		out = append(out, indent+strings.TrimRight(string(runes[:cut]), " "))
-		runes = runes[cut:]
+		out = append(out, indent+strings.TrimRight(rest[:cut], " "))
 		// Drop leading spaces on the next segment; the indent supplies the offset.
-		for len(runes) > 0 && runes[0] == ' ' {
-			runes = runes[1:]
-		}
+		rest = strings.TrimLeft(rest[cut:], " ")
 		indent = contIndent
 	}
 	return out
@@ -238,9 +238,14 @@ func effortLabel(effort string) string {
 	return effort
 }
 
+// formatTokens groups n's digits in threes ("1,234,567"). Splitting once at
+// 1000 printed "1000,000" for a million.
 func formatTokens(n int) string {
+	if n < 0 {
+		return "-" + formatTokens(-n)
+	}
 	if n < 1000 {
 		return fmt.Sprintf("%d", n)
 	}
-	return fmt.Sprintf("%d,%03d", n/1000, n%1000)
+	return fmt.Sprintf("%s,%03d", formatTokens(n/1000), n%1000)
 }

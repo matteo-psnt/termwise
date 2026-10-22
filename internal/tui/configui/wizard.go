@@ -43,6 +43,10 @@ type wizardModel struct {
 	spin    spinner.Model
 	exclude map[string]bool // providers to hide (already configured)
 
+	// keychain records keys written, so the editor that embeds the wizard
+	// can undo them on revert. Nil for the first-run wizard.
+	keychain *keychainJournal
+
 	step   wizardStep
 	cursor int
 
@@ -51,7 +55,8 @@ type wizardModel struct {
 	authMethod string // "env", "cmd", "keychain"
 
 	// wizEnterValue input
-	input authInput
+	input    authInput
+	inputErr string
 
 	// wizPickModel
 	apiModels []provider.Model
@@ -172,6 +177,13 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m wizardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// ctrl+c quits from every step, including wizWorking, which takes no
+	// other keys while the fetch (up to 15s) is in flight.
+	if msg.String() == "ctrl+c" {
+		m.done = true
+		return m, tea.Quit
+	}
+
 	switch m.step {
 	case wizPickProvider:
 		return m.handlePickProviderKey(msg)
@@ -199,7 +211,7 @@ func (m wizardModel) handlePickProviderKey(msg tea.KeyPressMsg) (tea.Model, tea.
 		return m, nil
 	}
 	switch msg.String() {
-	case "q", "ctrl+c", "esc":
+	case "q", "esc":
 		m.done = true
 		return m, tea.Quit
 	case "enter", " ":
@@ -229,7 +241,7 @@ func (m wizardModel) handlePickAuthKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 		return m, nil
 	}
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "q":
 		m.done = true
 		return m, tea.Quit
 	case "b", "esc":
@@ -252,11 +264,9 @@ func (m wizardModel) handlePickAuthKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 
 func (m wizardModel) handleEnterValueKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "ctrl+c":
-		m.done = true
-		return m, tea.Quit
 	case "esc":
 		m.input.Blur()
+		m.inputErr = ""
 		m.cursor = 0
 		if provider.HasNoAuth(m.provider) {
 			m.step = wizPickProvider
@@ -266,9 +276,11 @@ func (m wizardModel) handleEnterValueKey(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 	case "enter":
 		if m.input.missing() {
 			// Don't submit; leave cursor in the field.
+			m.inputErr = errEmptyValue
 			return m, nil
 		}
 		m.input.Blur()
+		m.inputErr = ""
 		m.step = wizWorking
 		return m, tea.Batch(m.spin.Tick, m.fetchModelsCmd())
 	default:
@@ -286,7 +298,7 @@ func (m wizardModel) handlePickModelKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		return m, nil
 	}
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "q":
 		m.done = true
 		return m, tea.Quit
 	case "b", "esc":
@@ -304,7 +316,7 @@ func (m wizardModel) handlePickModelKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 
 func (m wizardModel) handleErrKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "q":
 		m.done = true
 		return m, tea.Quit
 	case "b", "esc":
@@ -321,30 +333,23 @@ func (m wizardModel) handleErrKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // setupEnterValue sets the input up, empty, for the current auth method.
 func (m *wizardModel) setupEnterValue() {
 	m.input.setup(m.provider, m.authMethod, "")
+	m.inputErr = ""
 }
 
 // fetchModelsCmd builds the ProviderConfig from wizard state and calls ListModels.
 func (m wizardModel) fetchModelsCmd() tea.Cmd {
 	provider := m.provider
-	authMethod := m.authMethod
 	inputVal := m.input.Value()
-	fallback := m.input.fallback
+	pc := buildProviderConfigFromAuthInput(provider, m.authMethod, inputVal, m.input.fallback)
+	journal := m.keychain
 
 	return func() tea.Msg {
-		pc, err := prepareProviderConfig(provider, authMethod, inputVal, fallback)
-		if err != nil {
-			return wizModelsMsg{err: err}
-		}
-
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
-		models, err := config.ListProviderModels(ctx, provider, pc)
+		models, err := listModelsFor(ctx, provider, pc, inputVal, journal)
 		if err != nil {
 			return wizModelsMsg{err: fmt.Errorf("listing models: %w", err)}
-		}
-		if len(models) == 0 {
-			return wizModelsMsg{err: fmt.Errorf("no models returned by %s", provider)}
 		}
 		return wizModelsMsg{models: models}
 	}
@@ -411,7 +416,7 @@ func (m wizardModel) renderInner() string {
 		b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back   q quit"))
 
 	case wizEnterValue:
-		b.WriteString(m.input.view(m.styles, "", "enter confirm   esc back"))
+		b.WriteString(m.input.view(m.styles, m.inputErr, "enter confirm   esc back"))
 
 	case wizWorking:
 		b.WriteString(m.styles.Spinner.Render(m.spin.View()) + " Connecting to " + m.provider + "...")

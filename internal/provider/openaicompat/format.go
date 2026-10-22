@@ -24,7 +24,7 @@ func toParams(model, system string, messages []openai.ChatCompletionMessageParam
 		p.Tools = tools
 	}
 	if effort != "" {
-		p.ReasoningEffort = shared.ReasoningEffort(effort)
+		p.ReasoningEffort = shared.ReasoningEffort(openAIEffort(effort))
 	}
 	return p
 }
@@ -48,6 +48,11 @@ func toMessageParam(m provider.Message) ([]openai.ChatCompletionMessageParamUnio
 	case "user":
 		return toUserMessageParams(m), nil
 	case "assistant":
+		// An empty assistant turn (no text, no tool calls) is invalid here
+		// and would fail every later request; it carries nothing, so drop it.
+		if m.Content == "" && len(m.ToolCalls) == 0 {
+			return nil, nil
+		}
 		p, err := toAssistantMessageParam(m)
 		if err != nil {
 			return nil, err
@@ -60,13 +65,15 @@ func toMessageParam(m provider.Message) ([]openai.ChatCompletionMessageParamUnio
 
 // toUserMessageParams converts a user message into one or more SDK messages.
 // Tool results each become a separate tool message (OpenAI format requires this).
+// They go before any user text: tool messages must directly follow the
+// assistant message whose tool_calls they answer.
 func toUserMessageParams(m provider.Message) []openai.ChatCompletionMessageParamUnion {
 	var out []openai.ChatCompletionMessageParamUnion
-	if m.Content != "" {
-		out = append(out, openai.UserMessage(m.Content))
-	}
 	for _, tr := range m.ToolResults {
 		out = append(out, openai.ToolMessage(tr.Content, tr.ToolCallID))
+	}
+	if m.Content != "" {
+		out = append(out, openai.UserMessage(m.Content))
 	}
 	return out
 }
@@ -152,4 +159,16 @@ func filterModels(providerName string, models []provider.Model) []provider.Model
 		}
 	}
 	return out
+}
+
+// openAIEffort maps termwise's effort scale onto reasoning_effort. termwise
+// shares one scale across providers, and Anthropic's goes above high (xhigh,
+// max); OpenAI-compatible APIs document low, medium and high, so the extra
+// levels are sent as high rather than risk a rejected request.
+func openAIEffort(effort string) string {
+	switch effort {
+	case "xhigh", "max":
+		return "high"
+	}
+	return effort
 }

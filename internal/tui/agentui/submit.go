@@ -2,6 +2,7 @@ package agentui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -63,6 +64,7 @@ func (m Model) submitMessage(text string) (tea.Model, tea.Cmd) {
 	}
 
 	m.appendThreadEntries(UserEntry{Content: text})
+	m.messages = closeDanglingToolCalls(m.messages)
 	m.messages = append(m.messages, provider.Message{Role: "user", Content: content})
 	m.messages = trimContext(m.messages, m.contextWindow)
 	m.beginGeneration()
@@ -70,6 +72,61 @@ func (m Model) submitMessage(text string) (tea.Model, tea.Cmd) {
 	m.refreshViewport()
 
 	return m, m.startChat()
+}
+
+// notRunResult is the tool result recorded for a tool call that never ran.
+// notRunResult answers a call whose outcome is unknown: the turn ended while
+// it was pending or running. It may have run (Esc during a slow command), so
+// the model is told to check rather than assume.
+const notRunResult = "Interrupted: the turn ended before this tool call finished. It may or may not have run; check before repeating it."
+
+// closeDanglingToolCalls gives every tool call in the history a result.
+//
+// Providers reject a history where an assistant tool call is not answered in
+// the very next message, and a turn can end with calls unanswered: Esc while a
+// tool runs (or the model is mid-loop), quitting at an approval prompt and
+// resuming, or the command tool ending the turn before the calls after it.
+// Without this every later message in the session fails. Missing results are
+// added to the tool-result message that follows, or as a new one. The input is
+// not modified.
+func closeDanglingToolCalls(messages []provider.Message) []provider.Message {
+	out := make([]provider.Message, 0, len(messages)+1)
+	for i := 0; i < len(messages); i++ {
+		msg := messages[i]
+		out = append(out, msg)
+		if msg.Role != "assistant" || len(msg.ToolCalls) == 0 {
+			continue
+		}
+
+		var next *provider.Message
+		if i+1 < len(messages) && messages[i+1].Role == "user" && len(messages[i+1].ToolResults) > 0 {
+			next = &messages[i+1]
+		}
+		answered := make(map[string]bool)
+		if next != nil {
+			for _, tr := range next.ToolResults {
+				answered[tr.ToolCallID] = true
+			}
+		}
+		var missing []provider.ToolResult
+		for _, tc := range msg.ToolCalls {
+			if !answered[tc.ID] {
+				missing = append(missing, provider.ToolResult{ToolCallID: tc.ID, Content: notRunResult, IsError: true})
+			}
+		}
+
+		switch {
+		case len(missing) == 0:
+		case next != nil:
+			patched := *next
+			patched.ToolResults = slices.Concat(next.ToolResults, missing)
+			out = append(out, patched)
+			i++
+		default:
+			out = append(out, provider.Message{Role: "user", ToolResults: missing})
+		}
+	}
+	return out
 }
 
 // chatRequest builds the ChatRequest from current state.
@@ -89,11 +146,11 @@ func (m Model) effectiveEffort() string {
 	return config.EffectiveEffort(m.providerName, m.modelID, m.effort)
 }
 
-// trimContext drops oldest tool results when approaching the context window limit.
-//
-// The returned slice is a new outer slice, but the copy is shallow: each
-// message's ToolResults still shares its backing array with the input, so a
-// dropped result is overwritten in the caller's messages too.
+// trimContext drops oldest tool results when approaching the context window
+// limit. The input is not modified. When anything is dropped, every message's
+// ProviderState is cleared too (see below), so the result must replace the
+// caller's history rather than be used for one request: replaying the
+// untrimmed history next turn would edit earlier turns all over again.
 func trimContext(messages []provider.Message, contextWindow int) []provider.Message {
 	const (
 		fixedTokens   = 700 // system prompt + tool defs estimate
@@ -128,16 +185,35 @@ func trimContext(messages []provider.Message, contextWindow int) []provider.Mess
 	out := make([]provider.Message, len(messages))
 	copy(out, messages)
 
+	changed := false
+trim:
 	for i := range out {
+		if len(out[i].ToolResults) > 0 {
+			// copy(out, messages) shares each ToolResults backing array with
+			// the caller; clone before rewriting so the input is not modified.
+			out[i].ToolResults = slices.Clone(out[i].ToolResults)
+		}
 		for j := range out[i].ToolResults {
 			if out[i].ToolResults[j].Content != dropped {
 				out[i].ToolResults[j].Content = dropped
+				changed = true
 				if estimate(out) <= limit {
-					return out
+					break trim
 				}
 			}
 		}
 	}
 
+	// Editing an earlier turn invalidates every thinking block after it:
+	// Anthropic rejects the replayed blocks outright on newer accounts and
+	// silently discards the reasoning on the rest. Its documented recovery is
+	// to strip all thinking once, so drop every message's provider state. The
+	// caller keeps this result as its history, so later requests only append
+	// to it and the new thinking blocks stay valid until the next trim.
+	if changed {
+		for i := range out {
+			out[i].ProviderState = nil
+		}
+	}
 	return out
 }

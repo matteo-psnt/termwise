@@ -4,7 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
 // Every row of the box must be exactly the requested width, or the border
@@ -73,8 +76,102 @@ func TestWrapToWidthHardBreaksUnbrokenTokens(t *testing.T) {
 	}
 }
 
+// CJK and emoji are one rune but two cells. Counting runes let a line of them
+// run past the right border of the command box.
+func TestWrapToWidthMeasuresCells(t *testing.T) {
+	for _, line := range []string{
+		strings.Repeat("日本語", 10),
+		"echo " + strings.Repeat("🚀 ", 12),
+		"grep 中文 " + strings.Repeat("ファイル", 5),
+	} {
+		segs := wrapToWidth(line, 10)
+		var joined string
+		for i, s := range segs {
+			if w := lipgloss.Width(s); w > 10 {
+				t.Errorf("wrapToWidth(%q)[%d] = %q is %d cells wide, want <= 10", line, i, s, w)
+			}
+			joined += strings.ReplaceAll(s, " ", "")
+		}
+		if joined != strings.ReplaceAll(line, " ", "") {
+			t.Errorf("wrapToWidth(%q) lost text: %q", line, segs)
+		}
+	}
+}
+
+func TestCommandBlockKeepsWideCharactersInsideTheBox(t *testing.T) {
+	m := newModel(modelConfig{providerName: "anthropic", modelID: "claude-sonnet-4-6", themeName: theme.DefaultName, initialCursorRow: -1})
+	out := m.renderCommandBlock("cmd", "echo "+strings.Repeat("日本語 ", 20), 30)
+	for i, line := range strings.Split(out, "\n") {
+		if w := lipgloss.Width(line); w != 30 {
+			t.Errorf("line %d is %d cells wide, want 30: %q", i, w, line)
+		}
+	}
+}
+
+func TestTruncateLabelMeasuresCells(t *testing.T) {
+	got := truncateLabel("echo "+strings.Repeat("日本", 10), 20)
+	if w := lipgloss.Width(got); w > 20 {
+		t.Errorf("truncateLabel gave %q, %d cells wide; want <= 20", got, w)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("truncateLabel gave %q; want an ellipsis", got)
+	}
+}
+
 func TestWrapToWidthLeavesShortLinesAlone(t *testing.T) {
 	if got := wrapToWidth("ls -la", 40); len(got) != 1 || got[0] != "ls -la" {
 		t.Errorf("wrapToWidth() = %q", got)
+	}
+}
+
+func TestFormatTokens(t *testing.T) {
+	for n, want := range map[int]string{
+		0:          "0",
+		999:        "999",
+		1000:       "1,000",
+		1001:       "1,001",
+		999_999:    "999,999",
+		1_000_000:  "1,000,000",
+		1_234_567:  "1,234,567",
+		12_000_050: "12,000,050",
+	} {
+		if got := formatTokens(n); got != want {
+			t.Errorf("formatTokens(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// layoutModel is a sized, ready Model built the way Open builds one.
+func layoutModel(t *testing.T) Model {
+	t.Helper()
+	m := newModel(modelConfig{providerName: "anthropic", modelID: "claude-sonnet-4-6", themeName: theme.DefaultName, initialCursorRow: -1})
+	next, _ := m.handleWindowSize(tea.WindowSizeMsg{Width: 80, Height: 40})
+	return next.(Model)
+}
+
+// totalViewHeight drives the anchor and mouse-row math, so it must agree with
+// what renderedView draws, including states whose input row is a textarea
+// that has grown to several lines, and the help overlay.
+func TestTotalViewHeightMatchesRenderedView(t *testing.T) {
+	multi := "first line\nsecond line\nthird line"
+	cases := map[string]func(Model) Model{
+		"idle multi-line": func(m Model) Model { m.input.SetValue(multi); return m },
+		"proposal edit multi-line": func(m Model) Model {
+			m.state = stateCommandProposalEdit
+			m.input.SetValue(multi)
+			return m
+		},
+		"hist search multi-line": func(m Model) Model {
+			m.state = stateHistSearch
+			m.input.SetValue(multi)
+			return m
+		},
+		"help overlay": func(m Model) Model { m.showHelp = true; return m },
+	}
+	for name, setup := range cases {
+		m := setup(layoutModel(t))
+		if got, want := m.totalViewHeight(), lipgloss.Height(m.renderedView()); got != want {
+			t.Errorf("%s: totalViewHeight = %d, rendered %d rows", name, got, want)
+		}
 	}
 }

@@ -30,6 +30,14 @@ const (
 	modeExplain
 )
 
+// historyName is the mode as recorded in a saved session.
+func (mode sessionMode) historyName() string {
+	if mode == modeExplain {
+		return history.SessionModeExplain
+	}
+	return history.SessionModeAgent
+}
+
 // systemAndTools returns the system prompt and tool set for the mode.
 func (mode sessionMode) systemAndTools(env envcontext.Context) (string, []provider.ToolDef) {
 	if mode == modeExplain {
@@ -216,10 +224,8 @@ func openProgram(cfg openProgramConfig) (string, error) {
 
 	// Load prior session if requested.
 	var initialSession *history.Session
-	if cfg.sessionID != "" && stores.sessions != nil && (settings.autoResume || cfg.forceResume) {
-		if s, ok, err := stores.sessions.Load(cfg.sessionID); err == nil && ok {
-			initialSession = &s
-		}
+	if settings.autoResume || cfg.forceResume {
+		initialSession = loadResumableSession(stores.sessions, cfg.sessionID, cfg.mode)
 	}
 
 	env := envcontext.Detect(context.Background(), envcontext.Options{ShellHistory: settings.shellContext})
@@ -271,6 +277,22 @@ func openProgram(cfg openProgramConfig) (string, error) {
 		return model.exitShellCommand(), nil
 	}
 	return "", nil
+}
+
+// loadResumableSession returns the saved session to resume, or nil. Explain
+// keeps its own session id, but the id alone is not proof of mode: sessions
+// saved before that split, or a caller passing the same id to both, would
+// replay a transcript full of command tool calls under a prompt with no
+// command tool (or the reverse). The recorded mode is what actually decides.
+func loadResumableSession(store *history.SessionStore, id string, mode sessionMode) *history.Session {
+	if store == nil || id == "" {
+		return nil
+	}
+	s, ok, err := store.Load(id)
+	if err != nil || !ok || s.SessionMode() != mode.historyName() {
+		return nil
+	}
+	return &s
 }
 
 // tuiSettings are the config-file settings the TUI reads at startup.

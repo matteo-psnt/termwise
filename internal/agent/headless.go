@@ -8,6 +8,11 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
+// maxHeadlessSteps caps model round-trips in a headless run. Nobody is there
+// to press Esc, so a model that keeps calling tools would otherwise never let
+// `tw ask` exit. Real tasks finish in a handful of steps; 50 leaves ample room.
+const maxHeadlessSteps = 50
+
 // FinalResponse is the terminal response produced by a headless agent run.
 type FinalResponse struct {
 	Type    string
@@ -56,7 +61,7 @@ func RunHeadless(ctx context.Context, cfg HeadlessConfig) (FinalResponse, error)
 
 	messages := []provider.Message{{Role: "user", Content: cfg.Prompt}}
 
-	for {
+	for range maxHeadlessSteps {
 		resp, err := cfg.Client.Chat(ctx, provider.ChatRequest{
 			Model:    cfg.Model,
 			System:   cfg.System,
@@ -76,10 +81,14 @@ func RunHeadless(ctx context.Context, cfg HeadlessConfig) (FinalResponse, error)
 			return output, nil
 		}
 
+		if resp.HistoryStateDropped {
+			messages = provider.WithoutState(messages)
+		}
 		messages = append(messages, provider.Message{
-			Role:      "assistant",
-			Content:   resp.Content,
-			ToolCalls: resp.ToolCalls,
+			Role:          "assistant",
+			Content:       resp.Content,
+			ToolCalls:     resp.ToolCalls,
+			ProviderState: resp.ProviderState,
 		})
 
 		final, toolResults, err := runToolLoop(ctx, resp.ToolCalls, needsApproval, onNeedsApproval, onAsk)
@@ -87,10 +96,16 @@ func RunHeadless(ctx context.Context, cfg HeadlessConfig) (FinalResponse, error)
 			return FinalResponse{}, err
 		}
 		if final != nil {
+			// Same rule as a text answer: printing an empty command and
+			// exiting 0 would look like success to a script.
+			if final.Content == "" {
+				return FinalResponse{}, fmt.Errorf("agent proposed an empty command")
+			}
 			return *final, nil
 		}
 		messages = append(messages, provider.Message{Role: "user", ToolResults: toolResults})
 	}
+	return FinalResponse{}, fmt.Errorf("agent gave no final response after %d steps; it may be stuck calling tools", maxHeadlessSteps)
 }
 
 // runToolLoop processes all tool calls for one turn, returning either a final

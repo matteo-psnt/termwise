@@ -1,6 +1,8 @@
 package configui
 
 import (
+	"fmt"
+
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
@@ -13,9 +15,39 @@ import (
 // ---------------------------------------------------------------------------
 
 func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// ctrl+c always quits without saving — intercepted before any sub-model sees it.
-	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "ctrl+c" {
-		return m, tea.Quit
+	// The editor's own messages are handled before delegating: a sub-model
+	// would drop them, freezing the connectivity spinner and leaving the
+	// active provider's indicator stale.
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		// ctrl+c always quits without saving — intercepted before any sub-model sees it.
+		// Keys written this session are discarded along with the rest.
+		if msg.String() == "ctrl+c" {
+			m.restoreKeychain()
+			return m, tea.Quit
+		}
+
+	case tea.WindowSizeMsg:
+		// Kept here and also passed on below, so whichever of the editor and
+		// the open sub-model draws next has the current size.
+		m.width = msg.Width
+		m.height = msg.Height
+
+	case spinner.TickMsg:
+		// Sub-models run spinners of their own; the ID says whose tick it is.
+		if msg.ID == m.spin.ID() {
+			var cmd tea.Cmd
+			m.spin, cmd = m.spin.Update(msg)
+			return m, cmd
+		}
+
+	case editorConnMsg:
+		if msg.provider != m.cfg.SelectedProvider || msg.seq != m.connSeq {
+			return m, nil
+		}
+		m.connChecked = true
+		m.connOK = msg.err == nil
+		return m, nil
 	}
 
 	// Delegate to the active sub-model.
@@ -34,25 +66,8 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAddWizard(msg)
 	}
 
-	// Normal state message handling.
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		return m, nil
-
-	case spinner.TickMsg:
-		var cmd tea.Cmd
-		m.spin, cmd = m.spin.Update(msg)
-		return m, cmd
-
-	case editorConnMsg:
-		m.connChecked = true
-		m.connOK = msg.err == nil
-		return m, nil
-
-	case tea.KeyPressMsg:
-		return m.handleNormalKey(msg)
+	if key, ok := msg.(tea.KeyPressMsg); ok {
+		return m.handleNormalKey(key)
 	}
 
 	return m, nil
@@ -85,8 +100,6 @@ func (m editorModel) updateAuthEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if ae.done {
 		m.authEditor = nil
 		if !ae.cancelled {
-			existing := m.cfg.Providers[ae.provider]
-			ae.result.Model = existing.Model
 			config.SetProvider(&m.cfg, ae.provider, ae.result)
 			m.resetConnectivity()
 			return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
@@ -143,6 +156,17 @@ func (m editorModel) updateAddWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 	newWiz := newModel.(wizardModel)
 	m.addWizard = &newWiz
 	if newWiz.result != nil {
+		// A key verified for a provider the user then backed out of (and
+		// added another instead) belongs to nothing that was added: restore
+		// it now, and hand only the added providers' writes to the session.
+		keep := map[string]bool{}
+		for name := range newWiz.result.Providers {
+			keep[config.DefaultKeychainEntry(name)] = true
+		}
+		if err := newWiz.keychain.restoreExcept(keep); err != nil {
+			m.err = fmt.Errorf("restoring keychain: %w", err)
+		}
+		m.keychain.adopt(newWiz.keychain)
 		for name, pc := range newWiz.result.Providers {
 			config.SetProvider(&m.cfg, name, pc)
 		}
@@ -152,6 +176,11 @@ func (m editorModel) updateAddWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
 	}
 	if newWiz.done {
+		// Abandoned: a key it verified and stored belongs to a provider that
+		// was never added, so put the entry back as it was.
+		if err := newWiz.keychain.restore(); err != nil {
+			m.err = fmt.Errorf("restoring keychain: %w", err)
+		}
 		m.addWizard = nil
 		return m, nil
 	}
@@ -181,11 +210,23 @@ func (m editorModel) handleNormalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // revertToSnapshot rolls in-memory edits back to the config as it was when the
 // editor opened. The editor stays open; nothing is written to disk.
 func (m editorModel) revertToSnapshot() (tea.Model, tea.Cmd) {
+	m.restoreKeychain()
 	m.cfg = m.initial.Clone()
 	m.styles = newStylesForTheme(m.hasDarkBg, m.cfg.Settings.Theme)
 	m.buildRows()
 	m.resetConnectivity()
 	return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
+}
+
+// restoreKeychain puts back the keychain entries written since the snapshot.
+// It runs inline rather than as a Cmd so a key written right after a revert
+// can't race it; no write is ever in flight here, since the auth editor and
+// wizard take no keys while verifying. A failure is reported on exit, as the
+// editor has nowhere else to show it.
+func (m *editorModel) restoreKeychain() {
+	if err := m.keychain.restore(); err != nil {
+		m.err = fmt.Errorf("restoring keychain: %w", err)
+	}
 }
 
 func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
@@ -203,7 +244,8 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 
 	case rowProvModel:
 		pc := m.cfg.Providers[row.provider]
-		mp := newModelPicker(row.provider, pc, pc.Model, m.height, m.styles)
+		m.pickerSeq++
+		mp := newModelPicker(row.provider, pc, pc.Model, m.pickerSeq, m.height, m.styles)
 		m.modelPicker = &mp
 		return m, m.modelPicker.Init()
 
@@ -228,13 +270,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case rowProvAuth:
-		ae := newAuthEditor(
-			row.provider,
-			m.cfg.Providers[row.provider],
-			row.provider == m.cfg.SelectedProvider,
-			m.connOK,
-			m.styles,
-		)
+		ae := newAuthEditor(row.provider, m.cfg.Providers[row.provider], m.keychain, m.styles)
 		m.authEditor = &ae
 		return m, m.authEditor.Init()
 
@@ -244,6 +280,12 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 			exclude[name] = true
 		}
 		wiz := newWizardModel(m.hasDarkBg, theme.Normalize(m.cfg.Settings.Theme), exclude)
+		// The window size arrived before the wizard existed; it sizes its
+		// model list from it.
+		wiz.width, wiz.height = m.width, m.height
+		// The wizard keeps its own journal: abandoning it undoes just its
+		// writes, and finishing hands them to the session's journal.
+		wiz.keychain = newKeychainJournal()
 		m.addWizard = &wiz
 		return m, m.addWizard.Init()
 

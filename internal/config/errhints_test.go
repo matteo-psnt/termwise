@@ -33,6 +33,9 @@ func TestExplainErrorOllamaDown(t *testing.T) {
 	if !strings.Contains(err.Error(), "ollama serve") {
 		t.Errorf("message %q does not suggest starting Ollama", err)
 	}
+	if !strings.Contains(err.Error(), "Can't reach Ollama at") {
+		t.Errorf("message %q does not name Ollama plainly", err)
+	}
 }
 
 func TestExplainErrorLeavesOtherErrorsAlone(t *testing.T) {

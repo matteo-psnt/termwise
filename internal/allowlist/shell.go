@@ -1,8 +1,8 @@
 package allowlist
 
 import (
+	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -16,20 +16,20 @@ type parsedCommand struct {
 func (e *ruleEngine) parseCommand(command string) ([]parsedCommand, error) {
 	file, err := syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(strings.NewReader(command), "")
 	if err != nil {
-		return nil, err
+		return nil, errors.New("it could not be parsed")
 	}
 	if len(file.Stmts) != 1 {
-		return nil, fmt.Errorf("multiple statements require approval")
+		return nil, errors.New("it is more than one statement")
 	}
 	return e.parseStmt(file.Stmts[0])
 }
 
 func (e *ruleEngine) parseStmt(stmt *syntax.Stmt) ([]parsedCommand, error) {
 	if stmt == nil || stmt.Cmd == nil {
-		return nil, fmt.Errorf("empty statement")
+		return nil, errors.New("part of it is empty")
 	}
 	if stmt.Negated || stmt.Background || stmt.Coprocess || stmt.Disown {
-		return nil, fmt.Errorf("compound statement requires approval")
+		return nil, errors.New("it negates a command or runs one in the background")
 	}
 	if err := e.validateRedirects(stmt.Redirs); err != nil {
 		return nil, err
@@ -46,7 +46,7 @@ func (e *ruleEngine) parseStmt(stmt *syntax.Stmt) ([]parsedCommand, error) {
 		switch cmd.Op {
 		case syntax.Pipe, syntax.AndStmt, syntax.OrStmt:
 		default:
-			return nil, fmt.Errorf("unsupported binary operator requires approval")
+			return nil, errors.New("it joins commands with an operator other than |, && or ||")
 		}
 
 		left, err := e.parseStmt(cmd.X)
@@ -59,13 +59,13 @@ func (e *ruleEngine) parseStmt(stmt *syntax.Stmt) ([]parsedCommand, error) {
 		}
 		return append(left, right...), nil
 	default:
-		return nil, fmt.Errorf("compound command requires approval")
+		return nil, errors.New("it uses a loop, subshell, function or other compound command")
 	}
 }
 
 func parseCallExpr(cmd *syntax.CallExpr) (parsedCommand, error) {
 	if len(cmd.Args) == 0 {
-		return parsedCommand{}, fmt.Errorf("assignment-only command requires approval")
+		return parsedCommand{}, errors.New("it only sets variables")
 	}
 	if err := validateAssignments(cmd.Assigns); err != nil {
 		return parsedCommand{}, err
@@ -75,13 +75,13 @@ func parseCallExpr(cmd *syntax.CallExpr) (parsedCommand, error) {
 	for _, word := range cmd.Args {
 		lit, ok := literalWord(word)
 		if !ok {
-			return parsedCommand{}, fmt.Errorf("dynamic word requires approval")
+			return parsedCommand{}, errors.New("it uses a value only known when it runs, such as $VAR or $(...)")
 		}
 		tokens = append(tokens, lit)
 	}
 	parsed, ok := parsedCommandFromTokens(tokens)
 	if !ok {
-		return parsedCommand{}, fmt.Errorf("assignment-only command requires approval")
+		return parsedCommand{}, errors.New("it only sets variables")
 	}
 	return parsed, nil
 }
@@ -89,16 +89,46 @@ func parseCallExpr(cmd *syntax.CallExpr) (parsedCommand, error) {
 func validateAssignments(assigns []*syntax.Assign) error {
 	for _, assign := range assigns {
 		if assign == nil || assign.Append || assign.Naked || assign.Index != nil || assign.Array != nil || assign.Name == nil {
-			return fmt.Errorf("dynamic assignment requires approval")
+			return errors.New("it sets a variable in a way only known when it runs")
 		}
-		if assign.Value == nil {
-			continue
+		name := assign.Name.Value
+		pager := isPagerVar(name)
+		if !harmlessEnvVar(name) && !pager {
+			return fmt.Errorf("setting %s requires approval", name)
 		}
-		if _, ok := literalWord(assign.Value); !ok {
-			return fmt.Errorf("dynamic assignment requires approval")
+		value := ""
+		if assign.Value != nil {
+			lit, ok := literalWord(assign.Value)
+			if !ok {
+				return errors.New("it sets a variable in a way only known when it runs")
+			}
+			value = lit
+		}
+		// The pager variables name a program. Only cat (found on PATH, which
+		// cannot be set here) and the empty value, which turns the pager
+		// off, are harmless; this allows the common GIT_PAGER=cat git log.
+		if pager && value != "" && value != "cat" {
+			return fmt.Errorf("setting %s to anything but cat requires approval", name)
 		}
 	}
 	return nil
+}
+
+// harmlessEnvVar reports whether a variable is safe to set in front of an
+// allowlisted command. A literal value is not enough: PAGER, GIT_EXTERNAL_DIFF,
+// LESSOPEN, LD_PRELOAD, BASH_ENV, PATH and many more make a read-only command
+// run whatever the value names. So this is an allow list of variables that
+// only change formatting or locale, and everything else needs approval.
+func harmlessEnvVar(name string) bool {
+	switch name {
+	case "LANG", "LANGUAGE", "TZ", "NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE", "COLUMNS", "LINES", "TERM":
+		return true
+	}
+	return strings.HasPrefix(name, "LC_")
+}
+
+func isPagerVar(name string) bool {
+	return name == "PAGER" || name == "GIT_PAGER"
 }
 
 func literalWord(word *syntax.Word) (string, bool) {
@@ -139,8 +169,12 @@ func parsedCommandFromTokens(tokens []string) (parsedCommand, bool) {
 	if len(tokens) == 0 {
 		return parsedCommand{}, false
 	}
+	// The name is kept exactly as written. Rules are keyed by bare names that
+	// the shell looks up on PATH; a word with a slash runs that file instead,
+	// so ./ls or /tmp/x/cat is some other program that only shares a name.
+	// Leaving the slash in means no rule matches and it needs approval.
 	return parsedCommand{
-		Name: filepath.Base(tokens[0]),
+		Name: tokens[0],
 		Args: append([]string(nil), tokens[1:]...),
 	}, true
 }
