@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"runtime/debug"
 	"strings"
 
@@ -41,12 +42,22 @@ func versionString() string {
 // buildVersion fills in what ldflags left at its default from the Go build
 // info: `go install …@latest` stamps the module version, and a build from a
 // checkout stamps the VCS revision. Values set by goreleaser always win.
+// pseudoVersion matches a Go pseudo-version such as
+// v0.1.2-0.20261022043432-ebe03eab4f9c, with any +build suffix.
+var pseudoVersion = regexp.MustCompile(`[-.](0\.)?\d{14}-[0-9a-f]{12}(\+[0-9A-Za-z.-]+)?$`)
+
 func buildVersion(version, commit string, info *debug.BuildInfo) (string, string) {
 	if info == nil {
 		return version, commit
 	}
 	if version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
 		version = info.Main.Version
+		// A source build is stamped with a pseudo-version, which already
+		// ends in the revision, or a tag with +dirty: a "(rev)" suffix
+		// would only repeat what the version says.
+		if pseudoVersion.MatchString(version) || strings.HasSuffix(version, "+dirty") {
+			return version, commit
+		}
 	}
 	if commit == "none" {
 		var rev string
