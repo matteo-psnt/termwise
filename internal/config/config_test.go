@@ -332,6 +332,24 @@ func TestResolveAuthCmd(t *testing.T) {
 	assertEqual(t, "APIKey", "sk-from-cmd", auth.APIKey)
 }
 
+func TestResolveAuthCmdKeepsOutputWhenBackgroundChildHoldsStdout(t *testing.T) {
+	mustUnsetenv(t, "GROQ_API_KEY")
+	// The command exits 0 at once, but sleep inherits stdout and keeps it
+	// open past WaitDelay.
+	auth, err := ResolveAuth("groq", ProviderConfig{Auth: "cmd", APIKeyCmd: "echo sk-bg; sleep 3 &"})
+	if err != nil {
+		t.Fatalf("ResolveAuth: %v", err)
+	}
+	assertEqual(t, "APIKey", "sk-bg", auth.APIKey)
+}
+
+func TestResolveAuthCmdBackgroundChildWithoutOutputFails(t *testing.T) {
+	mustUnsetenv(t, "GROQ_API_KEY")
+	if _, err := ResolveAuth("groq", ProviderConfig{Auth: "cmd", APIKeyCmd: "sleep 3 &"}); err == nil {
+		t.Error("expected an error when the command printed nothing")
+	}
+}
+
 func TestResolveAuthCmdFailureReturnsError(t *testing.T) {
 	mustUnsetenv(t, "GROQ_API_KEY")
 	pc := ProviderConfig{Auth: "cmd", APIKeyCmd: "exit 1"}
@@ -736,5 +754,39 @@ func TestEnvOnlyNoticeHonorsOverrides(t *testing.T) {
 	}
 	if !strings.Contains(got, EnvProvider) {
 		t.Errorf("notice = %q, want it to say the provider came from %s", got, EnvProvider)
+	}
+}
+
+func TestEnvOnlyNoticeWithoutModel(t *testing.T) {
+	for _, p := range provider.Catalog() {
+		if p.DefaultEnvVar != "" {
+			t.Setenv(p.DefaultEnvVar, "")
+		}
+	}
+	missing := filepath.Join(t.TempDir(), "config.toml")
+	t.Setenv(EnvProvider, "ollama")
+	t.Setenv(EnvModel, "")
+	got := EnvOnlyNotice(missing)
+	if strings.Contains(got, "model ,") || !strings.Contains(got, "no model set — set "+EnvModel) {
+		t.Errorf("notice = %q, want it to say no model is set", got)
+	}
+}
+
+func TestLoadAndResolveModelHintWithoutFile(t *testing.T) {
+	for _, p := range provider.Catalog() {
+		if p.DefaultEnvVar != "" {
+			t.Setenv(p.DefaultEnvVar, "")
+		}
+	}
+	t.Setenv(EnvProvider, "ollama")
+	t.Setenv(EnvModel, "")
+	_, _, err := LoadAndResolve(filepath.Join(t.TempDir(), "config.toml"))
+	if err == nil {
+		t.Fatal("LoadAndResolve with no model: want an error")
+	}
+	// `config model set` fails with no file: "no provider selected".
+	if msg := err.Error(); strings.Contains(msg, "config model set") ||
+		!strings.Contains(msg, EnvModel+"=<model>") || !strings.Contains(msg, "config use ollama --model <model>") {
+		t.Errorf("err = %q, want it to suggest %s or `config use ollama --model`", msg, EnvModel)
 	}
 }

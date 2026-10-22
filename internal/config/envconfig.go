@@ -121,6 +121,11 @@ func EnvOnlyNotice(path string) string {
 	if len(eff.Overrides) > 0 {
 		set = ", set by " + strings.Join(eff.Overrides, " ")
 	}
-	return fmt.Sprintf("No config file — using %s%s (model %s%s). Run `%s config` to save or change this.",
-		displayName(name), via, pc.Model, set, cliname.Name())
+	model := "model " + pc.Model
+	if pc.Model == "" {
+		// e.g. TERMWISE_PROVIDER=ollama, which has no default model.
+		model = "no model set — set " + EnvModel
+	}
+	return fmt.Sprintf("No config file — using %s%s (%s%s). Run `%s config` to save or change this.",
+		displayName(name), via, model, set, cliname.Name())
 }

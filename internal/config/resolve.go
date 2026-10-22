@@ -66,7 +66,7 @@ func LoadAndResolve(path string) (FileConfig, ResolvedConfig, error) {
 		return FileConfig{}, ResolvedConfig{}, err
 	}
 	cfg := eff.File
-	if err := validateForRuntime(cfg); err != nil {
+	if err := validateForRuntime(eff); err != nil {
 		return FileConfig{}, ResolvedConfig{}, err
 	}
 	rc, err := resolveConfig(cfg)

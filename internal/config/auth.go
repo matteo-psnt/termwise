@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -81,6 +82,13 @@ func resolveKey(name string, pc ProviderConfig) (string, string, error) {
 		out, err := cmd.Output()
 		if ctx.Err() == context.DeadlineExceeded {
 			return "", "", fmt.Errorf("api_key_cmd timed out after %s", apiKeyCmdTimeout)
+		}
+		// A background child the command started (`echo key; sleep 3 &`)
+		// can hold stdout open after the command itself has exited 0. That
+		// trips WaitDelay, but the key it printed is complete.
+		if errors.Is(err, exec.ErrWaitDelay) && ctx.Err() == nil &&
+			cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == 0 && len(bytes.TrimSpace(out)) > 0 {
+			err = nil
 		}
 		if err != nil {
 			var exitErr *exec.ExitError

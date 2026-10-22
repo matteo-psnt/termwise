@@ -107,13 +107,7 @@ func runDoctor(cfgPath string, online bool) bool {
 	}
 	pass("[providers." + cfg.SelectedProvider + "]: block found")
 
-	// Model.
-	if pc.Model != "" {
-		pass("Model: " + pc.Model)
-	} else {
-		fail("Model: not set")
-		hint("Run `%s config model set <model>`", cliname.Name())
-	}
+	doctorModel(pass, fail, hint, eff, pc)
 
 	doctorEffort(pass, warn, hint, pc)
 
@@ -182,6 +176,24 @@ func runDoctor(cfgPath string, online bool) bool {
 		fmt.Println("All checks passed.")
 	}
 	return allOk
+}
+
+// doctorModel checks the selected provider has a model.
+func doctorModel(pass, fail func(string), hint func(string, ...any), eff config.Effective, pc config.ProviderConfig) {
+	if pc.Model != "" {
+		pass("Model: " + pc.Model)
+		return
+	}
+	fail("Model: not set")
+	if !eff.Exists || os.Getenv(config.EnvProvider) != "" {
+		// `config model set` edits the file's selected provider: with no
+		// file it fails with "no provider selected", and with
+		// TERMWISE_PROVIDER it would set the wrong provider's model.
+		hint("Set %s=<model>, or run `%s config use %s --model <model>`",
+			config.EnvModel, cliname.Name(), eff.File.SelectedProvider)
+	} else {
+		hint("Run `%s config model set <model>`", cliname.Name())
+	}
 }
 
 // doctorEffort checks the provider's reasoning effort. A bad value is
