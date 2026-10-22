@@ -3,9 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
-	"strings"
 
 	"charm.land/glamour/v2"
 
@@ -35,18 +33,14 @@ type runtimeContext struct {
 // appendPromptStdin appends piped stdin to the prompt. A terminal stdin or an
 // empty pipe leaves the prompt untouched.
 func appendPromptStdin(prompt string) (string, error) {
-	if tty.IsTerminal(os.Stdin) {
-		return prompt, nil
-	}
-
-	stdin, err := io.ReadAll(os.Stdin)
+	stdin, piped, err := tty.ReadPiped(os.Stdin)
 	if err != nil {
 		return "", fmt.Errorf("reading stdin: %w", err)
 	}
-	if len(stdin) == 0 {
+	if !piped || stdin == "" {
 		return prompt, nil
 	}
-	return prompt + "\n\n" + strings.TrimRight(string(stdin), "\n"), nil
+	return prompt + "\n\n" + stdin, nil
 }
 
 // writeFinalOutput prints a final agent response. Commands go out raw so they
