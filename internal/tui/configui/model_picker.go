@@ -70,18 +70,14 @@ func (m modelPickerModel) Update(msg tea.Msg) (modelPickerModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if c, ok := moveListCursor(msg.String(), m.cursor, len(m.models)); ok {
+			m.cursor = c
+			return m, nil
+		}
 		switch msg.String() {
 		case "esc", "b":
 			m.cancelled = true
 			m.done = true
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-		case "down", "j":
-			if m.cursor < len(m.models)-1 {
-				m.cursor++
-			}
 		case "enter", " ":
 			if !m.loading && m.err == "" && len(m.models) > 0 {
 				m.selected = m.models[m.cursor].ID

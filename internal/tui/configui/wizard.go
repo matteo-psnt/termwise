@@ -201,18 +201,14 @@ func (m wizardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m wizardModel) handlePickProviderKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	providers := m.availableProviders()
 
+	if c, ok := moveListCursor(msg.String(), m.cursor, len(providers)); ok {
+		m.cursor = c
+		return m, nil
+	}
 	switch msg.String() {
 	case "q", "ctrl+c", "esc":
 		m.done = true
 		return m, tea.Quit
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case "down", "j":
-		if m.cursor < len(providers)-1 {
-			m.cursor++
-		}
 	case "enter", " ":
 		selected, ok := m.selectedProvider()
 		if !ok {
@@ -235,6 +231,10 @@ func (m wizardModel) handlePickProviderKey(msg tea.KeyPressMsg) (tea.Model, tea.
 }
 
 func (m wizardModel) handlePickAuthKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if c, ok := moveListCursor(msg.String(), m.cursor, len(authMethods)); ok {
+		m.cursor = c
+		return m, nil
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.done = true
@@ -242,14 +242,6 @@ func (m wizardModel) handlePickAuthKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 	case "b", "esc":
 		m.cursor = 0
 		m.step = wizPickProvider
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case "down", "j":
-		if m.cursor < len(authMethods)-1 {
-			m.cursor++
-		}
 	case "enter", " ":
 		m.authMethod = authMethods[m.cursor].id
 		m.cursor = 0
@@ -296,6 +288,10 @@ func (m wizardModel) handleEnterValueKey(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 }
 
 func (m wizardModel) handlePickModelKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if c, ok := moveListCursor(msg.String(), m.cursor, len(m.apiModels)); ok {
+		m.cursor = c
+		return m, nil
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.done = true
@@ -304,14 +300,6 @@ func (m wizardModel) handlePickModelKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		m.cursor = 0
 		m.step = wizEnterValue
 		m.input.Focus()
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case "down", "j":
-		if m.cursor < len(m.apiModels)-1 {
-			m.cursor++
-		}
 	case "enter", " ":
 		m.modelID = m.apiModels[m.cursor].ID
 		m.saveConfig()

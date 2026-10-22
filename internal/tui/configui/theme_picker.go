@@ -45,18 +45,14 @@ func (m themePickerModel) Update(msg tea.Msg) (themePickerModel, tea.Cmd) {
 		return m, nil
 	}
 	palettes := theme.All()
+	if c, ok := moveListCursor(key.String(), m.cursor, len(palettes)); ok {
+		m.cursor = c
+		return m, nil
+	}
 	switch key.String() {
 	case "esc", "b":
 		m.cancelled = true
 		m.done = true
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case "down", "j":
-		if m.cursor < len(palettes)-1 {
-			m.cursor++
-		}
 	case "enter", " ":
 		m.result = palettes[m.cursor].Name
 		m.done = true

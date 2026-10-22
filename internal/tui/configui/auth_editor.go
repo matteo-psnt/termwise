@@ -134,18 +134,14 @@ func (m authEditorModel) Update(msg tea.Msg) (authEditorModel, tea.Cmd) {
 }
 
 func (m authEditorModel) handlePickMethod(msg tea.KeyPressMsg) (authEditorModel, tea.Cmd) {
+	if c, ok := moveListCursor(msg.String(), m.methodCursor, len(authMethods)); ok {
+		m.methodCursor = c
+		return m, nil
+	}
 	switch msg.String() {
 	case "esc", "b":
 		m.cancelled = true
 		m.done = true
-	case "up", "k":
-		if m.methodCursor > 0 {
-			m.methodCursor--
-		}
-	case "down", "j":
-		if m.methodCursor < len(authMethods)-1 {
-			m.methodCursor++
-		}
 	case "enter", " ":
 		selected := authMethods[m.methodCursor].id
 		existingAuth := m.existing.Auth
