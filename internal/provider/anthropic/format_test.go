@@ -104,3 +104,17 @@ func TestMaxTokens(t *testing.T) {
 		t.Fatalf("thinking max_tokens = %d, want 16000", got)
 	}
 }
+
+func TestToolResultsPrecedeUserText(t *testing.T) {
+	p, err := toUserMessageParam(provider.Message{
+		Role:        "user",
+		Content:     "and also",
+		ToolResults: []provider.ToolResult{{ToolCallID: "tu_1", Content: "out"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Content) != 2 || p.Content[0].OfToolResult == nil || p.Content[1].OfText == nil {
+		t.Fatalf("got %+v, want tool_result then text", p.Content)
+	}
+}

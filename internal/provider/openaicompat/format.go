@@ -60,13 +60,15 @@ func toMessageParam(m provider.Message) ([]openai.ChatCompletionMessageParamUnio
 
 // toUserMessageParams converts a user message into one or more SDK messages.
 // Tool results each become a separate tool message (OpenAI format requires this).
+// They go before any user text: tool messages must directly follow the
+// assistant message whose tool_calls they answer.
 func toUserMessageParams(m provider.Message) []openai.ChatCompletionMessageParamUnion {
 	var out []openai.ChatCompletionMessageParamUnion
-	if m.Content != "" {
-		out = append(out, openai.UserMessage(m.Content))
-	}
 	for _, tr := range m.ToolResults {
 		out = append(out, openai.ToolMessage(tr.Content, tr.ToolCallID))
+	}
+	if m.Content != "" {
+		out = append(out, openai.UserMessage(m.Content))
 	}
 	return out
 }

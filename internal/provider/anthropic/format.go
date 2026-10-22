@@ -67,12 +67,8 @@ func toMessageParam(m provider.Message) (sdk.MessageParam, error) {
 func toUserMessageParam(m provider.Message) (sdk.MessageParam, error) {
 	var blocks []sdk.ContentBlockParamUnion
 
-	if m.Content != "" {
-		blocks = append(blocks, sdk.ContentBlockParamUnion{
-			OfText: &sdk.TextBlockParam{Text: m.Content},
-		})
-	}
-
+	// tool_result blocks first: the API rejects a user turn that answers
+	// tool_use with any text ahead of the results.
 	for _, tr := range m.ToolResults {
 		content := []sdk.ToolResultBlockParamContentUnion{
 			{OfText: &sdk.TextBlockParam{Text: tr.Content}},
@@ -86,6 +82,12 @@ func toUserMessageParam(m provider.Message) (sdk.MessageParam, error) {
 		}
 		blocks = append(blocks, sdk.ContentBlockParamUnion{
 			OfToolResult: &block,
+		})
+	}
+
+	if m.Content != "" {
+		blocks = append(blocks, sdk.ContentBlockParamUnion{
+			OfText: &sdk.TextBlockParam{Text: m.Content},
 		})
 	}
 
