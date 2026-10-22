@@ -1111,3 +1111,42 @@ func TestWritingFlagsOnAllowedToolsNeedApproval(t *testing.T) {
 		`ss -tlnp`,
 	)
 }
+
+// Read-only forms that bundle scanning wrongly caught, without reopening the
+// bundle gap.
+func TestBundleScanFalsePositivesStaySafe(t *testing.T) {
+	t.Parallel()
+	requireSafe(t,
+		`git log -S'func main'`,
+		`git log -Gconfig`,
+		`git log -L10,20:main.c`,
+		`git log -c`,
+		`git -C /tmp log -Scount`,
+		`tree -I node_modules -L 2`,
+		`tree -P '*.go' -I vendor`,
+		`tree -L2 -a`,
+		`xxd -groupsize 4 f`,
+		`xxd -postscript f`,
+		`xxd -p f`,
+		`xxd -ps -c 32 f`,
+	)
+	requireApproval(t,
+		// git -c before the subcommand still sets config.
+		`git -c core.pager=/tmp/x log`,
+		`git -C /tmp -c core.fsmonitor=/tmp/x status`,
+		`git --no-pager -c diff.external=/tmp/x diff`,
+		// tree takes -I's value from the next word and keeps reading the
+		// bundle, so -Inode_modules a b is -I a -n -o b. It stays denied.
+		`tree -Inode_modules a b`,
+		`tree -Inode_modules`,
+		`tree -RI vendor`,
+		`tree -ao out.txt`,
+		// xxd reads flags by their leading letter, so every spelling of -r
+		// is revert.
+		`xxd -r dump.hex`,
+		`xxd -revert dump.hex`,
+		`xxd --revert dump.hex`,
+		`xxd -rp dump.hex`,
+		`xxd -r -p dump.hex`,
+	)
+}

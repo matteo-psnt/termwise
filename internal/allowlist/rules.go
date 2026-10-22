@@ -18,6 +18,11 @@ type ParseRule struct {
 	// before the subcommand. Any other flag there, unless written
 	// --flag=value, makes the subcommand unknown.
 	BoolFlags []string `yaml:"bool_flags"`
+	// WordFlags marks a tool whose single-dash flags are whole words that it
+	// recognises by their leading letters, as xxd does (-r, -rev, -revert and
+	// --revert are all -r). There are no bundles, so a denied flag matches a
+	// word that starts with it, and nothing else.
+	WordFlags bool `yaml:"word_flags"`
 }
 
 type AllowRule struct {
@@ -26,6 +31,10 @@ type AllowRule struct {
 
 type DenyRule struct {
 	Flags []string `yaml:"flags"`
+	// GlobalFlags are denied only before the subcommand. git -c sets config
+	// there, while git log -c is a diff format and -S/-G/-L values can
+	// contain any letter.
+	GlobalFlags []string `yaml:"global_flags"`
 }
 
 type allowlistFile struct {
@@ -122,6 +131,34 @@ func subcommandValueFlag(valueFlags []string, token string) (consumesNext, known
 	return false, false
 }
 
+// ruleDeniesToken reports whether an argument turns on a denied flag, read
+// the way the rule's tool parses its flags.
+func ruleDeniesToken(rule Rule, token, blocked string) bool {
+	if rule.Parse.WordFlags {
+		return wordFlagMatches(token, blocked)
+	}
+	return tokenMatchesDeniedFlag(token, blocked)
+}
+
+// wordFlagMatches matches for tools that read -word flags by their leading
+// letters and treat --word as -word (see ParseRule.WordFlags).
+func wordFlagMatches(token, blocked string) bool {
+	name := flagWord(token)
+	want := flagWord(blocked)
+	return name != "" && want != "" && strings.HasPrefix(name, want)
+}
+
+func flagWord(tok string) string {
+	if len(tok) < 2 || tok[0] != '-' {
+		return ""
+	}
+	if len(tok) > 2 && tok[1] == '-' {
+		tok = tok[1:]
+	}
+	name, _, _ := strings.Cut(tok[1:], "=")
+	return name
+}
+
 // tokenMatchesDeniedFlag reports whether an argument turns on a denied flag,
 // in any of the spellings the tool's own parser would accept:
 //
@@ -131,7 +168,8 @@ func subcommandValueFlag(valueFlags []string, token string) (consumesNext, known
 //     bundle (sort -uo f, fd -Hx rm). A bundle is scanned for the letter
 //     anywhere, which can also hit an attached value that merely contains it.
 //     That only costs an approval prompt, where missing a real flag would run
-//     the command unasked.
+//     the command unasked. Some tools really do keep reading flags after a
+//     value-taking letter: tree -Inode_modules a b is tree -I a -n -o b.
 //
 // Single-dash multi-letter flags (find's -delete) are whole words and only
 // match exactly.

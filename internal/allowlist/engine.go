@@ -93,8 +93,22 @@ func (e *ruleEngine) matchRule(rule Rule, cmd parsedCommand) bool {
 
 	for _, tok := range cmd.Args {
 		for _, blocked := range rule.Deny.Flags {
-			if tokenMatchesDeniedFlag(tok, blocked) {
+			if ruleDeniesToken(rule, tok, blocked) {
 				return false
+			}
+		}
+	}
+
+	if len(rule.Deny.GlobalFlags) > 0 {
+		global := cmd.Args
+		if i := subcommandIndex(rule, cmd.Args); i >= 0 {
+			global = cmd.Args[:i]
+		}
+		for _, tok := range global {
+			for _, blocked := range rule.Deny.GlobalFlags {
+				if ruleDeniesToken(rule, tok, blocked) {
+					return false
+				}
 			}
 		}
 	}
@@ -149,6 +163,7 @@ func (e *ruleEngine) effectiveRule(rule Rule) Rule {
 	if len(rule.Parse.BoolFlags) == 0 {
 		rule.Parse.BoolFlags = append([]string(nil), meta.Parse.BoolFlags...)
 	}
+	rule.Parse.WordFlags = rule.Parse.WordFlags || meta.Parse.WordFlags
 	return rule
 }
 
@@ -160,12 +175,14 @@ func cloneRules(rules []Rule) []Rule {
 			Parse: ParseRule{
 				SubcommandValueFlags: append([]string(nil), rule.Parse.SubcommandValueFlags...),
 				BoolFlags:            append([]string(nil), rule.Parse.BoolFlags...),
+				WordFlags:            rule.Parse.WordFlags,
 			},
 			Allow: AllowRule{
 				Subcommands: append([]string(nil), rule.Allow.Subcommands...),
 			},
 			Deny: DenyRule{
-				Flags: append([]string(nil), rule.Deny.Flags...),
+				Flags:       append([]string(nil), rule.Deny.Flags...),
+				GlobalFlags: append([]string(nil), rule.Deny.GlobalFlags...),
 			},
 		}
 	}

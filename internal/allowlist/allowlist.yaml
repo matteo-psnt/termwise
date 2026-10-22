@@ -9,7 +9,10 @@
 #                                            with allow.subcommands, any other flag there needs approval
 #                                            unless written --flag=value)
 #   allow.subcommands: [sub1, sub2, ...]    (optional — first effective subcommand must be in list)
+#   parse.word_flags: true                  (optional — single-dash flags are whole words matched by their
+#                                            leading letters, as xxd does; no bundles)
 #   deny.flags: [-f1, --flag2, ...]         (optional — denied if any of these appear)
+#   deny.global_flags: [...]                (optional — denied only before the subcommand)
 
 rules:
 
@@ -22,7 +25,9 @@ rules:
   - cmd: tree
     deny:
       # -o writes the listing to a file; -R reruns tree in each directory
-      # with -o 00Tree.html.
+      # with -o 00Tree.html. tree keeps reading letters after -I/-P/-H/-T
+      # and takes their values from the next words, so -Inode_modules a b
+      # is -I a -n -o b: scanning the whole bundle is right here.
       flags: [-o, -R]
   - cmd: stat
   - cmd: file
@@ -54,6 +59,8 @@ rules:
   - cmd: wc
   - cmd: strings
   - cmd: xxd
+    parse:
+      word_flags: true
     deny:
       # -r turns a hex dump back into binary. A second positional argument
       # is an output file (validateXxdCommand).
@@ -180,7 +187,10 @@ rules:
       # diff.external, which name programs git runs; --exec-path moves where
       # git finds its helper programs; --ext-diff runs a configured external
       # diff; --output writes the diff or log to a file.
-      flags: [-c, --config-env, --exec-path, --ext-diff, --output]
+      flags: [--config-env, --exec-path, --ext-diff, --output]
+      # -c sets config only before the subcommand; after it, git log -c is a
+      # diff format and -S/-G/-L values can hold any letter.
+      global_flags: [-c]
 
   # ── Go ──────────────────────────────────────────────────────────────────────
   - cmd: go
