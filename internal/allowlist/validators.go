@@ -22,11 +22,11 @@ func defaultValidators() map[string]validator {
 	}
 }
 
-func validateFindCommand(e *ruleEngine, cmd parsedCommand) bool {
+func validateFindCommand(e *ruleEngine, cmd parsedCommand) string {
 	for i := 0; i < len(cmd.Args); i++ {
 		switch cmd.Args[i] {
 		case "-delete", "-ok", "-okdir", "-execdir":
-			return false
+			return "find's " + cmd.Args[i] + " action requires approval"
 		case "-exec":
 			end := -1
 			for j := i + 1; j < len(cmd.Args); j++ {
@@ -36,38 +36,41 @@ func validateFindCommand(e *ruleEngine, cmd parsedCommand) bool {
 				}
 			}
 			if end == -1 || end == i+1 {
-				return false
+				return "find -exec without a command and terminator requires approval"
 			}
 			nested, ok := parsedCommandFromTokens(cmd.Args[i+1 : end])
-			if !ok || !e.matchesBuiltin(nested) {
-				return false
+			if !ok {
+				return "find -exec without a command requires approval"
+			}
+			if reason := e.builtinReason(nested); reason != "" {
+				return "find -exec: " + reason
 			}
 			i = end
 		}
 	}
-	return true
+	return ""
 }
 
-func validateGoCommand(e *ruleEngine, cmd parsedCommand) bool {
+func validateGoCommand(e *ruleEngine, cmd parsedCommand) string {
 	isEnv := firstPositional(e.ruleMetadata(cmd.Name), cmd.Args) == "env"
 	for _, tok := range cmd.Args {
 		switch goFlagName(tok) {
 		// -toolexec, -vettool and -exec name a program the go command runs
 		// in place of (or around) its own tools.
 		case "toolexec", "vettool", "exec":
-			return false
+			return "go's -" + goFlagName(tok) + " flag requires approval"
 		// go doc -http downloads and runs a documentation server and opens a
 		// browser.
 		case "http":
-			return false
+			return "go's -http flag requires approval"
 		// go env -w and -u write the user's go env file.
 		case "w", "u":
 			if isEnv {
-				return false
+				return "go env -" + goFlagName(tok) + " writes the go env file"
 			}
 		}
 	}
-	return true
+	return ""
 }
 
 // goFlagName returns the name of a Go-style flag: the flag package accepts
@@ -81,13 +84,13 @@ func goFlagName(tok string) string {
 	return name
 }
 
-func validateSysctlCommand(_ *ruleEngine, cmd parsedCommand) bool {
+func validateSysctlCommand(_ *ruleEngine, cmd parsedCommand) string {
 	for _, tok := range cmd.Args {
 		if strings.Contains(tok, "=") {
-			return false
+			return "setting a sysctl value requires approval"
 		}
 	}
-	return true
+	return ""
 }
 
 // validateXargsCommand approves xargs only when the nested command it would
@@ -107,7 +110,7 @@ func validateSysctlCommand(_ *ruleEngine, cmd parsedCommand) bool {
 //   - Unknown flags are rejected rather than assumed safe.
 //
 //nolint:gocyclo // xargs flag-parsing state machine; complexity is intrinsic to flag semantics
-func validateXargsCommand(e *ruleEngine, cmd parsedCommand) bool {
+func validateXargsCommand(e *ruleEngine, cmd parsedCommand) string {
 	i := 0
 	for i < len(cmd.Args) {
 		tok := cmd.Args[i]
@@ -124,7 +127,7 @@ func validateXargsCommand(e *ruleEngine, cmd parsedCommand) bool {
 
 		// -a / --arg-file: reads input from a file rather than the pipeline.
 		if tok == "-a" || tok == "--arg-file" || strings.HasPrefix(tok, "--arg-file=") {
-			return false
+			return "xargs -a reads its arguments from a file, which requires approval"
 		}
 
 		// --replace[=replstr] and deprecated -i[replstr]: the replacement string
@@ -143,12 +146,12 @@ func validateXargsCommand(e *ruleEngine, cmd parsedCommand) bool {
 					i++
 					continue
 				}
-				return false // unknown long flag with value
+				return xargsUnknownFlag(tok)
 			}
 			// --flag without "=".
 			if isXargsLongValueFlag(tok) {
 				if i+1 >= len(cmd.Args) {
-					return false // truncated: missing value
+					return "xargs's " + tok + " flag is missing its value"
 				}
 				i += 2 // value is the next token
 				continue
@@ -157,7 +160,7 @@ func validateXargsCommand(e *ruleEngine, cmd parsedCommand) bool {
 				i++
 				continue
 			}
-			return false // unknown long flag
+			return xargsUnknownFlag(tok)
 		}
 
 		// Short flags.
@@ -167,7 +170,7 @@ func validateXargsCommand(e *ruleEngine, cmd parsedCommand) bool {
 		// Combined flags like -rn10 have an unknown flag letter in position 2
 		// (after -r) and are rejected conservatively.
 		if len(tok) < 2 {
-			return false // bare "-"
+			return xargsUnknownFlag(tok)
 		}
 		flagLetter := tok[:2]
 		if isXargsShortValueFlag(flagLetter) {
@@ -175,7 +178,7 @@ func validateXargsCommand(e *ruleEngine, cmd parsedCommand) bool {
 				i++ // inline value (e.g. -n10)
 			} else {
 				if i+1 >= len(cmd.Args) {
-					return false // truncated: missing value
+					return "xargs's " + tok + " flag is missing its value"
 				}
 				i += 2 // separate value (e.g. -n 10)
 			}
@@ -185,19 +188,29 @@ func validateXargsCommand(e *ruleEngine, cmd parsedCommand) bool {
 			i++
 			continue
 		}
-		return false // unknown or combined short flag
+		return xargsUnknownFlag(tok) // unknown or combined short flag
 	}
 
 	// No nested command: xargs defaults to running echo, which is safe.
 	if i >= len(cmd.Args) {
-		return true
+		return ""
 	}
 
 	nested, ok := parsedCommandFromTokens(cmd.Args[i:])
 	if !ok {
-		return false
+		return "xargs without a command to run requires approval"
 	}
-	return e.argumentProof(nested.Name) && e.matchesBuiltin(nested)
+	if reason := e.builtinReason(nested); reason != "" {
+		return "xargs runs a command that needs approval: " + reason
+	}
+	if !e.argumentProof(nested.Name) {
+		return "xargs passes " + nested.Name + " arguments read at run time, which could turn on a flag that requires approval"
+	}
+	return ""
+}
+
+func xargsUnknownFlag(tok string) string {
+	return "xargs's " + tok + " flag is not known to be safe"
 }
 
 // argumentProof reports whether a command is safe whatever arguments it is
@@ -269,41 +282,44 @@ func isXargsStandaloneFlag(flag string) bool {
 // delete bat's syntax cache. bat only treats cache as a subcommand in first
 // place, but rejecting the word anywhere keeps this simple; a file named
 // cache costs one prompt.
-func validateBatCommand(_ *ruleEngine, cmd parsedCommand) bool {
-	return !slices.Contains(cmd.Args, "cache")
+func validateBatCommand(_ *ruleEngine, cmd parsedCommand) string {
+	if slices.Contains(cmd.Args, "cache") {
+		return "bat cache rewrites or deletes bat's cache"
+	}
+	return ""
 }
 
 // validateDaselCommand rejects dasel's write subcommands. cobra finds a
 // subcommand after root flags whose values it knows and this does not, so
 // the words are rejected wherever they appear.
-func validateDaselCommand(_ *ruleEngine, cmd parsedCommand) bool {
+func validateDaselCommand(_ *ruleEngine, cmd parsedCommand) string {
 	for _, tok := range cmd.Args {
 		if tok == "put" || tok == "delete" {
-			return false
+			return "dasel " + tok + " writes the file"
 		}
 	}
-	return true
+	return ""
 }
 
 // validatePoetryCommand keeps poetry version read-only: with an argument
 // (patch, 1.2.3, ...) it rewrites the version in pyproject.toml.
-func validatePoetryCommand(e *ruleEngine, cmd parsedCommand) bool {
+func validatePoetryCommand(e *ruleEngine, cmd parsedCommand) string {
 	i := subcommandIndex(e.ruleMetadata(cmd.Name), cmd.Args)
 	if i < 0 || cmd.Args[i] != "version" {
-		return true
+		return ""
 	}
 	for _, tok := range cmd.Args[i+1:] {
 		if !strings.HasPrefix(tok, "-") || tok == "-" {
-			return false
+			return "poetry version " + tok + " rewrites the version in pyproject.toml"
 		}
 	}
-	return true
+	return ""
 }
 
 // validateXxdCommand rejects a second operand, which xxd writes its output
 // to (a second operand of "-" is stdout). xxd stops reading options at the
 // first operand, so every word after it is an operand, dashes or not.
-func validateXxdCommand(_ *ruleEngine, cmd parsedCommand) bool {
+func validateXxdCommand(_ *ruleEngine, cmd parsedCommand) string {
 	var operands []string
 	for i := 0; i < len(cmd.Args); i++ {
 		tok := cmd.Args[i]
@@ -327,13 +343,16 @@ func validateXxdCommand(_ *ruleEngine, cmd parsedCommand) bool {
 			i++
 		}
 	}
-	return len(operands) < 2 || (len(operands) == 2 && operands[1] == "-")
+	if len(operands) < 2 || (len(operands) == 2 && operands[1] == "-") {
+		return ""
+	}
+	return "xxd writes to the output file " + operands[1]
 }
 
 // validateUniqCommand rejects a second operand, which uniq writes its output
 // to. Only exact value flags skip their value; anything unsure counts as an
 // operand.
-func validateUniqCommand(_ *ruleEngine, cmd parsedCommand) bool {
+func validateUniqCommand(_ *ruleEngine, cmd parsedCommand) string {
 	operands := 0
 	for i := 0; i < len(cmd.Args); i++ {
 		tok := cmd.Args[i]
@@ -350,7 +369,10 @@ func validateUniqCommand(_ *ruleEngine, cmd parsedCommand) bool {
 			i++
 		}
 	}
-	return operands < 2
+	if operands < 2 {
+		return ""
+	}
+	return "uniq with a second file writes its output to that file"
 }
 
 // validateDateCommand rejects setting the clock: -s/--set, or an operand that
@@ -360,7 +382,7 @@ func validateUniqCommand(_ *ruleEngine, cmd parsedCommand) bool {
 // Short flags are scanned as getopt bundles. d, f, r, v and z take a value
 // (the rest of the bundle, or the next word); I takes only an attached one,
 // so -Iseconds does not hide an s.
-func validateDateCommand(_ *ruleEngine, cmd parsedCommand) bool {
+func validateDateCommand(_ *ruleEngine, cmd parsedCommand) string {
 	noSet := false
 	var operands []string
 	for i := 0; i < len(cmd.Args); i++ {
@@ -375,7 +397,7 @@ func validateDateCommand(_ *ruleEngine, cmd parsedCommand) bool {
 		}
 		if strings.HasPrefix(tok, "--") {
 			if tokenMatchesDeniedFlag(tok, "--set") {
-				return false
+				return "date --set sets the clock"
 			}
 			switch tok {
 			case "--date", "--file", "--reference":
@@ -387,7 +409,7 @@ func validateDateCommand(_ *ruleEngine, cmd parsedCommand) bool {
 		for j := 1; j < len(tok); j++ {
 			switch tok[j] {
 			case 's':
-				return false
+				return "date -s sets the clock"
 			case 'j':
 				noSet = true
 			case 'I':
@@ -401,20 +423,20 @@ func validateDateCommand(_ *ruleEngine, cmd parsedCommand) bool {
 		}
 	}
 	if noSet {
-		return true
+		return ""
 	}
 	for _, op := range operands {
 		if !strings.HasPrefix(op, "+") {
-			return false
+			return "date " + op + " sets the clock"
 		}
 	}
-	return true
+	return ""
 }
 
 // validateHostnameCommand allows only flags that print a name or address.
 // An operand, -F/--file or -b/--boot sets the hostname, so anything not
 // known to read fails closed.
-func validateHostnameCommand(_ *ruleEngine, cmd parsedCommand) bool {
+func validateHostnameCommand(_ *ruleEngine, cmd parsedCommand) string {
 	for _, tok := range cmd.Args {
 		switch tok {
 		case "-s", "--short", "-f", "--fqdn", "--long", "-d", "--domain",
@@ -422,25 +444,25 @@ func validateHostnameCommand(_ *ruleEngine, cmd parsedCommand) bool {
 			"-a", "--alias", "-y", "--yp", "--nis", "-v", "--verbose",
 			"-h", "--help", "-V", "--version":
 		default:
-			return false
+			return "hostname " + tok + " may set the hostname"
 		}
 	}
-	return true
+	return ""
 }
 
 // validateNvidiaSmiCommand allows only nvidia-smi's query forms. Most of its
 // other flags (-r, -pm, -pl, -ac, -lgc, -c, -e, -mig, ...) and subcommands
 // change GPU state, and -f writes a log file, so anything not known to read
 // fails closed.
-func validateNvidiaSmiCommand(_ *ruleEngine, cmd parsedCommand) bool {
+func validateNvidiaSmiCommand(_ *ruleEngine, cmd parsedCommand) string {
 	args := cmd.Args
 	if len(args) > 0 && args[0] == "topo" {
 		for _, tok := range args[1:] {
 			if tok != "-m" && tok != "--matrix" {
-				return false
+				return nvidiaSmiUnknown("topo " + tok)
 			}
 		}
-		return true
+		return ""
 	}
 	for i := 0; i < len(args); i++ {
 		tok := args[i]
@@ -449,20 +471,24 @@ func validateNvidiaSmiCommand(_ *ruleEngine, cmd parsedCommand) bool {
 		case "-L", "--list-gpus", "-q", "--query", "-x", "--xml-format",
 			"-u", "--unit", "-h", "--help", "--version":
 			if hasValue {
-				return false
+				return nvidiaSmiUnknown(tok)
 			}
 		case "-d", "--display", "-i", "--id", "-l", "--loop", "-lms", "--loop-ms",
 			"--format", "--query-gpu", "--query-compute-apps", "--query-accounted-apps",
 			"--query-retired-pages", "--query-remapped-rows", "--query-supported-clocks":
 			if !hasValue {
 				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
-					return false
+					return "nvidia-smi's " + tok + " flag is missing its value"
 				}
 				i++
 			}
 		default:
-			return false
+			return nvidiaSmiUnknown(tok)
 		}
 	}
-	return true
+	return ""
+}
+
+func nvidiaSmiUnknown(arg string) string {
+	return "nvidia-smi's " + arg + " is not a known read-only query"
 }

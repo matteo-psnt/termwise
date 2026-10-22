@@ -41,29 +41,26 @@ type allowlistFile struct {
 	Rules []Rule `yaml:"rules"`
 }
 
-func matchesAllowedSubcommand(rule Rule, args []string) bool {
+// subcommandReason returns why args do not start with one of the rule's
+// allowed subcommands, or "" when they do or the rule allows any.
+func subcommandReason(rule Rule, args []string) string {
 	if len(rule.Allow.Subcommands) == 0 {
-		return true
+		return ""
 	}
-	for _, candidate := range subcommandCandidates(rule, args) {
-		for _, allowed := range rule.Allow.Subcommands {
-			if candidate == allowed {
-				return true
-			}
-		}
+	// A flag-style subcommand (brew --version, dpkg -l) is the first word.
+	if len(args) > 0 && slices.Contains(rule.Allow.Subcommands, args[0]) {
+		return ""
 	}
-	return false
-}
-
-func subcommandCandidates(rule Rule, args []string) []string {
-	if len(args) == 0 {
-		return nil
+	i, unknown := scanSubcommand(rule, args)
+	switch {
+	case unknown != "":
+		return "the option " + unknown + " before " + rule.Cmd + "'s subcommand requires approval"
+	case i < 0:
+		return rule.Cmd + " without a read-only subcommand requires approval"
+	case !slices.Contains(rule.Allow.Subcommands, args[i]):
+		return rule.Cmd + " " + args[i] + " is not on the read-only allowlist"
 	}
-	out := []string{args[0]}
-	if sub := firstPositional(rule, args); sub != "" && sub != args[0] {
-		out = append(out, sub)
-	}
-	return out
+	return ""
 }
 
 func firstPositional(rule Rule, args []string) string {
@@ -76,6 +73,14 @@ func firstPositional(rule Rule, args []string) string {
 // subcommandIndex returns the index of the first positional argument, which
 // for a rule with an allowed subcommand list is its subcommand, or -1 when
 // there is none or it cannot be told.
+func subcommandIndex(rule Rule, args []string) int {
+	i, _ := scanSubcommand(rule, args)
+	return i
+}
+
+// scanSubcommand finds the first positional argument as subcommandIndex
+// does, and when it cannot be told because of an unknown flag, returns that
+// flag too.
 //
 // A global flag that takes a value but is not in subcommand_value_flags would
 // make its value look like the subcommand: in git --attr-source status reset,
@@ -83,18 +88,18 @@ func firstPositional(rule Rule, args []string) string {
 // subcommand must be known: a listed value flag, a listed bool flag, or a
 // --flag=value whose value cannot be the next word. Anything else fails
 // closed.
-func subcommandIndex(rule Rule, args []string) int {
+func scanSubcommand(rule Rule, args []string) (index int, unknownFlag string) {
 	strict := len(rule.Allow.Subcommands) > 0
 	for i := 0; i < len(args); i++ {
 		tok := args[i]
 		if tok == "--" {
 			if i+1 < len(args) {
-				return i + 1
+				return i + 1, ""
 			}
-			return -1
+			return -1, ""
 		}
 		if !strings.HasPrefix(tok, "-") {
-			return i
+			return i, ""
 		}
 		if consumes, known := subcommandValueFlag(rule.Parse.SubcommandValueFlags, tok); known {
 			if consumes {
@@ -111,9 +116,9 @@ func subcommandIndex(rule Rule, args []string) int {
 		if slices.Contains(rule.Parse.BoolFlags, tok) {
 			continue
 		}
-		return -1
+		return -1, tok
 	}
-	return -1
+	return -1, ""
 }
 
 // subcommandValueFlag reports whether token is one of the value flags, and if

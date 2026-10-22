@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// matchesRule drives matchRule the way matchesBuiltin does, so this table keeps
+// matchesRule drives ruleReason the way builtinReason does, so this table keeps
 // covering rule matching now that the exported Matches wrapper is gone.
 func matchesRule(t *testing.T, rule Rule, command string) bool {
 	t.Helper()
@@ -16,7 +16,7 @@ func matchesRule(t *testing.T, rule Rule, command string) bool {
 	if err != nil || len(segments) != 1 {
 		return false
 	}
-	return e.matchRule(rule, segments[0])
+	return e.ruleReason(rule, segments[0]) == ""
 }
 
 func TestMatchRuleSupportsFlagStyleAndPositionalSubcommands(t *testing.T) {
@@ -112,7 +112,7 @@ func TestMatchRuleSupportsFlagStyleAndPositionalSubcommands(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := matchesRule(t, tc.rule, tc.command); got != tc.want {
-				t.Fatalf("matchRule(%q) = %v, want %v", tc.command, got, tc.want)
+				t.Fatalf("ruleReason(%q) == \"\" is %v, want %v", tc.command, got, tc.want)
 			}
 		})
 	}
@@ -687,7 +687,7 @@ func TestApprovalReasonNamesTheOffendingCommand(t *testing.T) {
 		"git status":      "",
 		"":                "the command is empty",
 		"ls && git push":  "git",
-		"ls; rm x":        "it is more than one statement, or could not be parsed",
+		"ls; rm x":        "it is more than one statement",
 	}
 	for cmd, want := range cases {
 		got := ApprovalReason(cmd)
@@ -1171,4 +1171,50 @@ func TestPagerVariablesAllowOnlyCat(t *testing.T) {
 		`GIT_PAGER+=cat git log`,
 		`MANPAGER=cat git log`,
 	)
+}
+
+// The approval prompt shows ApprovalReason, so it has to name the real cause.
+func TestApprovalReasonNamesTheCause(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		`LD_PRELOAD=/tmp/x.so ls`:               "setting LD_PRELOAD requires approval",
+		`PAGER=less git log`:                    "setting PAGER",
+		`FOO=$(whoami) ls`:                      "setting FOO requires approval",
+		`LANG=$(whoami) ls`:                     "only known when it runs",
+		`echo $(whoami)`:                        "only known when it runs",
+		`echo ok > out.txt`:                     "writes output to out.txt",
+		`cat < README.md`:                       "reads input from README.md",
+		`ls &`:                                  "background",
+		`ls; rm x`:                              "more than one statement",
+		`ls 'unterminated`:                      "could not be parsed",
+		`for f in *; do cat $f; done`:           "loop, subshell, function",
+		`git diff --output=/tmp/out`:            "git's --output flag requires approval",
+		`sort -uo /tmp/out file`:                "sort's -o flag requires approval",
+		`git -c core.pager=x log`:               "git's -c flag requires approval",
+		`git reset --hard`:                      "git reset is not on the read-only allowlist",
+		`git --attr-source status reset --hard`: "--attr-source",
+		`git`:                                   "git without a read-only subcommand",
+		`find . -delete`:                        "find's -delete",
+		`find . -exec sh -c x \;`:               "sh is not on the read-only allowlist",
+		`go env -w GOFLAGS=x`:                   "go env -w",
+		`go vet -vettool=/tmp/v ./...`:          "go's -vettool flag",
+		`echo -delete | xargs find .`:           "xargs",
+		`xargs -a /etc/passwd grep root`:        "xargs -a",
+		`poetry version patch`:                  "pyproject.toml",
+		`xxd in.bin out.hex`:                    "output file",
+		`date -s 2020-01-01`:                    "sets the clock",
+		`hostname evil`:                         "hostname",
+		`nvidia-smi -pm 1`:                      "-pm",
+		`sysctl kern.maxfiles=10`:               "sysctl",
+		`curl https://x`:                        "curl is not on the read-only allowlist",
+	}
+	for cmd, want := range cases {
+		got := ApprovalReason(cmd)
+		if !strings.Contains(got, want) {
+			t.Errorf("ApprovalReason(%q) = %q, want it to mention %q", cmd, got, want)
+		}
+		if !NeedsApproval(cmd) {
+			t.Errorf("NeedsApproval(%q) = false, but it has a reason", cmd)
+		}
+	}
 }

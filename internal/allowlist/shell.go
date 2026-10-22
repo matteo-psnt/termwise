@@ -1,6 +1,7 @@
 package allowlist
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -15,20 +16,20 @@ type parsedCommand struct {
 func (e *ruleEngine) parseCommand(command string) ([]parsedCommand, error) {
 	file, err := syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(strings.NewReader(command), "")
 	if err != nil {
-		return nil, err
+		return nil, errors.New("it could not be parsed")
 	}
 	if len(file.Stmts) != 1 {
-		return nil, fmt.Errorf("multiple statements require approval")
+		return nil, errors.New("it is more than one statement")
 	}
 	return e.parseStmt(file.Stmts[0])
 }
 
 func (e *ruleEngine) parseStmt(stmt *syntax.Stmt) ([]parsedCommand, error) {
 	if stmt == nil || stmt.Cmd == nil {
-		return nil, fmt.Errorf("empty statement")
+		return nil, errors.New("part of it is empty")
 	}
 	if stmt.Negated || stmt.Background || stmt.Coprocess || stmt.Disown {
-		return nil, fmt.Errorf("compound statement requires approval")
+		return nil, errors.New("it negates a command or runs one in the background")
 	}
 	if err := e.validateRedirects(stmt.Redirs); err != nil {
 		return nil, err
@@ -45,7 +46,7 @@ func (e *ruleEngine) parseStmt(stmt *syntax.Stmt) ([]parsedCommand, error) {
 		switch cmd.Op {
 		case syntax.Pipe, syntax.AndStmt, syntax.OrStmt:
 		default:
-			return nil, fmt.Errorf("unsupported binary operator requires approval")
+			return nil, errors.New("it joins commands with an operator other than |, && or ||")
 		}
 
 		left, err := e.parseStmt(cmd.X)
@@ -58,13 +59,13 @@ func (e *ruleEngine) parseStmt(stmt *syntax.Stmt) ([]parsedCommand, error) {
 		}
 		return append(left, right...), nil
 	default:
-		return nil, fmt.Errorf("compound command requires approval")
+		return nil, errors.New("it uses a loop, subshell, function or other compound command")
 	}
 }
 
 func parseCallExpr(cmd *syntax.CallExpr) (parsedCommand, error) {
 	if len(cmd.Args) == 0 {
-		return parsedCommand{}, fmt.Errorf("assignment-only command requires approval")
+		return parsedCommand{}, errors.New("it only sets variables")
 	}
 	if err := validateAssignments(cmd.Assigns); err != nil {
 		return parsedCommand{}, err
@@ -74,13 +75,13 @@ func parseCallExpr(cmd *syntax.CallExpr) (parsedCommand, error) {
 	for _, word := range cmd.Args {
 		lit, ok := literalWord(word)
 		if !ok {
-			return parsedCommand{}, fmt.Errorf("dynamic word requires approval")
+			return parsedCommand{}, errors.New("it uses a value only known when it runs, such as $VAR or $(...)")
 		}
 		tokens = append(tokens, lit)
 	}
 	parsed, ok := parsedCommandFromTokens(tokens)
 	if !ok {
-		return parsedCommand{}, fmt.Errorf("assignment-only command requires approval")
+		return parsedCommand{}, errors.New("it only sets variables")
 	}
 	return parsed, nil
 }
@@ -88,7 +89,7 @@ func parseCallExpr(cmd *syntax.CallExpr) (parsedCommand, error) {
 func validateAssignments(assigns []*syntax.Assign) error {
 	for _, assign := range assigns {
 		if assign == nil || assign.Append || assign.Naked || assign.Index != nil || assign.Array != nil || assign.Name == nil {
-			return fmt.Errorf("dynamic assignment requires approval")
+			return errors.New("it sets a variable in a way only known when it runs")
 		}
 		name := assign.Name.Value
 		pager := isPagerVar(name)
@@ -99,7 +100,7 @@ func validateAssignments(assigns []*syntax.Assign) error {
 		if assign.Value != nil {
 			lit, ok := literalWord(assign.Value)
 			if !ok {
-				return fmt.Errorf("dynamic assignment requires approval")
+				return errors.New("it sets a variable in a way only known when it runs")
 			}
 			value = lit
 		}
