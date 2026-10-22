@@ -326,25 +326,16 @@ func (m *wizardModel) setupEnterValue() {
 // fetchModelsCmd builds the ProviderConfig from wizard state and calls ListModels.
 func (m wizardModel) fetchModelsCmd() tea.Cmd {
 	provider := m.provider
-	authMethod := m.authMethod
 	inputVal := m.input.Value()
-	fallback := m.input.fallback
+	pc := buildProviderConfigFromAuthInput(provider, m.authMethod, inputVal, m.input.fallback)
 
 	return func() tea.Msg {
-		pc, err := prepareProviderConfig(provider, authMethod, inputVal, fallback)
-		if err != nil {
-			return wizModelsMsg{err: err}
-		}
-
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
-		models, err := config.ListProviderModels(ctx, provider, pc)
+		models, err := listModelsFor(ctx, provider, pc, inputVal)
 		if err != nil {
 			return wizModelsMsg{err: fmt.Errorf("listing models: %w", err)}
-		}
-		if len(models) == 0 {
-			return wizModelsMsg{err: fmt.Errorf("no models returned by %s", provider)}
 		}
 		return wizModelsMsg{models: models}
 	}
