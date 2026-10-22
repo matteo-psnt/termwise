@@ -105,12 +105,24 @@ var saveWarnings io.Writer = os.Stderr
 // SaveConfig writes cfg to path atomically.
 // The config directory is created (mode 0700) if it does not exist, and the
 // config file is written with mode 0600 before being renamed into place.
+// It holds the config lock while it reads and replaces the file; to change a
+// config loaded from disk, use MutateConfig so the load is covered too.
 //
 // An existing file is edited rather than replaced, so the user's comments,
 // formatting and unknown keys survive a save from the CLI or the setup
 // screen. When it cannot be edited safely it is rewritten from scratch, after
 // a copy of it is kept at path.bak and a warning is printed.
 func SaveConfig(path string, cfg FileConfig) error {
+	unlock, err := lockConfig(path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return saveConfig(path, cfg)
+}
+
+// saveConfig is SaveConfig for a caller that already holds the config lock.
+func saveConfig(path string, cfg FileConfig) error {
 	old, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("reading config: %w", err)

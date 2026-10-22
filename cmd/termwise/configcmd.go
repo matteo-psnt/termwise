@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -88,16 +89,20 @@ func repairHint() string {
 	return fmt.Sprintf("Run `%s config --edit` to repair it", cliname.Name())
 }
 
-// mutateConfig loads the config, applies fn, and saves atomically.
+// mutateConfig loads the config, applies fn, and saves atomically, holding
+// the config lock so a save from the setup screen or another command cannot
+// land in between and be lost.
 func mutateConfig(fn func(*config.FileConfig) error) error {
-	cfgPath, cfg, _, err := loadConfigFile()
+	cfgPath, err := config.DefaultConfigPath()
 	if err != nil {
 		return err
 	}
-	if err := fn(&cfg); err != nil {
-		return err
+	err = config.MutateConfig(cfgPath, fn)
+	var le *config.LoadError
+	if errors.As(err, &le) {
+		return fmt.Errorf("%w\n  %s", err, repairHint())
 	}
-	return config.SaveConfig(cfgPath, cfg)
+	return err
 }
 
 // mutateActiveProvider is mutateConfig scoped to the currently selected provider.
