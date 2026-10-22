@@ -34,10 +34,7 @@ type authEditorModel struct {
 	method       string
 
 	// value entry
-	input    textinput.Model
-	label    string
-	hint     string
-	fallback string
+	input    authInput
 	inputErr string
 
 	// result
@@ -49,9 +46,6 @@ type authEditorModel struct {
 func newAuthEditor(provider string, pc config.ProviderConfig, isActive bool, connOK bool, styles configStyles) authEditorModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
-
-	ti := textinput.New()
-	ti.CharLimit = 256
 
 	cur := pc.Auth
 	if cur == "" {
@@ -68,7 +62,7 @@ func newAuthEditor(provider string, pc config.ProviderConfig, isActive bool, con
 	m := authEditorModel{
 		styles:       styles,
 		spin:         sp,
-		input:        ti,
+		input:        newAuthInput(),
 		provider:     provider,
 		existing:     pc,
 		isActive:     isActive,
@@ -127,7 +121,7 @@ func (m authEditorModel) Update(msg tea.Msg) (authEditorModel, tea.Cmd) {
 
 	if m.step == authStepEnterValue {
 		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
+		m.input.Model, cmd = m.input.Update(msg)
 		return m, cmd
 	}
 	return m, nil
@@ -186,8 +180,7 @@ func (m authEditorModel) handleEnterValue(msg tea.KeyPressMsg) (authEditorModel,
 			m.step = authStepPickMethod
 		}
 	case "enter":
-		val := strings.TrimSpace(m.input.Value())
-		if val == "" && m.fallback == "" {
+		if m.input.missing() {
 			m.inputErr = "value cannot be empty"
 			return m, nil
 		}
@@ -197,46 +190,38 @@ func (m authEditorModel) handleEnterValue(msg tea.KeyPressMsg) (authEditorModel,
 		return m, tea.Batch(m.spin.Tick, m.verifyCmd())
 	default:
 		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
+		m.input.Model, cmd = m.input.Update(msg)
 		return m, cmd
 	}
 	return m, nil
 }
 
-// setupInput populates the textinput from buildAuthInputConfig and restores
-// any existing configured value.
+// setupInput sets the input up for m.method, restoring any existing
+// configured value. A stored API key is never read back.
 func (m *authEditorModel) setupInput() {
-	cfg := buildAuthInputConfig(m.provider, m.method)
-	m.label = cfg.Label
-	m.hint = cfg.Hint
-	m.fallback = cfg.Fallback
-	m.input.Placeholder = cfg.Placeholder
-	m.input.EchoMode = cfg.EchoMode
-
+	var initial string
 	switch {
 	case providerpkg.HasNoAuth(m.provider):
-		m.input.SetValue(m.existing.BaseURL)
+		initial = m.existing.BaseURL
 	case m.method == "env":
-		m.input.SetValue(m.existing.EnvVar)
+		initial = m.existing.EnvVar
 	case m.method == "cmd":
-		m.input.SetValue(m.existing.APIKeyCmd)
-	default:
-		m.input.SetValue("")
+		initial = m.existing.APIKeyCmd
 	}
+	m.input.setup(m.provider, m.method, initial)
 	m.inputErr = ""
-	m.input.Focus()
 }
 
 // buildResult constructs the ProviderConfig from the current input state.
 func (m authEditorModel) buildResult() config.ProviderConfig {
-	return buildProviderConfigFromAuthInput(m.provider, m.method, m.input.Value(), m.fallback)
+	return buildProviderConfigFromAuthInput(m.provider, m.method, m.input.Value(), m.input.fallback)
 }
 
 func (m authEditorModel) verifyCmd() tea.Cmd {
 	provider := m.provider
 	method := m.method
 	inputVal := m.input.Value()
-	fallback := m.fallback
+	fallback := m.input.fallback
 
 	return func() tea.Msg {
 		pc, err := prepareProviderConfig(provider, method, inputVal, fallback)
@@ -277,17 +262,7 @@ func (m authEditorModel) viewPickMethod() string {
 }
 
 func (m authEditorModel) viewEnterValue() string {
-	var b strings.Builder
-	b.WriteString(m.label + ":\n\n")
-	b.WriteString(m.input.View() + "\n")
-	if m.hint != "" {
-		b.WriteString("\n" + m.styles.Hint.Render(m.hint))
-	}
-	if m.inputErr != "" {
-		b.WriteString("\n\n" + m.styles.Error.Render("Error: "+m.inputErr))
-	}
-	b.WriteString("\n\n" + m.styles.Dim.Render("enter verify & save   esc back"))
-	return b.String()
+	return m.input.view(m.styles, m.inputErr, "enter verify & save   esc back")
 }
 
 func (m authEditorModel) viewVerify() string {
