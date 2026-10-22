@@ -20,12 +20,18 @@ type configStyles struct {
 	Spinner  lipgloss.Style
 }
 
-func newStylesForTheme(hasDarkBg bool, themeName string) configStyles {
-	palette := theme.Get(themeName)
+// resolver returns a function that picks a theme color's light or dark
+// variant for the terminal's background.
+func resolver(hasDarkBg bool) func(theme.Color) color.Color {
 	ld := lipgloss.LightDark(hasDarkBg)
-	resolve := func(c theme.Color) color.Color {
+	return func(c theme.Color) color.Color {
 		return ld(lipgloss.Color(c.Light), lipgloss.Color(c.Dark))
 	}
+}
+
+func newStylesForTheme(hasDarkBg bool, themeName string) configStyles {
+	palette := theme.Get(themeName)
+	resolve := resolver(hasDarkBg)
 	accent := resolve(palette.Accent)
 	green := resolve(palette.Success)
 	red := resolve(palette.Error)

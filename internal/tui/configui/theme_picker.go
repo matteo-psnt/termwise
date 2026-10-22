@@ -1,7 +1,6 @@
 package configui
 
 import (
-	"image/color"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -102,10 +101,7 @@ func themeIndex(name string) int {
 }
 
 func paletteSwatches(hasDarkBg bool, palette theme.Palette) string {
-	ld := lipgloss.LightDark(hasDarkBg)
-	resolve := func(c theme.Color) color.Color {
-		return ld(lipgloss.Color(c.Light), lipgloss.Color(c.Dark))
-	}
+	resolve := resolver(hasDarkBg)
 	colors := []theme.Color{
 		palette.Accent,
 		palette.Success,
@@ -121,10 +117,7 @@ func paletteSwatches(hasDarkBg bool, palette theme.Palette) string {
 }
 
 func renderThemePreview(hasDarkBg bool, palette theme.Palette) string {
-	ld := lipgloss.LightDark(hasDarkBg)
-	resolve := func(c theme.Color) color.Color {
-		return ld(lipgloss.Color(c.Light), lipgloss.Color(c.Dark))
-	}
+	resolve := resolver(hasDarkBg)
 	accent := lipgloss.NewStyle().Foreground(resolve(palette.Accent)).Bold(true)
 	success := lipgloss.NewStyle().Foreground(resolve(palette.Success))
 	errorStyle := lipgloss.NewStyle().Foreground(resolve(palette.Error))
