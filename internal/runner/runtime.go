@@ -47,13 +47,22 @@ func appendPromptStdin(prompt string) (string, error) {
 // can be piped or pasted; text is rendered as markdown on a terminal, falling
 // back to plain text if rendering fails.
 func writeFinalOutput(output agent.FinalResponse, isTTY bool) {
-	if output.Type != "command" && isTTY {
-		if rendered, err := glamour.Render(output.Content, "auto"); err == nil {
+	content := output.Content
+	if !isTTY {
+		// Piped or captured: the exact text, which a script may run.
+		fmt.Println(content)
+		return
+	}
+	// On a terminal, control characters in the model's output would act on
+	// it (clear, retitle, write the clipboard) instead of being read.
+	content = tty.VisibleControls(content)
+	if output.Type != "command" {
+		if rendered, err := glamour.Render(content, "auto"); err == nil {
 			fmt.Print(rendered)
 			return
 		}
 	}
-	fmt.Println(output.Content)
+	fmt.Println(content)
 }
 
 // resolveRuntime loads config and returns the client, model, settings and

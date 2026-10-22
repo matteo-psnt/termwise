@@ -1,15 +1,15 @@
-package agentui
+package tty
 
 import "strings"
 
-// visibleControls makes control characters in text from outside termwise
+// VisibleControls makes control characters in text from outside termwise
 // (model output, tool output, a proposed command, a resumed session) visible
 // instead of acting on the terminal. Printed raw, an ESC can recolour or
 // clear the screen, move the cursor over earlier output, retitle the window
 // or write the clipboard (OSC 52), and a lone CR overwrites the line it is on.
 // Each such character is shown as its Unicode control picture (␛, ␍, …).
 // Newlines and tabs are layout and are kept; CRLF line endings become LF.
-func visibleControls(s string) string {
+func VisibleControls(s string) string {
 	if !strings.ContainsFunc(s, isHiddenControl) {
 		return s
 	}

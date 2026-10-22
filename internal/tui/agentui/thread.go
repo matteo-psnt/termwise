@@ -8,6 +8,7 @@ import (
 	"charm.land/glamour/v2/styles"
 
 	"github.com/matteo-psnt/termwise/internal/theme"
+	"github.com/matteo-psnt/termwise/internal/tty"
 )
 
 // Renderer holds the config needed to render thread entries.
@@ -83,14 +84,14 @@ const threadGutter = 2
 type UserEntry struct{ Content string }
 
 func (e UserEntry) render(r Renderer) string {
-	return r.styles.UserSymbol.Render("› ") + hangingIndent(visibleControls(e.Content), threadGutter)
+	return r.styles.UserSymbol.Render("› ") + hangingIndent(tty.VisibleControls(e.Content), threadGutter)
 }
 
 // AssistantEntry is text output from the model (direct or via the respond tool).
 type AssistantEntry struct{ Content string }
 
 func (e AssistantEntry) render(r Renderer) string {
-	text := strings.TrimLeft(renderMarkdown(visibleControls(e.Content), r.glamour), "\n")
+	text := strings.TrimLeft(renderMarkdown(tty.VisibleControls(e.Content), r.glamour), "\n")
 	return r.styles.TWSymbol.Render("◆ ") + hangingIndent(text, threadGutter)
 }
 
@@ -122,7 +123,7 @@ func (e ToolCallEntry) render(r Renderer) string {
 	name := strings.ToLower(e.Name)
 	body := name
 	if e.Detail != "" {
-		body = name + r.styles.ToolCall.Render("("+visibleControls(e.Detail)+")")
+		body = name + r.styles.ToolCall.Render("("+tty.VisibleControls(e.Detail)+")")
 	}
 	return icon + body
 }
@@ -134,7 +135,7 @@ type ToolResultEntry struct {
 }
 
 func (e ToolResultEntry) render(r Renderer) string {
-	lines := strings.Split(strings.TrimRight(visibleControls(e.Content), "\n"), "\n")
+	lines := strings.Split(strings.TrimRight(tty.VisibleControls(e.Content), "\n"), "\n")
 	total := len(lines)
 	display := lines
 	truncated := 0
@@ -168,14 +169,14 @@ func (e ToolResultEntry) render(r Renderer) string {
 type CommandEntry struct{ Content string }
 
 func (e CommandEntry) render(r Renderer) string {
-	return r.styles.TWSymbol.Render("◆ ") + "$ " + r.styles.Command.Render(hangingIndent(visibleControls(e.Content), 4))
+	return r.styles.TWSymbol.Render("◆ ") + "$ " + r.styles.Command.Render(hangingIndent(tty.VisibleControls(e.Content), 4))
 }
 
 // ErrorEntry shows an inline error message.
 type ErrorEntry struct{ Content string }
 
 func (e ErrorEntry) render(r Renderer) string {
-	return r.styles.Error.Render("Error: " + hangingIndent(visibleControls(e.Content), threadGutter))
+	return r.styles.Error.Render("Error: " + hangingIndent(tty.VisibleControls(e.Content), threadGutter))
 }
 
 // SystemEntry is an informational message from termwise itself
@@ -183,7 +184,7 @@ func (e ErrorEntry) render(r Renderer) string {
 type SystemEntry struct{ Content string }
 
 func (e SystemEntry) render(r Renderer) string {
-	return r.styles.ActionHints.Render(hangingIndent(visibleControls(e.Content), threadGutter))
+	return r.styles.ActionHints.Render(hangingIndent(tty.VisibleControls(e.Content), threadGutter))
 }
 
 // hangingIndent prefixes every line after the first with `width` spaces, so

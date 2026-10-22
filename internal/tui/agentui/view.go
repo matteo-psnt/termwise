@@ -9,6 +9,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/matteo-psnt/termwise/internal/tty"
 )
 
 // View implements tea.Model. MouseMode is set per-frame (v2 moved mouse and
@@ -120,7 +122,7 @@ func (m Model) renderCommandBlock(label, content string, w int) string {
 	top := "╭" + labelPart + strings.Repeat("─", fillCount) + "╮"
 
 	lines := []string{top}
-	for _, raw := range strings.Split(visibleControls(content), "\n") {
+	for _, raw := range strings.Split(tty.VisibleControls(content), "\n") {
 		for _, seg := range wrapToWidth(raw, body) {
 			gap := max(inner-lipgloss.Width(seg)-pad, 0)
 			lines = append(lines, "│"+strings.Repeat(" ", pad)+seg+strings.Repeat(" ", gap)+"│")
