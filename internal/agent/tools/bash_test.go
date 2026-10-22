@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -84,5 +85,22 @@ func TestBashCancellationStopsChildren(t *testing.T) {
 	_, _ = bash(ctx, map[string]any{"command": "sleep 5; echo done"})
 	if d := time.Since(start); d > 2*time.Second {
 		t.Fatalf("cancelled command returned after %v", d)
+	}
+}
+
+// A command must run without termwise's controlling terminal, so a read from
+// /dev/tty fails at once instead of stopping the command with SIGTTIN.
+func TestBashCommandHasNoControllingTerminal(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix only")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, isErr := bash(ctx, map[string]any{"command": `if : </dev/tty 2>/dev/null; then echo tty; else echo none; fi`})
+	if isErr {
+		t.Fatalf("bash tool failed: %s", out)
+	}
+	if !strings.Contains(out, "none") {
+		t.Errorf("command could open /dev/tty: %s", out)
 	}
 }
