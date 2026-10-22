@@ -30,8 +30,6 @@ func New(cfg provider.Config) (*Client, error) {
 	}, nil
 }
 
-func (*Client) Name() string { return "anthropic" }
-
 // ListModels fetches available models from the Anthropic API.
 func (c *Client) ListModels(ctx context.Context) ([]provider.Model, error) {
 	page, err := c.sdk.Models.List(ctx, sdk.ModelListParams{})
@@ -48,18 +46,6 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.Model, error) {
 	return out, nil
 }
 
-// Complete sends a single-shot prompt and returns the full response.
-func (c *Client) Complete(ctx context.Context, req provider.CompleteRequest) (*provider.CompleteResponse, error) {
-	msgs := toSingleMessage(req.Prompt)
-	params := toParams(req.Model, req.System, msgs, nil)
-
-	msg, err := c.sdk.Messages.New(ctx, params)
-	if err != nil {
-		return nil, mapErr(err)
-	}
-	return fromResponse(msg), nil
-}
-
 // Chat sends a multi-turn conversation with tool definitions and returns the response.
 func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
 	msgs, err := toMessageParams(req.Messages)
@@ -68,7 +54,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 	}
 
 	tools := toToolParams(req.Tools)
-	params := toParamsWithEffort(req.Model, req.System, msgs, tools, req.Effort)
+	params := toParams(req.Model, req.System, msgs, tools, req.Effort)
 
 	msg, err := c.sdk.Messages.New(ctx, params)
 	if err != nil {

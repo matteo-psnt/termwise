@@ -91,17 +91,17 @@ func (m *Model) startSuggestion() tea.Cmd {
 	m.nextSuggestion++
 	m.activeSuggestion = m.nextSuggestion
 
-	req := provider.CompleteRequest{
-		Model:  m.modelID,
-		System: suggestionSystemPrompt,
-		Prompt: prompt,
+	req := provider.ChatRequest{
+		Model:    m.modelID,
+		System:   suggestionSystemPrompt,
+		Messages: []provider.Message{{Role: "user", Content: prompt}},
 	}
 	generation := m.activeSuggestion
 	ctx := m.suggestionCtx
 	client := m.provider
 
 	return func() tea.Msg {
-		resp, err := client.Complete(ctx, req)
+		resp, err := client.Chat(ctx, req)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return suggestionMsg{generation: generation}

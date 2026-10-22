@@ -16,13 +16,7 @@ type fakeAgentClient struct {
 	chatFn func(context.Context, provider.ChatRequest) (*provider.ChatResponse, error)
 }
 
-func (fakeAgentClient) Name() string { return "fake" }
-
 func (fakeAgentClient) ListModels(context.Context) ([]provider.Model, error) { return nil, nil }
-
-func (fakeAgentClient) Complete(context.Context, provider.CompleteRequest) (*provider.CompleteResponse, error) {
-	return nil, nil
-}
 
 func (f fakeAgentClient) Chat(ctx context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
 	return f.chatFn(ctx, req)

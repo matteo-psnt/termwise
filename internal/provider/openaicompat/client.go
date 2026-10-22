@@ -35,8 +35,6 @@ func New(name, defaultBaseURL string, cfg provider.Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Name() string { return c.name }
-
 // ListModels fetches available models and applies per-provider filtering.
 func (c *Client) ListModels(ctx context.Context) ([]provider.Model, error) {
 	pager := c.sdk.Models.ListAutoPaging(ctx)
@@ -54,18 +52,6 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.Model, error) {
 	return filterModels(c.name, models), nil
 }
 
-// Complete sends a single-shot prompt and returns the full response.
-func (c *Client) Complete(ctx context.Context, req provider.CompleteRequest) (*provider.CompleteResponse, error) {
-	msgs := []openai.ChatCompletionMessageParamUnion{openai.UserMessage(req.Prompt)}
-	params := toParams(req.Model, req.System, msgs, nil)
-
-	msg, err := c.sdk.Chat.Completions.New(ctx, params)
-	if err != nil {
-		return nil, mapErr(err)
-	}
-	return fromResponse(msg), nil
-}
-
 // Chat sends a multi-turn conversation with tool definitions and returns the response.
 func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
 	msgs, err := toMessageParams(req.Messages)
@@ -73,7 +59,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		return nil, fmt.Errorf("building messages: %w", err)
 	}
 	tools := toToolParams(req.Tools)
-	params := toParamsWithEffort(req.Model, req.System, msgs, tools, req.Effort)
+	params := toParams(req.Model, req.System, msgs, tools, req.Effort)
 
 	msg, err := c.sdk.Chat.Completions.New(ctx, params)
 	if err != nil {

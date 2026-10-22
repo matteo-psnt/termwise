@@ -2,7 +2,6 @@ package anthropic
 
 import (
 	"fmt"
-	"strings"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
@@ -10,15 +9,10 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
-// toParams builds the MessageNewParams for Complete calls (no thinking).
-func toParams(model, system string, messages []sdk.MessageParam, tools []sdk.ToolUnionParam) sdk.MessageNewParams {
-	return toParamsWithEffort(model, system, messages, tools, "")
-}
-
-// toParamsWithEffort builds MessageNewParams and enables adaptive thinking when effort is set.
+// toParams builds MessageNewParams and enables adaptive thinking when effort is set.
 // max_tokens caps the combined thinking + visible output budget, so the cap is
 // raised when thinking is enabled to leave room for the visible response.
-func toParamsWithEffort(model, system string, messages []sdk.MessageParam, tools []sdk.ToolUnionParam, effort string) sdk.MessageNewParams {
+func toParams(model, system string, messages []sdk.MessageParam, tools []sdk.ToolUnionParam, effort string) sdk.MessageNewParams {
 	const (
 		maxTokensDefault  = 8096
 		maxTokensThinking = 16000
@@ -43,15 +37,6 @@ func toParamsWithEffort(model, system string, messages []sdk.MessageParam, tools
 		p.OutputConfig = sdk.OutputConfigParam{Effort: sdk.OutputConfigEffort(effort)}
 	}
 	return p
-}
-
-// toSingleMessage converts a single-shot prompt into a one-element message slice.
-func toSingleMessage(prompt string) []sdk.MessageParam {
-	return []sdk.MessageParam{
-		sdk.NewUserMessage(sdk.ContentBlockParamUnion{
-			OfText: &sdk.TextBlockParam{Text: prompt},
-		}),
-	}
 }
 
 // toMessageParams converts our internal Message slice to SDK MessageParam slice.
@@ -160,19 +145,7 @@ func toToolParams(tools []provider.ToolDef) []sdk.ToolUnionParam {
 	return out
 }
 
-// fromResponse extracts the text content and usage from a Message response.
-// Used for Complete (single-shot) calls.
-func fromResponse(msg *sdk.Message) *provider.CompleteResponse {
-	text := extractText(msg.Content)
-	return &provider.CompleteResponse{
-		Content:      text,
-		InputTokens:  int(msg.Usage.InputTokens),
-		OutputTokens: int(msg.Usage.OutputTokens),
-	}
-}
-
 // fromChatResponse extracts content, tool calls, stop reason, and usage.
-// Used for Chat (agent) calls.
 func fromChatResponse(msg *sdk.Message) (*provider.ChatResponse, error) {
 	resp := &provider.ChatResponse{
 		StopReason:   string(msg.StopReason),
@@ -199,15 +172,4 @@ func fromChatResponse(msg *sdk.Message) (*provider.ChatResponse, error) {
 	}
 
 	return resp, nil
-}
-
-// extractText concatenates all text blocks in a content slice.
-func extractText(blocks []sdk.ContentBlockUnion) string {
-	var b strings.Builder
-	for _, block := range blocks {
-		if block.Type == "text" {
-			b.WriteString(block.Text)
-		}
-	}
-	return b.String()
 }

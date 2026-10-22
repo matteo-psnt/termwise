@@ -17,24 +17,6 @@ type Model struct {
 }
 
 // ----------------------------------------------------------------------------
-// Single-shot types
-// ----------------------------------------------------------------------------
-
-// CompleteRequest is the input to Client.Complete.
-type CompleteRequest struct {
-	Model  string // model ID
-	System string // system prompt
-	Prompt string // user prompt (query + stdin already combined by caller)
-}
-
-// CompleteResponse is the output of Client.Complete.
-type CompleteResponse struct {
-	Content      string // raw model response text
-	InputTokens  int
-	OutputTokens int
-}
-
-// ----------------------------------------------------------------------------
 // Agent types
 // ----------------------------------------------------------------------------
 
@@ -103,23 +85,15 @@ type ChatResponse struct {
 // Interfaces
 // ----------------------------------------------------------------------------
 
-// Client is the minimal interface for single-shot mode.
-type Client interface {
-	// Name returns the provider identifier (e.g. "anthropic").
-	Name() string
-
+// AgentClient is what every provider implements: the TUI, the headless path
+// and one-shot uses such as input suggestions all go through Chat. A one-shot
+// prompt is a ChatRequest with a single user message and no tools.
+type AgentClient interface {
 	// ListModels returns the models available from this provider.
 	ListModels(ctx context.Context) ([]Model, error)
 
-	// Complete sends a single prompt and returns the response.
-	Complete(ctx context.Context, req CompleteRequest) (*CompleteResponse, error)
-}
-
-// AgentClient extends Client with multi-turn conversation and tool use.
-// Used for agent mode, both in the TUI and on the headless path. Both the
-// Anthropic and OpenAI-compatible clients implement this interface.
-type AgentClient interface {
-	Client
+	// Chat sends a conversation, with any tool definitions, and returns the
+	// model's next turn.
 	Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
 }
 
