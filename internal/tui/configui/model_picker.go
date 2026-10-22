@@ -102,11 +102,7 @@ func (m modelPickerModel) View() string {
 		return b.String()
 	}
 	for i, mod := range m.models {
-		if i == m.cursor {
-			b.WriteString(m.styles.Selected.Render("▶ "+mod.ID) + "\n")
-		} else {
-			b.WriteString("  " + mod.ID + "\n")
-		}
+		b.WriteString(renderListRow(m.styles, i == m.cursor, mod.ID, "") + "\n")
 	}
 	b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back"))
 	return b.String()

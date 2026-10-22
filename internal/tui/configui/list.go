@@ -18,3 +18,16 @@ func moveListCursor(key string, cursor, n int) (next int, ok bool) {
 	}
 	return cursor, false
 }
+
+// renderListRow renders one row of a picker list: the focused row gets the
+// "▶ " marker and the Selected style, others are indented to line up. badge
+// is appended unstyled so it keeps its own colors.
+//
+// The theme picker doesn't use this: it styles only the marker, so its
+// colored swatches aren't recolored on the focused row.
+func renderListRow(styles configStyles, focused bool, text, badge string) string {
+	if focused {
+		return styles.Selected.Render("▶ "+text) + badge
+	}
+	return styles.Normal.Render("  "+text) + badge
+}

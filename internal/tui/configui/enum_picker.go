@@ -59,11 +59,7 @@ func (m enumPickerModel) View() string {
 	var b strings.Builder
 	b.WriteString(m.label + ":\n\n")
 	for i, opt := range m.options {
-		if i == m.cursor {
-			b.WriteString(m.styles.Selected.Render("▶ "+opt) + "\n")
-		} else {
-			b.WriteString("  " + opt + "\n")
-		}
+		b.WriteString(renderListRow(m.styles, i == m.cursor, opt, "") + "\n")
 	}
 	b.WriteString("\n" + m.styles.Dim.Render("↑/↓ navigate   enter select   esc cancel"))
 	return b.String()

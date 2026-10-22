@@ -412,11 +412,7 @@ func (m wizardModel) renderInner() string {
 				badge = "  " + m.styles.Success.Render("●")
 				detected = true
 			}
-			if i == m.cursor {
-				b.WriteString(m.styles.Selected.Render("▶ "+p.DisplayName) + badge + "\n")
-			} else {
-				b.WriteString(m.styles.Normal.Render("  "+p.DisplayName) + badge + "\n")
-			}
+			b.WriteString(renderListRow(m.styles, i == m.cursor, p.DisplayName, badge) + "\n")
 		}
 		if detected {
 			b.WriteString("\n" + m.styles.Hint.Render("● API key found in your environment"))
@@ -452,11 +448,7 @@ func (m wizardModel) renderInner() string {
 			if id == def {
 				badge = m.styles.Dim.Render("  (recommended)")
 			}
-			if i == m.cursor {
-				b.WriteString(m.styles.Selected.Render("▶ "+id) + badge + "\n")
-			} else {
-				b.WriteString(m.styles.Normal.Render("  "+id) + badge + "\n")
-			}
+			b.WriteString(renderListRow(m.styles, i == m.cursor, id, badge) + "\n")
 		}
 		if end < len(m.apiModels) {
 			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  ↓ %d more", len(m.apiModels)-end)) + "\n")
