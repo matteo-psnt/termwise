@@ -18,9 +18,9 @@ const (
 
 func init() {
 	stepFns[ReadDef.Name] = func(_ provider.ToolCall) Step {
-		return Step{Kind: StepExecutor, Execute: executor(Read)}
+		return Step{Kind: StepExecutor, Execute: executor(read)}
 	}
-	detailFns[ReadDef.Name] = ReadPath
+	detailFns[ReadDef.Name] = readPath
 }
 
 var ReadDef = provider.ToolDef{
@@ -50,16 +50,16 @@ Prefer this over ` + "`bash cat`" + ` or ` + "`bash ls`" + `: it is not gated, t
 	},
 }
 
-// ReadPath returns the path argument for a read tool call.
-func ReadPath(tc provider.ToolCall) string {
+// readPath returns the path argument for a read tool call.
+func readPath(tc provider.ToolCall) string {
 	return stringInput(tc.Input, "path")
 }
 
-// Read executes the read tool. When path points at a directory, it returns a
+// read executes the read tool. When path points at a directory, it returns a
 // listing of immediate children; otherwise it returns file contents.
 // Returns (content, isError). The ctx argument is unused; it's present to give
 // read the same signature as the other tools so it can go through executor.
-func Read(_ context.Context, input map[string]any) (string, bool) {
+func read(_ context.Context, input map[string]any) (string, bool) {
 	path := stringInput(input, "path")
 	if path == "" {
 		return "error: 'path' is required", true

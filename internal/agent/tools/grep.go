@@ -17,13 +17,13 @@ const (
 
 func init() {
 	stepFns[GrepDef.Name] = func(_ provider.ToolCall) Step {
-		return Step{Kind: StepExecutor, Execute: executor(Grep)}
+		return Step{Kind: StepExecutor, Execute: executor(grep)}
 	}
 	detailFns[GrepDef.Name] = grepDetail
 }
 
 func grepDetail(tc provider.ToolCall) string {
-	return patternInPath(GrepPattern(tc), GrepPath(tc))
+	return patternInPath(grepPattern(tc), grepPath(tc))
 }
 
 var GrepDef = provider.ToolDef{
@@ -100,19 +100,19 @@ Usage:
 	},
 }
 
-// GrepPattern returns the pattern argument for a grep tool call.
-func GrepPattern(tc provider.ToolCall) string {
+// grepPattern returns the pattern argument for a grep tool call.
+func grepPattern(tc provider.ToolCall) string {
 	return stringInput(tc.Input, "pattern")
 }
 
-// GrepPath returns the path argument for a grep tool call (empty if unset).
-func GrepPath(tc provider.ToolCall) string {
+// grepPath returns the path argument for a grep tool call (empty if unset).
+func grepPath(tc provider.ToolCall) string {
 	return stringInput(tc.Input, "path")
 }
 
-// Grep runs ripgrep with arguments derived from input and returns a formatted
+// grep runs ripgrep with arguments derived from input and returns a formatted
 // text result. Returns (content, isError).
-func Grep(ctx context.Context, input map[string]any) (string, bool) {
+func grep(ctx context.Context, input map[string]any) (string, bool) {
 	pattern := stringInput(input, "pattern")
 	if pattern == "" {
 		return "error: 'pattern' is required", true

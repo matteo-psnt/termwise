@@ -13,13 +13,13 @@ const defaultGlobLimit = 100
 
 func init() {
 	stepFns[GlobDef.Name] = func(_ provider.ToolCall) Step {
-		return Step{Kind: StepExecutor, Execute: executor(Glob)}
+		return Step{Kind: StepExecutor, Execute: executor(glob)}
 	}
 	detailFns[GlobDef.Name] = globDetail
 }
 
 func globDetail(tc provider.ToolCall) string {
-	return patternInPath(GlobPattern(tc), GlobPath(tc))
+	return patternInPath(globPattern(tc), globPath(tc))
 }
 
 var GlobDef = provider.ToolDef{
@@ -48,19 +48,19 @@ Usage:
 	},
 }
 
-// GlobPattern returns the pattern argument for a glob tool call.
-func GlobPattern(tc provider.ToolCall) string {
+// globPattern returns the pattern argument for a glob tool call.
+func globPattern(tc provider.ToolCall) string {
 	return stringInput(tc.Input, "pattern")
 }
 
-// GlobPath returns the path argument for a glob tool call (empty if unset).
-func GlobPath(tc provider.ToolCall) string {
+// globPath returns the path argument for a glob tool call (empty if unset).
+func globPath(tc provider.ToolCall) string {
 	return stringInput(tc.Input, "path")
 }
 
-// Glob lists files matching a glob pattern, sorted by modification time.
+// glob lists files matching a glob pattern, sorted by modification time.
 // Returns (content, isError).
-func Glob(ctx context.Context, input map[string]any) (string, bool) {
+func glob(ctx context.Context, input map[string]any) (string, bool) {
 	pattern := stringInput(input, "pattern")
 	if pattern == "" {
 		return "error: 'pattern' is required", true

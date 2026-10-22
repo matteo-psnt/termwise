@@ -4,12 +4,12 @@ import "github.com/matteo-psnt/termwise/internal/provider"
 
 func init() {
 	stepFns[CommandDef.Name] = func(tc provider.ToolCall) Step {
-		return Step{Kind: StepRespond, Content: CommandContent(tc)}
+		return Step{Kind: StepRespond, Content: commandContent(tc)}
 	}
 }
 
-// CommandContent returns the proposed command body from a command tool call.
-func CommandContent(tc provider.ToolCall) string {
+// commandContent returns the proposed command body from a command tool call.
+func commandContent(tc provider.ToolCall) string {
 	return stringInput(tc.Input, "content")
 }
 
