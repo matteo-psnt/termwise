@@ -101,3 +101,21 @@ func writeTestConfig(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestDoctorWarnsAboutInvalidEffort(t *testing.T) {
+	cfgPath := isolateConfigEnv(t)
+	writeTestConfig(t, cfgPath, `selected_provider = "ollama"
+
+[providers.ollama]
+model  = "qwen3"
+effort = "hihg"
+`)
+	var ok bool
+	out := captureStdout(t, func() { ok = runDoctor(cfgPath, false) })
+	if !strings.Contains(out, `! Effort: "hihg" is not a valid level`) || !strings.Contains(out, "xhigh, max") {
+		t.Errorf("doctor does not flag the bad effort:\n%s", out)
+	}
+	if !ok {
+		t.Errorf("an ignored effort failed doctor:\n%s", out)
+	}
+}

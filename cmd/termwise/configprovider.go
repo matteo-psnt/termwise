@@ -13,6 +13,7 @@ import (
 	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
+	"github.com/matteo-psnt/termwise/internal/tty"
 )
 
 // providerTimeout bounds every request these commands make to a provider, so
@@ -40,7 +41,7 @@ func selectedProviderConfig(cfg config.FileConfig, name string) (string, config.
 // included — so commands that talk to the provider test what `tw` uses
 // rather than only what the file says.
 func effectiveProviderConfig(name string) (string, config.ProviderConfig, error) {
-	cfgPath, _, _, err := loadConfigFile()
+	cfgPath, _, err := loadConfigFile()
 	if err != nil {
 		return "", config.ProviderConfig{}, err
 	}
@@ -53,10 +54,18 @@ func effectiveProviderConfig(name string) (string, config.ProviderConfig, error)
 
 // showStatus prints msg on stderr as a transient status line and returns a
 // func that erases it, so the wait is visible but leaves nothing behind in
-// the output.
+// the output. When stderr is not a terminal the erase cannot work — it would
+// leave the message and a raw escape code in a log — so nothing is shown.
 func showStatus(msg string) func() {
-	fmt.Fprint(os.Stderr, msg)
-	return func() { fmt.Fprint(os.Stderr, "\r\033[K") }
+	return statusLine(os.Stderr, tty.IsTerminal(os.Stderr), msg)
+}
+
+func statusLine(w io.Writer, isTerminal bool, msg string) func() {
+	if !isTerminal {
+		return func() {}
+	}
+	_, _ = fmt.Fprint(w, msg)
+	return func() { _, _ = fmt.Fprint(w, "\r\033[K") }
 }
 
 // ---------------------------------------------------------------------------
@@ -196,31 +205,50 @@ var configModelSetCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
 		modelID := args[0]
-		return mutateActiveProvider(func(cfg *config.FileConfig, name string) error {
-			if err := config.SetModel(cfg, name, modelID); err != nil {
-				return err
-			}
-			// Validate the model against the API, but don't fail the save on error.
-			pc := cfg.Providers[name]
-			ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
-			defer cancel()
-
-			done := showStatus("Validating model...")
-			models, err := config.FetchProviderModels(ctx, name, pc)
-			done()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not check the model against %s — saved anyway\n  %s\n",
-					name, strings.ReplaceAll(err.Error(), "\n", "\n  "))
-				return nil
-			}
-			for _, m := range models {
-				if m.ID == modelID {
-					return nil
-				}
-			}
-			return fmt.Errorf("model %q not found for provider %q", modelID, name)
+		// Check the model before taking the config lock: the check is a
+		// network call (and maybe an api_key_cmd prompt) that can outlast
+		// the lock timeout and would block the setup screen from saving.
+		_, cfg, err := loadConfigFile()
+		if err != nil {
+			return err
+		}
+		name, err := activeProvider(cfg)
+		if err != nil {
+			return err
+		}
+		if err := config.SetModel(&cfg, name, modelID); err != nil {
+			return err
+		}
+		if err := checkModelExists(name, cfg.Providers[name], modelID); err != nil {
+			return err
+		}
+		return mutateConfig(func(cfg *config.FileConfig) error {
+			return config.SetModel(cfg, name, modelID)
 		})
 	},
+}
+
+// checkModelExists asks the provider whether it serves modelID. Only an
+// answer of "no" is an error: when the provider cannot be asked, the model
+// is saved anyway with a warning.
+func checkModelExists(name string, pc config.ProviderConfig, modelID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
+	defer cancel()
+
+	done := showStatus("Validating model...")
+	models, err := config.FetchProviderModels(ctx, name, pc)
+	done()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not check the model against %s — saved anyway\n  %s\n",
+			name, strings.ReplaceAll(err.Error(), "\n", "\n  "))
+		return nil
+	}
+	for _, m := range models {
+		if m.ID == modelID {
+			return nil
+		}
+	}
+	return fmt.Errorf("model %q not found for provider %q", modelID, name)
 }
 
 // ---------------------------------------------------------------------------

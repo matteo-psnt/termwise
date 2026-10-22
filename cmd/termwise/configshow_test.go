@@ -48,3 +48,45 @@ func TestAuthSummaryTruncatesOnRuneBoundary(t *testing.T) {
 		t.Errorf("authSummary = %q, want it truncated", got)
 	}
 }
+
+// show reports what the runtime would use, so TERMWISE_PROVIDER and
+// TERMWISE_MODEL must be applied and marked.
+func TestShowAppliesAndMarksEnvOverrides(t *testing.T) {
+	cfgPath := isolateConfigEnv(t)
+	if err := config.SaveConfig(cfgPath, config.FileConfig{
+		SelectedProvider: "anthropic",
+		Providers:        map[string]config.ProviderConfig{"anthropic": {Model: "claude-x"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.EnvProvider, "openai")
+	t.Setenv(config.EnvModel, "gpt-x")
+
+	if err := configShowCmd.Flags().Set("json", "true"); err != nil {
+		t.Fatal(err)
+	}
+	var runErr error
+	out := captureStdout(t, func() { runErr = configShowCmd.RunE(configShowCmd, nil) })
+	_ = configShowCmd.Flags().Set("json", "false")
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	var got showJSON
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, out)
+	}
+	if got.SelectedProvider != "openai" || got.Providers["openai"].Model != "gpt-x" {
+		t.Errorf("selected = %q, model = %q; want openai, gpt-x", got.SelectedProvider, got.Providers["openai"].Model)
+	}
+	if got.Overrides[config.EnvProvider] != "openai" || got.Overrides[config.EnvModel] != "gpt-x" {
+		t.Errorf("overrides = %v", got.Overrides)
+	}
+
+	out = captureStdout(t, func() { runErr = configShowCmd.RunE(configShowCmd, nil) })
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	if !strings.Contains(out, "* openai (active) ["+config.EnvProvider+"]") || !strings.Contains(out, "gpt-x ["+config.EnvModel+"]") {
+		t.Errorf("show output does not mark the overrides:\n%s", out)
+	}
+}

@@ -64,20 +64,31 @@ when stdin is a terminal, so it never lands in your shell history. With
 		if !store && len(args) == 0 {
 			return fmt.Errorf("name the keychain entry, or pass --store to save a key")
 		}
-		return mutateActiveProvider(func(cfg *config.FileConfig, name string) error {
-			entry := config.DefaultKeychainEntry(name)
-			if len(args) == 1 {
-				entry = args[0]
+		// Ask for and store the key before taking the config lock: the
+		// prompt waits on the user, far longer than the lock timeout that
+		// the setup screen would otherwise run into.
+		_, cfg, err := loadConfigFile()
+		if err != nil {
+			return err
+		}
+		name, err := activeProvider(cfg)
+		if err != nil {
+			return err
+		}
+		entry := config.DefaultKeychainEntry(name)
+		if len(args) == 1 {
+			entry = args[0]
+		}
+		if store {
+			key, err := tty.ReadSecret(fmt.Sprintf("%s API key: ", name))
+			if err != nil {
+				return err
 			}
-			if store {
-				key, err := tty.ReadSecret(fmt.Sprintf("%s API key: ", name))
-				if err != nil {
-					return err
-				}
-				if err := config.StoreKeychainEntry(entry, key); err != nil {
-					return fmt.Errorf("saving to keychain: %w", err)
-				}
+			if err := config.StoreKeychainEntry(entry, key); err != nil {
+				return fmt.Errorf("saving to keychain: %w", err)
 			}
+		}
+		return mutateConfig(func(cfg *config.FileConfig) error {
 			return config.SetAuthKeychain(cfg, name, entry)
 		})
 	},

@@ -66,3 +66,48 @@ base_url    = "`+srv.URL+`"
 		t.Errorf("stderr = %q, want a warning that $OPENAI_API_KEY was used instead", stderr)
 	}
 }
+
+// A status line is erased with an escape code, which only a terminal
+// understands; in a log it would leave the message and the raw code behind.
+func TestStatusLineSilentWithoutTerminal(t *testing.T) {
+	var b strings.Builder
+	statusLine(&b, false, "Validating model...")()
+	if b.Len() != 0 {
+		t.Errorf("status line wrote %q to a non-terminal", b.String())
+	}
+	statusLine(&b, true, "x")()
+	if b.String() != "x\r\033[K" {
+		t.Errorf("status line on a terminal = %q", b.String())
+	}
+}
+
+// `config model set` asks the provider about the model. That request must
+// not run under the config lock, or the setup screen saving meanwhile waits
+// on the network and times out.
+func TestModelSetChecksModelOutsideConfigLock(t *testing.T) {
+	cfgPath := isolateConfigEnv(t)
+	var saveErr error
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		saveErr = config.MutateConfig(cfgPath, func(*config.FileConfig) error { return nil })
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"gpt-4o","object":"model"}]}`))
+	}))
+	defer srv.Close()
+	t.Setenv("OPENAI_API_KEY", "sk-oai")
+	writeTestConfig(t, cfgPath, `selected_provider = "openai"
+
+[providers.openai]
+model    = "gpt-4o-mini"
+base_url = "`+srv.URL+`"
+`)
+	if err := configModelSetCmd.RunE(configModelSetCmd, []string{"gpt-4o"}); err != nil {
+		t.Fatal(err)
+	}
+	if saveErr != nil {
+		t.Errorf("a save during the model check failed: %v", saveErr)
+	}
+	cfg, _, _ := config.LoadConfig(cfgPath)
+	if got := cfg.Providers["openai"].Model; got != "gpt-4o" {
+		t.Errorf("model = %q, want gpt-4o", got)
+	}
+}
