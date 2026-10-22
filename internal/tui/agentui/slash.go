@@ -211,15 +211,11 @@ func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m = previewEffort(m, level)
-	if m.cfgPath != "" {
-		cfg, exists, err := config.LoadConfig(m.cfgPath)
-		if err == nil && exists {
-			pc := cfg.Providers[m.providerName]
-			pc.Effort = m.effort
-			cfg.Providers[m.providerName] = pc
-			_ = config.SaveConfig(m.cfgPath, cfg)
-		}
-	}
+	m.updateConfigFile(func(cfg *config.FileConfig) {
+		pc := cfg.Providers[m.providerName]
+		pc.Effort = m.effort
+		cfg.Providers[m.providerName] = pc
+	})
 	m.appendThreadEntries(SystemEntry{Content: "Effort set to " + level + "."})
 	m.refreshViewport()
 	return m, nil
