@@ -2,6 +2,7 @@ package agentui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -215,7 +216,7 @@ func (m Model) renderStatusLine() string {
 
 	hints := m.renderer.styles.ActionHints
 	sep := hints.Render(" · ")
-	leftStr := hints.Render(" "+m.workDir) +
+	leftStr := hints.Render(" "+filepath.Base(m.cwd)) +
 		sep + m.renderer.styles.StatusModel.Render(modelPart) +
 		sep + hints.Render(tokens+" tok ")
 

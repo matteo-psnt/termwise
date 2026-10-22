@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -148,7 +147,6 @@ func newModel(cfg modelConfig) Model {
 		sessionID:        cfg.sessionID,
 		exchanges:        cfg.exchanges,
 		cfgPath:          cfg.cfgPath,
-		workDir:          workDirBasename(),
 		cwd:              workDirFull(),
 		tuiTopRow:        cfg.initialCursorRow,
 	}
@@ -328,12 +326,4 @@ func workDirFull() string {
 		return "."
 	}
 	return wd
-}
-
-func workDirBasename() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	return filepath.Base(wd)
 }

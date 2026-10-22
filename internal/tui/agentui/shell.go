@@ -91,10 +91,9 @@ type shell struct {
 
 	// Paths
 	cfgPath string
-	workDir string
 	// cwd is the full working directory, resolved once at construction. The
 	// @-dropdown lists relative to it on every keystroke, so it must not be an
-	// os.Getwd() call per key.
+	// os.Getwd() call per key. The status line shows its base name.
 	cwd string
 
 	// Always-on completion dropdowns
