@@ -1,0 +1,114 @@
+package configui
+
+import (
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/matteo-psnt/termwise/internal/config"
+)
+
+var (
+	keyEnter = tea.KeyPressMsg{Code: tea.KeyEnter}
+	keyEsc   = tea.KeyPressMsg{Code: tea.KeyEscape}
+	keyUp    = tea.KeyPressMsg{Code: tea.KeyUp}
+	keyDown  = tea.KeyPressMsg{Code: tea.KeyDown}
+)
+
+func press(t *testing.T, m editorModel, keys ...tea.KeyPressMsg) editorModel {
+	t.Helper()
+	for _, k := range keys {
+		next, _ := m.Update(k)
+		m = next.(editorModel)
+	}
+	return m
+}
+
+// openRow puts the cursor on the first row matching match and presses enter.
+func openRow(t *testing.T, m editorModel, match func(editorRow) bool) editorModel {
+	t.Helper()
+	for i, row := range m.rows {
+		if match(row) {
+			m.cursor = i
+			return press(t, m, keyEnter)
+		}
+	}
+	t.Fatal("no matching row")
+	return m
+}
+
+func settingRow(key string) func(editorRow) bool {
+	return func(r editorRow) bool { return r.kind == rowSetting && config.Settings[r.settingIdx].Key == key }
+}
+
+func effortRow(r editorRow) bool { return r.kind == rowProvEffort }
+
+func thinkingEditor(effort string) editorModel {
+	cfg := config.FileConfig{
+		SelectedProvider: "anthropic",
+		Providers: map[string]config.ProviderConfig{
+			"anthropic": {Auth: "env", Model: "claude-sonnet-4-6", Effort: effort},
+		},
+	}
+	return newEditorModel("", cfg, true)
+}
+
+func TestEffortPickerCommitsToProvider(t *testing.T) {
+	// Levels are low, medium, high; the picker opens on the current one.
+	m := openRow(t, thinkingEditor(""), effortRow)
+	if m.enumPicker == nil {
+		t.Fatal("effort row did not open the enum picker")
+	}
+	m = press(t, m, keyDown, keyEnter)
+	if m.enumPicker != nil {
+		t.Fatal("picker still open after enter")
+	}
+	if got := m.cfg.Providers["anthropic"].Effort; got != "high" {
+		t.Errorf("Effort = %q, want high", got)
+	}
+	if got := m.cfg.Settings; got != (config.SettingsConfig{}) {
+		t.Errorf("effort pick touched settings: %+v", got)
+	}
+}
+
+func TestEffortPickerOmitsDefault(t *testing.T) {
+	m := openRow(t, thinkingEditor("high"), effortRow)
+	m = press(t, m, keyUp, keyEnter)
+	if got := m.cfg.Providers["anthropic"].Effort; got != "" {
+		t.Errorf("Effort = %q, want empty for the default", got)
+	}
+}
+
+func TestEffortPickerCancelKeepsValue(t *testing.T) {
+	m := openRow(t, thinkingEditor("low"), effortRow)
+	m = press(t, m, keyDown, keyEsc)
+	if m.enumPicker != nil {
+		t.Fatal("picker still open after esc")
+	}
+	if got := m.cfg.Providers["anthropic"].Effort; got != "low" {
+		t.Errorf("Effort = %q, want low", got)
+	}
+}
+
+func TestKeybindingCaptureCommitsToSetting(t *testing.T) {
+	m := openRow(t, thinkingEditor(""), settingRow("keybinding"))
+	if m.keybinding == nil {
+		t.Fatal("keybinding row did not open the capture")
+	}
+	m = press(t, m, tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl}, keyEnter)
+	if got := m.cfg.Settings.Keybinding; got != "^G" {
+		t.Errorf("Keybinding = %q, want ^G", got)
+	}
+}
+
+func TestThemePickerCommitsToSetting(t *testing.T) {
+	m := openRow(t, thinkingEditor(""), settingRow("theme"))
+	if m.themePicker == nil {
+		t.Fatal("theme row did not open the picker")
+	}
+	want := m.themePicker.PreviewName()
+	m = press(t, m, keyEnter)
+	if got := m.cfg.Settings.Theme; got != want {
+		t.Errorf("Theme = %q, want %q", got, want)
+	}
+}
