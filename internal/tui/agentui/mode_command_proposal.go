@@ -22,11 +22,26 @@ func (commandProposalMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, t
 
 func (commandProposalMode) renderInputRow(m Model, vpW int) string {
 	return lipgloss.JoinVertical(lipgloss.Left,
-		m.renderCommandBlock("suggested command", "$ "+m.shellCommand, vpW),
+		m.renderCommandBlock("suggested command", "$ "+m.exitShellCommand(), vpW),
 		commandProposalKeys.hints(m),
 	)
 }
 
 func (commandProposalMode) helpBindings(_ Model) []binding {
 	return commandProposalKeys.help()
+}
+
+func (m Model) dismissCommandProposal() (tea.Model, tea.Cmd) {
+	m.clearShellCommand()
+	m.state = stateIdle
+	m.refreshViewport()
+	return m, m.startSuggestion()
+}
+
+// editCommandProposal loads the proposed command into the input for editing.
+func (m Model) editCommandProposal() (tea.Model, tea.Cmd) {
+	m.input.SetValue(m.exitShellCommand())
+	m.input.CursorEnd()
+	m.state = stateCommandProposalEdit
+	return m, nil
 }

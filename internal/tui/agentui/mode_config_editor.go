@@ -31,19 +31,16 @@ func (configEditorMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.
 }
 
 func handleConfigChooserKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	updated, choice, submitted, cancelled := m.configEditor.chooser.Update(msg)
+	updated, action, choice := m.configEditor.chooser.Update(msg)
 	m.configEditor.chooser = updated
-	if cancelled {
+	switch action {
+	case pickerCancelled:
 		m.configEditor = nil
 		m.state = stateIdle
-		return m, nil
-	}
-	if submitted {
-		def, ok := config.FindSetting(choice)
-		if !ok {
-			return m, nil
+	case pickerSubmitted:
+		if def, ok := config.FindSetting(choice); ok {
+			return openConfigValuePicker(m, def), nil
 		}
-		return openConfigValuePicker(m, def), nil
 	}
 	return m, nil
 }
@@ -86,14 +83,7 @@ func handleConfigCaptureKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	def := m.configEditor.setting
-	m = applyConfigValue(m, def, zsh)
-	m.persistConfigValue(def, zsh)
-	def.Set(&m.configEditor.cfg, zsh)
-	m.configEditor.chooser = rebuildChooser(m.configEditor.chooser, m.configEditor.cfg)
-	m = backToChooser(m)
-	m.refreshViewport()
-	return m, nil
+	return commitConfigValue(m, m.configEditor.setting, zsh), nil
 }
 
 func handleConfigValueKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -101,30 +91,34 @@ func handleConfigValueKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.configEditor.phase = configPhaseChooser
 		return m, nil
 	}
-	prevCursor := m.configEditor.valuePicker.cursor
-	updated, choice, submitted, cancelled := m.configEditor.valuePicker.Update(msg)
+	updated, action, choice := m.configEditor.valuePicker.Update(msg)
 	m.configEditor.valuePicker = &updated
 	def := m.configEditor.setting
-	if cancelled {
+	switch action {
+	case pickerCancelled:
 		m = applyConfigValue(m, def, m.configEditor.original)
 		m = backToChooser(m)
 		m.refreshViewport()
-		return m, nil
-	}
-	if submitted {
-		m = applyConfigValue(m, def, choice)
-		m.persistConfigValue(def, choice)
-		def.Set(&m.configEditor.cfg, choice)
-		m.configEditor.chooser = rebuildChooser(m.configEditor.chooser, m.configEditor.cfg)
-		m = backToChooser(m)
-		m.refreshViewport()
-		return m, nil
-	}
-	if updated.cursor != prevCursor && len(updated.options) > 0 {
+	case pickerSubmitted:
+		m = commitConfigValue(m, def, choice)
+	case pickerMoved:
 		m = applyConfigValue(m, def, updated.options[updated.cursor].Value)
 		m.refreshViewport()
 	}
 	return m, nil
+}
+
+// commitConfigValue applies val in memory, writes it to disk, folds it into the
+// editor's snapshot so the chooser's Detail column shows it, and returns to the
+// chooser. Shared by the value picker and keybinding capture.
+func commitConfigValue(m Model, def config.SettingDef, val string) Model {
+	m = applyConfigValue(m, def, val)
+	m.persistConfigValue(def, val)
+	def.Set(&m.configEditor.cfg, val)
+	m.configEditor.chooser = rebuildChooser(m.configEditor.chooser, m.configEditor.cfg)
+	m = backToChooser(m)
+	m.refreshViewport()
+	return m
 }
 
 // backToChooser clears value-phase state and returns to the chooser view.

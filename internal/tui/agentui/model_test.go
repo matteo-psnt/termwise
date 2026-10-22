@@ -56,7 +56,7 @@ func TestTrimContextLeavesMessagesWithinLimitUntouched(t *testing.T) {
 func TestHandleThinkingKeyEscInterruptsRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			ctx:              ctx,
 			cancel:           cancel,
 			activeGeneration: 7,
@@ -90,7 +90,7 @@ func TestHandleThinkingKeyEscInterruptsRequest(t *testing.T) {
 
 func TestHandleResponseEventIgnoresStaleResponse(t *testing.T) {
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			activeGeneration: 2,
 			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
@@ -113,7 +113,7 @@ func TestHandleResponseEventIgnoresStaleResponse(t *testing.T) {
 
 func TestHandleResponseEventIgnoresCanceledActiveRequest(t *testing.T) {
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			activeGeneration: 3,
 			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
@@ -136,7 +136,7 @@ func TestHandleResponseEventIgnoresCanceledActiveRequest(t *testing.T) {
 
 func TestHandleToolExecutedEventIgnoresStaleGeneration(t *testing.T) {
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			activeGeneration: 2,
 			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
@@ -163,7 +163,7 @@ func TestHandleInitialPromptSubmitsPrompt(t *testing.T) {
 	defer suggestionCancel()
 
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			ctx:              ctx,
 			cancel:           cancel,
 			suggestionCtx:    suggestionCtx,
@@ -197,7 +197,7 @@ func TestHandleInitialPromptSubmitsPrompt(t *testing.T) {
 
 func TestHandleIdleKeyTabAcceptsSuggestion(t *testing.T) {
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			suggestion: "run the tests",
 			input:      textarea.New(),
 			vp:         viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
@@ -251,7 +251,7 @@ func TestShouldFilterSuggestion(t *testing.T) {
 
 func TestHandleRespondEventStoresShellCommand(t *testing.T) {
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			vp: viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
 		state: stateThinking,
@@ -274,7 +274,7 @@ func TestSubmitMessageClearsPendingShellCommand(t *testing.T) {
 	defer suggestionCancel()
 
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			ctx:              ctx,
 			cancel:           cancel,
 			suggestionCtx:    suggestionCtx,
@@ -296,7 +296,7 @@ func TestSubmitMessageClearsPendingShellCommand(t *testing.T) {
 
 func TestHandleResponseEventWithoutToolsClearsShellCommand(t *testing.T) {
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			vp:           viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 			shellCommand: "go test ./...",
 		},

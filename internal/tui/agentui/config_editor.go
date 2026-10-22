@@ -89,9 +89,16 @@ func applyConfigValue(m Model, def config.SettingDef, val string) Model {
 }
 
 // persistConfigValue writes a setting value to disk using the canonical
-// SettingDef.Set hook. Reads the latest on-disk config first so we don't clobber
-// concurrent edits from outside the TUI.
+// SettingDef.Set hook.
 func (m Model) persistConfigValue(def config.SettingDef, val string) {
+	m.updateConfigFile(func(cfg *config.FileConfig) { def.Set(cfg, val) })
+}
+
+// updateConfigFile applies edit to the config file and saves it. It reads the
+// latest on-disk config first so we don't clobber concurrent edits from
+// outside the TUI. Best-effort: with no config path, no file, or an unreadable
+// one, nothing is written and nothing is reported.
+func (m Model) updateConfigFile(edit func(cfg *config.FileConfig)) {
 	if m.cfgPath == "" {
 		return
 	}
@@ -99,7 +106,7 @@ func (m Model) persistConfigValue(def config.SettingDef, val string) {
 	if err != nil || !exists {
 		return
 	}
-	def.Set(&cfg, val)
+	edit(&cfg)
 	_ = config.SaveConfig(m.cfgPath, cfg)
 }
 

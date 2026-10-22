@@ -19,10 +19,6 @@ type generationMsg struct {
 	msg        tea.Msg
 }
 
-func newGenerationContext() (context.Context, context.CancelFunc) {
-	return context.WithCancel(context.Background())
-}
-
 func newSuggestionContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), 8*time.Second)
 }
@@ -83,13 +79,13 @@ func activityVerb(tool string) string {
 
 func (m *Model) resetGenerationContext() {
 	m.cancel()
-	m.ctx, m.cancel = newGenerationContext()
+	m.ctx, m.cancel = context.WithCancel(context.Background())
 }
 
 func (m *Model) startChat() tea.Cmd {
 	return tea.Batch(
 		m.spin.Tick,
-		m.wrapActiveGeneration(ChatCmd(m.ctx, m.provider, m.chatRequest())),
+		m.wrapActiveGeneration(chatCmd(m.ctx, m.provider, m.chatRequest())),
 	)
 }
 

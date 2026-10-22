@@ -35,7 +35,7 @@ func findLinks(content string) []linkPosition {
 	for i := 0; i <= len(content); i++ {
 		if i == len(content) || content[i] == '\n' {
 			line := content[start:i]
-			plain := ansiEscape.ReplaceAllString(line, "")
+			plain := stripANSI(line)
 			for _, idx := range urlRegex.FindAllStringIndex(plain, -1) {
 				out = append(out, linkPosition{
 					URL:    plain[idx[0]:idx[1]],

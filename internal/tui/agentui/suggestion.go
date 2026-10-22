@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -76,7 +77,7 @@ func (m Model) visibleSuggestion() string {
 }
 
 func (m *Model) startSuggestion() tea.Cmd {
-	if reason := m.suggestionSuppressReason(); reason != "" {
+	if !m.canSuggest() {
 		return nil
 	}
 
@@ -115,33 +116,20 @@ func (m *Model) startSuggestion() tea.Cmd {
 	}
 }
 
-func (m Model) suggestionSuppressReason() string {
-	if !m.suggestions {
-		return "disabled"
-	}
-	if m.state != stateIdle {
-		return "not_idle"
-	}
-	if len(m.messages) == 0 {
-		return "no_messages"
-	}
-	if countRoleMessages(m.messages, "assistant") == 0 {
-		return "no_assistant_turn"
-	}
-	if !hasSuggestionWorthyEntry(m.thread) {
-		return "no_visible_reply"
-	}
-	return ""
+// canSuggest reports whether a next-prompt suggestion is worth requesting:
+// suggestions are on, the TUI is idle, the model has replied at least once,
+// and the thread shows a non-empty reply after the user's last message.
+func (m Model) canSuggest() bool {
+	return m.suggestions &&
+		m.state == stateIdle &&
+		hasAssistantMessage(m.messages) &&
+		hasSuggestionWorthyEntry(m.thread)
 }
 
-func countRoleMessages(messages []provider.Message, role string) int {
-	total := 0
-	for _, msg := range messages {
-		if msg.Role == role {
-			total++
-		}
-	}
-	return total
+func hasAssistantMessage(messages []provider.Message) bool {
+	return slices.ContainsFunc(messages, func(msg provider.Message) bool {
+		return msg.Role == "assistant"
+	})
 }
 
 func hasSuggestionWorthyEntry(entries []ThreadEntry) bool {

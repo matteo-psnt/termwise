@@ -56,36 +56,42 @@ func newSlashPicker(cmd, title, subtitle string, options []slashOption, current 
 	}
 }
 
-// Update returns (updated, chosenValue, submitted, cancelled).
-func (p slashPicker) Update(msg tea.KeyPressMsg) (slashPicker, string, bool, bool) {
-	switch msg.Code {
-	case tea.KeyUp:
-		if p.cursor > 0 {
-			p.cursor--
-		}
-	case tea.KeyDown:
-		if p.cursor < len(p.options)-1 {
-			p.cursor++
-		}
-	case tea.KeyEnter:
+// slashPickerAction reports what a keypress did to a slashPicker, so callers
+// can preview on a move without remembering where the cursor was before.
+type slashPickerAction int
+
+const (
+	pickerIgnored   slashPickerAction = iota // the key changed nothing
+	pickerMoved                              // the cursor moved to another row
+	pickerSubmitted                          // Enter on a row; the value is returned
+	pickerCancelled                          // Esc, or Enter on an empty list
+)
+
+// Update applies a keypress and returns the updated picker, what happened, and
+// the chosen value when the action is pickerSubmitted.
+func (p slashPicker) Update(msg tea.KeyPressMsg) (slashPicker, slashPickerAction, string) {
+	prev := p.cursor
+	switch k := msg.String(); {
+	case msg.Code == tea.KeyEnter:
 		if len(p.options) == 0 {
-			return p, "", false, true
+			return p, pickerCancelled, ""
 		}
-		return p, p.options[p.cursor].Value, true, false
-	case tea.KeyEscape:
-		return p, "", false, true
-	}
-	switch msg.String() {
-	case "ctrl+p", "k":
+		return p, pickerSubmitted, p.options[p.cursor].Value
+	case msg.Code == tea.KeyEscape:
+		return p, pickerCancelled, ""
+	case msg.Code == tea.KeyUp, k == "ctrl+p", k == "k":
 		if p.cursor > 0 {
 			p.cursor--
 		}
-	case "ctrl+n", "j":
+	case msg.Code == tea.KeyDown, k == "ctrl+n", k == "j":
 		if p.cursor < len(p.options)-1 {
 			p.cursor++
 		}
 	}
-	return p, "", false, false
+	if p.cursor != prev {
+		return p, pickerMoved, ""
+	}
+	return p, pickerIgnored, ""
 }
 
 // View renders the picker in the input row.
@@ -109,8 +115,9 @@ func (p slashPicker) View(r Renderer) string {
 	}
 
 	for i, opt := range p.options {
+		focused := i == p.cursor
 		cursor := "  "
-		if i == p.cursor {
+		if focused {
 			cursor = "❯ "
 		}
 
@@ -118,21 +125,16 @@ func (p slashPicker) View(r Renderer) string {
 		if opt.Value == p.current {
 			label += checkSuffix
 		}
-		labelPad := labelW - lipgloss.Width(label)
-		if labelPad < 0 {
-			labelPad = 0
-		}
+		line := cursor + label + strings.Repeat(" ", max(labelW-lipgloss.Width(label), 0))
 
-		if i == p.cursor {
+		if focused {
 			// Focused row: render the whole row in the highlight style so it reads
 			// as one selection block — keeps the eye on a single moving target.
-			line := cursor + label + strings.Repeat(" ", labelPad)
 			if opt.Detail != "" {
 				line += "   " + opt.Detail
 			}
 			b.WriteString(r.styles.InputPrompt.Render(line) + "\n")
 		} else {
-			line := cursor + label + strings.Repeat(" ", labelPad)
 			if opt.Detail != "" {
 				line += "   " + r.styles.ActionHints.Render(opt.Detail)
 			}
@@ -142,4 +144,12 @@ func (p slashPicker) View(r Renderer) string {
 	b.WriteString("\n")
 	b.WriteString(r.styles.ActionHints.Render("  ↑/↓ navigate · ↵ select · esc cancel"))
 	return b.String()
+}
+
+// openSlashPicker activates the slash-picker sub-TUI for the given command.
+func (m Model) openSlashPicker(cmd, title, subtitle string, options []slashOption, current string) (tea.Model, tea.Cmd) {
+	p := newSlashPicker(cmd, title, subtitle, options, current)
+	m.slashPicker = &p
+	m.state = stateSlashPicker
+	return m, nil
 }

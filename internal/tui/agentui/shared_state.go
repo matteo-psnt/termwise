@@ -12,15 +12,15 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
-// shell holds state shared across every TUI mode. Mode-specific state (the
-// active mode enum, pending tool, history search buffer, open slash picker)
-// stays on Model.
-type shell struct {
+// sharedState holds state shared across every TUI mode. Mode-specific state
+// (the active mode enum, pending tool, history search buffer, open slash
+// picker) stays on Model.
+type sharedState struct {
 	// Session config
 	provider      provider.AgentClient
 	providerName  string
 	modelID       string
-	mode          sessionMode
+	sessionMode   sessionMode
 	system        string
 	toolDefs      []provider.ToolDef
 	contextWindow int
@@ -91,10 +91,9 @@ type shell struct {
 
 	// Paths
 	cfgPath string
-	workDir string
 	// cwd is the full working directory, resolved once at construction. The
 	// @-dropdown lists relative to it on every keystroke, so it must not be an
-	// os.Getwd() call per key.
+	// os.Getwd() call per key. The status line shows its base name.
 	cwd string
 
 	// Always-on completion dropdowns

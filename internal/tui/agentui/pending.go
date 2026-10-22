@@ -3,7 +3,6 @@ package agentui
 import (
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/matteo-psnt/termwise/internal/allowlist"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
@@ -14,19 +13,6 @@ type pendingToolState struct {
 	picker    *picker
 }
 
-func newPendingToolState(tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) pendingToolState {
-	return pendingToolState{
-		toolCall:  tc,
-		remaining: remaining,
-		collected: collected,
-	}
-}
-
-func (p pendingToolState) withPicker(picker picker) pendingToolState {
-	p.picker = &picker
-	return p
-}
-
 func (p pendingToolState) result(content string, isError bool) provider.ToolResult {
 	return provider.ToolResult{
 		ToolCallID: p.toolCall.ID,
@@ -35,12 +21,12 @@ func (p pendingToolState) result(content string, isError bool) provider.ToolResu
 	}
 }
 
-func (m *Model) appendThreadEntries(entries ...ThreadEntry) {
-	m.thread = append(m.thread, entries...)
-}
-
 func (m *Model) setPendingTool(tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) {
-	m.pending = newPendingToolState(tc, remaining, collected)
+	m.pending = pendingToolState{
+		toolCall:  tc,
+		remaining: remaining,
+		collected: collected,
+	}
 }
 
 func (m *Model) clearPendingTool() {
@@ -62,7 +48,7 @@ func (m Model) approvePendingBash() (tea.Model, tea.Cmd) {
 	m.state = stateThinking
 	return m, tea.Batch(
 		m.spin.Tick,
-		m.wrapActiveGeneration(ExecuteBashCmd(m.ctx, tc, remaining, collected)),
+		m.wrapActiveGeneration(executeBashCmd(m.ctx, tc, remaining, collected)),
 	)
 }
 
@@ -74,6 +60,6 @@ func (m Model) resumePendingToolLoop(result provider.ToolResult) (tea.Model, tea
 	m.state = stateThinking
 	return m, tea.Batch(
 		m.spin.Tick,
-		m.wrapActiveGeneration(ProcessToolsCmd(m.ctx, remaining, collected, allowlist.NeedsApproval)),
+		m.wrapActiveGeneration(processToolsCmd(m.ctx, remaining, collected)),
 	)
 }

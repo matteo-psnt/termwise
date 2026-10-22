@@ -5,20 +5,15 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/matteo-psnt/termwise/internal/cliname"
 
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/keybinding"
-	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
@@ -38,6 +33,12 @@ const (
 	stateConfigEditor                 // /config two-level settings editor
 )
 
+// isBusy reports whether a turn is in flight: waiting on the model or on the
+// LLM safety judge. These are the states the spinner animates in.
+func (m Model) isBusy() bool {
+	return m.state == stateThinking || m.state == stateJudging
+}
+
 // histSearchState holds the state for Ctrl+R reverse search.
 type histSearchState struct {
 	query   string
@@ -46,10 +47,10 @@ type histSearchState struct {
 }
 
 // Model is the bubbletea model for the agent TUI. Shared, always-relevant
-// state lives on the embedded shell; mode-local state (the active mode enum,
+// state lives on the embedded sharedState; mode-local state (the active mode enum,
 // pending tool, history-search buffer, open slash picker) lives here.
 type Model struct {
-	shell
+	sharedState
 
 	state        tuiState
 	pending      pendingToolState
@@ -120,22 +121,17 @@ func newModel(cfg modelConfig) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
-	contextWindow := 32_000
-	if md := models.Find(cfg.providerName, cfg.modelID); md != nil && md.Context > 0 {
-		contextWindow = md.Context
-	}
-
-	ctx, cancel := newGenerationContext()
+	ctx, cancel := context.WithCancel(context.Background())
 	suggestionCtx, suggestionCancel := context.WithCancel(context.Background())
 
-	sh := shell{
+	sh := sharedState{
 		provider:         cfg.provider,
 		providerName:     cfg.providerName,
 		modelID:          cfg.modelID,
-		mode:             cfg.mode,
+		sessionMode:      cfg.mode,
 		system:           cfg.system,
 		toolDefs:         cfg.toolDefs,
-		contextWindow:    contextWindow,
+		contextWindow:    contextWindowFor(cfg.providerName, cfg.modelID),
 		llmJudge:         cfg.llmJudge,
 		suggestions:      cfg.suggestions,
 		effort:           cfg.effort,
@@ -157,7 +153,6 @@ func newModel(cfg modelConfig) Model {
 		sessionID:        cfg.sessionID,
 		exchanges:        cfg.exchanges,
 		cfgPath:          cfg.cfgPath,
-		workDir:          workDirBasename(),
 		cwd:              workDirFull(),
 		tuiTopRow:        cfg.initialCursorRow,
 	}
@@ -176,7 +171,7 @@ func newModel(cfg modelConfig) Model {
 		})
 	}
 
-	return Model{shell: sh}
+	return Model{sharedState: sh}
 }
 
 // Init implements tea.Model.
@@ -190,11 +185,11 @@ func (m Model) Init() tea.Cmd {
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	newModel, cmd := m.updateInner(msg)
-	if mm, ok := newModel.(Model); ok {
-		newModel = mm.clampAnchor()
+	next, cmd := m.updateInner(msg)
+	if mm, ok := next.(Model); ok {
+		next = mm.clampAnchor()
 	}
-	return newModel, cmd
+	return next, cmd
 }
 
 func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -224,7 +219,21 @@ func (m Model) updateInner(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	return m.updateViewportOnly(msg)
+	return m.forwardToComponents(msg)
+}
+
+// forwardToComponents passes on a message no handler claimed (cursor blink,
+// wheel scroll and the like): always to the input, and to the viewport in the
+// states that let the thread scroll.
+func (m Model) forwardToComponents(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var inputCmd tea.Cmd
+	m.input, inputCmd = m.input.Update(msg)
+	if m.state != stateIdle && !m.isBusy() && m.state != stateCommandProposal {
+		return m, inputCmd
+	}
+	var vpCmd tea.Cmd
+	m.vp, vpCmd = m.vp.Update(msg)
+	return m, tea.Batch(vpCmd, inputCmd)
 }
 
 // clampAnchor enforces tuiTopRow + totalViewHeight() <= m.height. When state
@@ -274,6 +283,8 @@ func (m *Model) clearShellCommand() {
 	m.shellCommand = ""
 }
 
+// exitShellCommand is the command the model proposed. Whatever it holds when
+// the TUI exits is handed to the shell widget as the result.
 func (m Model) exitShellCommand() string {
 	return m.shellCommand
 }
@@ -329,136 +340,6 @@ var modes = map[tuiState]mode{
 
 func modeFor(s tuiState) mode { return modes[s] }
 
-// applyModel swaps the active provider client to the given provider+model
-// in memory only. Existing conversation messages are preserved. Use this for
-// live preview while a picker is open; pair with persistActiveModel to write
-// the selection to disk on commit.
-func (m *Model) applyModel(providerName, modelID string) error {
-	if m.cfgPath == "" {
-		return fmt.Errorf("no config path available to resolve auth for %q", providerName)
-	}
-	cfg, exists, err := config.LoadConfig(m.cfgPath)
-	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	}
-	if !exists {
-		return fmt.Errorf("config file not found")
-	}
-	pc, ok := cfg.Providers[providerName]
-	if !ok {
-		return fmt.Errorf("provider %q has no config block — run `%s config` to add it", providerName, cliname.Name())
-	}
-	auth, err := config.ResolveAuth(providerName, pc)
-	if err != nil {
-		return fmt.Errorf("resolving auth for %q: %w", providerName, err)
-	}
-	client, err := config.NewClientFromResolved(config.ResolvedConfig{
-		ProviderName: providerName,
-		Model:        modelID,
-		APIKey:       auth.APIKey,
-		BaseURL:      auth.BaseURL,
-	})
-	if err != nil {
-		return fmt.Errorf("building client: %w", err)
-	}
-
-	m.provider = client
-	m.providerName = providerName
-	m.modelID = modelID
-	m.effort = pc.Effort
-	m.contextWindow = 32_000
-	if md := models.Find(providerName, modelID); md != nil && md.Context > 0 {
-		m.contextWindow = md.Context
-	}
-	return nil
-}
-
-// persistActiveModel writes the currently active provider+model to the config
-// file as the selected provider and that provider's default model.
-func (m *Model) persistActiveModel() {
-	if m.cfgPath == "" {
-		return
-	}
-	cfg, exists, err := config.LoadConfig(m.cfgPath)
-	if err != nil || !exists {
-		return
-	}
-	pc := cfg.Providers[m.providerName]
-	pc.Model = m.modelID
-	cfg.Providers[m.providerName] = pc
-	cfg.SelectedProvider = m.providerName
-	_ = config.SaveConfig(m.cfgPath, cfg)
-}
-
-// applyTheme rebuilds the renderer with the given theme name.
-func (m *Model) applyTheme(name string) {
-	m.themeName = name
-	m.renderer = newRenderer(m.hasDarkBg, theme.Get(name), m.renderWidth())
-	m.input.SetStyles(inputStyles(m.hasDarkBg, m.renderer.styles.Suggestion))
-}
-
-// openSlashPicker activates the slash-picker sub-TUI for the given command.
-func (m Model) handleInitialPrompt(prompt string) (tea.Model, tea.Cmd) {
-	if m.state != stateIdle {
-		return m, nil
-	}
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		return m, nil
-	}
-	m.initialPrompt = ""
-	if m.promptHistory != nil {
-		m.promptHistory.Push(prompt) //nolint:errcheck // Prompt history should not block sending a message.
-	}
-	return m.submitMessage(prompt)
-}
-
-func (m Model) submitCurrentInput() (tea.Model, tea.Cmd) {
-	// Backslash-Enter is the portable newline fallback: a trailing "\" turns
-	// Enter into a line break instead of a submit, for terminals that can't
-	// report a real Shift+Enter.
-	if v := m.input.Value(); strings.HasSuffix(v, "\\") {
-		m.input.SetValue(v[:len(v)-1] + "\n")
-		m.input.MoveToEnd()
-		return m, nil
-	}
-	text := strings.TrimSpace(m.input.Value())
-	if text == "" {
-		return m, nil
-	}
-	m.input.SetValue("")
-	m.histIdx = -1
-	m.histDraft = ""
-	if m.promptHistory != nil {
-		m.promptHistory.Push(text) //nolint:errcheck // Prompt history should not block sending a message.
-	}
-	if strings.HasPrefix(text, "/") {
-		return m.dispatchSlashCommand(text)
-	}
-	return m.submitMessage(text)
-}
-
-func (m Model) denyPendingBash() (tea.Model, tea.Cmd) {
-	m.appendThreadEntries(ToolResultEntry{Content: "User denied this command.", IsError: true})
-	m.refreshViewport()
-	return m.resumePendingToolLoop(m.pending.result("User denied this command.", true))
-}
-
-func (m Model) dismissCommandProposal() (tea.Model, tea.Cmd) {
-	m.clearShellCommand()
-	m.state = stateIdle
-	m.refreshViewport()
-	return m, m.startSuggestion()
-}
-
-// editCommandProposal loads the proposed command into the input for editing.
-func (m Model) editCommandProposal() (tea.Model, tea.Cmd) {
-	m.input.SetValue(m.shellCommand)
-	m.input.CursorEnd()
-	m.state = stateCommandProposalEdit
-	return m, nil
-}
-
 // workDirFull returns the absolute working directory, or "." when it cannot be
 // determined — ReadDir(".") then still lists something sensible.
 func workDirFull() string {
@@ -467,20 +348,4 @@ func workDirFull() string {
 		return "."
 	}
 	return wd
-}
-
-func workDirBasename() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	return filepath.Base(wd)
-}
-
-func (m Model) modelShortName() string {
-	md := models.Find(m.providerName, m.modelID)
-	if md == nil {
-		return m.modelID
-	}
-	return strings.TrimPrefix(md.Name, "Claude ")
 }

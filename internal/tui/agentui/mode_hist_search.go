@@ -12,7 +12,7 @@ import (
 type histSearchMode struct{}
 
 var histSearchKeys = keymap{
-	{keys: []string{"enter"}, run: Model.histSearchAccept},
+	{keys: []string{"enter"}, run: Model.exitHistSearch},
 	{keys: []string{"esc"}, run: Model.histSearchCancel},
 	{keys: []string{"up"}, run: Model.histSearchOlder},
 	{keys: []string{"down"}, run: Model.histSearchNewer},
@@ -40,8 +40,10 @@ func (histSearchMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cm
 	return m, nil
 }
 
-// histSearchAccept keeps the current match and returns to idle.
-func (m Model) histSearchAccept() (tea.Model, tea.Cmd) {
+// exitHistSearch returns to idle with the cursor at the end of the input. Enter
+// is bound to it directly: accepting keeps the shown match, which is already
+// in the input.
+func (m Model) exitHistSearch() (tea.Model, tea.Cmd) {
 	m.state = stateIdle
 	m.histSearch = histSearchState{}
 	m.input.CursorEnd()
@@ -50,12 +52,9 @@ func (m Model) histSearchAccept() (tea.Model, tea.Cmd) {
 
 // histSearchCancel aborts the search and restores the original draft.
 func (m Model) histSearchCancel() (tea.Model, tea.Cmd) {
-	m.state = stateIdle
 	m.input.SetValue(m.histDraft)
-	m.histSearch = histSearchState{}
 	m.histDraft = ""
-	m.input.CursorEnd()
-	return m, nil
+	return m.exitHistSearch()
 }
 
 // histSearchOlder moves to an older match (matches are newest-first).
