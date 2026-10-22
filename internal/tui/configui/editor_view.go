@@ -126,7 +126,7 @@ func (m editorModel) windowList(list string, cursorLine, footerLines int) string
 	}
 	// Two more for the scroll markers, which are always drawn while
 	// scrolling (blank when nothing is cut off) so the box keeps its height.
-	size := max(m.height-chrome-2, 3)
+	size := max(m.height-chrome-2, 1)
 	start, end := listWindow(len(lines), cursorLine, size)
 	var b strings.Builder
 	if start > 0 {
@@ -192,6 +192,16 @@ func (m editorModel) footer(row editorRow) string {
 		descLines = max(descLines, lipgloss.Height(lipgloss.Wrap(r.desc, width, "")))
 		hintLines = max(hintLines, lipgloss.Height(lipgloss.Wrap(m.effectiveHint(r), width, "")))
 	}
+	// On a short screen the steady-height padding would push the box past
+	// the bottom: leave room for the border, the blank line and at least one
+	// list row with its scroll markers, and cut the footer to what is left.
+	if m.height > 0 {
+		budget := max(m.height-2-1-3, 2)
+		if descLines+hintLines > budget {
+			hintLines = 1
+			descLines = max(budget-1, 1)
+		}
+	}
 	return m.styles.Dim.Render(fitBlock(row.desc, width, descLines)) + "\n" +
 		m.styles.Dim.Render(fitBlock(m.effectiveHint(row), width, hintLines))
 }
@@ -200,6 +210,9 @@ func (m editorModel) footer(row editorRow) string {
 // columns.
 func fitBlock(s string, width, lines int) string {
 	wrapped := strings.Split(lipgloss.Wrap(s, width, ""), "\n")
+	if len(wrapped) > lines {
+		wrapped = wrapped[:lines]
+	}
 	for len(wrapped) < lines {
 		wrapped = append(wrapped, "")
 	}

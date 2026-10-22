@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -212,5 +213,20 @@ func TestModelPickerDropsCancelledPickersResult(t *testing.T) {
 	m, _ = update(t, m, editorModelsMsg{provider: "anthropic", seq: m.modelPicker.seq, models: []provider.Model{{ID: "claude-y"}}})
 	if m.modelPicker.loading || len(m.modelPicker.models) != 1 {
 		t.Error("picker dropped its own result")
+	}
+}
+
+// The editor box must fit the screen at any cursor position, even on short,
+// narrow terminals where long descriptions wrap to many lines.
+func TestEditorFitsShortNarrowTerminals(t *testing.T) {
+	for _, size := range []struct{ w, h int }{{40, 12}, {20, 15}, {60, 10}, {80, 24}} {
+		m, _ := update(t, thinkingEditor(""), tea.WindowSizeMsg{Width: size.w, Height: size.h})
+		for i := range m.rows {
+			m.cursor = i
+			if h := lipgloss.Height(m.styles.Outer.Render(m.renderInner())); h > size.h {
+				t.Errorf("%dx%d, row %d: box is %d lines tall", size.w, size.h, i, h)
+				break
+			}
+		}
 	}
 }
