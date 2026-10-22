@@ -419,3 +419,71 @@ func TestQuestionMarkIsTextWhereTheUserIsTyping(t *testing.T) {
 		t.Error("? on an empty idle prompt should still open help")
 	}
 }
+
+func toolResultIDs(msg provider.Message) []string {
+	var ids []string
+	for _, tr := range msg.ToolResults {
+		ids = append(ids, tr.ToolCallID)
+	}
+	return ids
+}
+
+// A turn interrupted after the model asked for tools leaves calls with no
+// results; the next message must answer them or the provider rejects it.
+func TestSubmitAfterInterruptAnswersDanglingToolCalls(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	m := Model{
+		sharedState: sharedState{
+			ctx:              ctx,
+			cancel:           cancel,
+			suggestionCtx:    ctx,
+			suggestionCancel: func() {},
+			activeGeneration: 3,
+			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
+			messages: []provider.Message{
+				{Role: "user", Content: "list files"},
+				{Role: "assistant", ToolCalls: []provider.ToolCall{{ID: "a", Name: "bash"}, {ID: "b", Name: "read"}}},
+			},
+		},
+		state: stateThinking,
+	}
+	next, _ := thinkingMode{}.handleKey(m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	next, _ = next.(Model).submitMessage("never mind")
+	msgs := next.(Model).messages
+
+	if len(msgs) != 4 {
+		t.Fatalf("got %d messages, want prompt, calls, results, new prompt: %#v", len(msgs), msgs)
+	}
+	if ids := toolResultIDs(msgs[2]); len(ids) != 2 || ids[0] != "a" || ids[1] != "b" || !msgs[2].ToolResults[0].IsError {
+		t.Fatalf("results message = %#v, want error results for a and b", msgs[2])
+	}
+	if msgs[3].Content != "never mind" {
+		t.Fatalf("last message = %#v, want the new prompt", msgs[3])
+	}
+}
+
+// Calls answered only in part (the command tool ends the turn before the
+// calls after it) get the missing results added to the existing message.
+func TestCloseDanglingToolCallsCompletesPartialResults(t *testing.T) {
+	results := []provider.ToolResult{{ToolCallID: "cmd", Content: "ok"}}
+	in := []provider.Message{
+		{Role: "assistant", ToolCalls: []provider.ToolCall{{ID: "cmd"}, {ID: "x"}}},
+		{Role: "user", ToolResults: results},
+		{Role: "assistant", Content: "done"},
+	}
+	out := closeDanglingToolCalls(in)
+	if len(out) != 3 {
+		t.Fatalf("got %d messages, want 3", len(out))
+	}
+	if ids := toolResultIDs(out[1]); len(ids) != 2 || ids[0] != "cmd" || ids[1] != "x" {
+		t.Fatalf("results = %v, want cmd and x", ids)
+	}
+	if len(in[1].ToolResults) != 1 || len(results) != 1 {
+		t.Fatal("input was modified")
+	}
+
+	complete := closeDanglingToolCalls(out)
+	if len(complete) != 3 || len(complete[1].ToolResults) != 2 {
+		t.Fatalf("a complete history changed: %#v", complete)
+	}
+}
