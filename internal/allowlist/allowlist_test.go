@@ -715,3 +715,80 @@ func TestApprovalReasonAgreesWithNeedsApproval(t *testing.T) {
 		}
 	}
 }
+
+// Commands that would let a model run or write something without asking.
+// Each was auto-approved before the fix named in its case.
+func TestNeedsApprovalBlocksIndirectExecution(t *testing.T) {
+	t.Parallel()
+
+	needApproval := []string{
+		// Environment variables that make an allowed command run something else.
+		`GIT_EXTERNAL_DIFF=/tmp/x git diff`,
+		`GIT_PAGER=/tmp/x git log`,
+		`PAGER=/tmp/x git log`,
+		`LESSOPEN='|/tmp/x %s' less README.md`,
+		`LD_PRELOAD=/tmp/x.so ls`,
+		`DYLD_INSERT_LIBRARIES=/tmp/x.dylib ls`,
+		`BASH_ENV=/tmp/x ls`,
+		`PATH=/tmp:/usr/bin ls`,
+		`EDITOR=/tmp/x git log`,
+		// A path names a different binary than the allowlisted one.
+		`./ls`,
+		`/tmp/x/cat README.md`,
+		`bin/grep x .`,
+		`ls | ./cat`,
+		`xargs ./cat < files.txt`,
+		// Denied short flags hidden in a bundle, or long flags abbreviated.
+		`sort -uo /tmp/out file`,
+		`sort -uo/tmp/out file`,
+		`fd -Hx rm`,
+		`xxd -pr dump bin`,
+		`sort --out=/tmp/out file`,
+		`sort --compress-program=/tmp/x file`,
+		`sort --compress=/tmp/x file`,
+		// git options that run helpers or write files.
+		`git --exec-path=/tmp status`,
+		`git diff --output=/tmp/out`,
+		`git diff --ext-diff`,
+		`git log --output /tmp/out`,
+	}
+	for _, cmd := range needApproval {
+		if !NeedsApproval(cmd) {
+			t.Errorf("NeedsApproval(%q) = false, want true", cmd)
+		}
+	}
+
+	// Everyday read-only forms the fixes must not start prompting for.
+	staySafe := []string{
+		`LC_ALL=C rg termwise README.md`,
+		`LANG=C.UTF-8 ls`,
+		`TZ=UTC git log -1`,
+		`NO_COLOR=1 git diff`,
+		`COLUMNS=200 ls`,
+		`sort -u file`,
+		`sort -rn -k2 file`,
+		`fd -t f main`,
+		`less -R README.md`,
+		`git log --oneline -n 5`,
+		`git diff --stat`,
+		`git status -sb`,
+		`ls -la /tmp`,
+	}
+	for _, cmd := range staySafe {
+		if NeedsApproval(cmd) {
+			t.Errorf("NeedsApproval(%q) = true, want false (%s)", cmd, ApprovalReason(cmd))
+		}
+	}
+}
+
+// The rules are embedded, so a malformed file is a build defect. It must
+// never reach users as an empty rule set.
+func TestBuiltinRulesLoad(t *testing.T) {
+	rules, err := parseRules(builtinAllowlistYAML)
+	if err != nil {
+		t.Fatalf("embedded allowlist.yaml does not parse: %v", err)
+	}
+	if len(rules) < 50 {
+		t.Fatalf("embedded allowlist.yaml has %d rules; expected the full catalog", len(rules))
+	}
+}
