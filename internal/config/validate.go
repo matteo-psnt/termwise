@@ -62,7 +62,7 @@ func validateProviderConfig(name string, pc ProviderConfig) []string {
 
 	if pc.Model == "" {
 		errs = append(errs, fmt.Sprintf(
-			"missing model in [providers.%s]\n  Run: %s config model set <model>",
+			"missing model in [providers.%s]\n  Run `%s config model set <model>`",
 			name, cliname.Name(),
 		))
 	}

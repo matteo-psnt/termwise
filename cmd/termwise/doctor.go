@@ -73,7 +73,7 @@ func runDoctor(cfgPath string, online bool) bool {
 	// selected_provider set and known.
 	if cfg.SelectedProvider == "" {
 		fail("selected_provider: not set")
-		fmt.Printf("    → Run `%s config use <provider>`\n", cliname.Name())
+		hint("Run `%s config use <provider>`", cliname.Name())
 		return false
 	}
 	knownNames := config.ProviderNames()
@@ -82,14 +82,14 @@ func runDoctor(cfgPath string, online bool) bool {
 		pass("selected_provider: " + cfg.SelectedProvider)
 	} else {
 		fail("selected_provider: " + cfg.SelectedProvider + " (not a known provider)")
-		fmt.Printf("    → Supported: %s\n", strings.Join(knownNames, ", "))
+		hint("Supported: %s", strings.Join(knownNames, ", "))
 	}
 
 	// Provider block.
 	pc, hasBlock := cfg.Providers[cfg.SelectedProvider]
 	if !hasBlock {
 		fail("[providers." + cfg.SelectedProvider + "]: no config block")
-		fmt.Printf("    → Run `%s config` to configure it\n", cliname.Name())
+		hint("Run `%s config` to configure it", cliname.Name())
 		return allOk
 	}
 	pass("[providers." + cfg.SelectedProvider + "]: block found")
@@ -99,7 +99,7 @@ func runDoctor(cfgPath string, online bool) bool {
 		pass("Model: " + pc.Model)
 	} else {
 		fail("Model: not set")
-		hint("Run: %s config model set <model>", cliname.Name())
+		hint("Run `%s config model set <model>`", cliname.Name())
 	}
 
 	// Auth credentials.
