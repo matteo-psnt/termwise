@@ -34,6 +34,22 @@ func selectedProviderConfig(cfg config.FileConfig, name string) (string, config.
 	return name, pc, nil
 }
 
+// effectiveProviderConfig is selectedProviderConfig over the config the
+// runtime would run with — the env-only fallback and TERMWISE_* overrides
+// included — so commands that talk to the provider test what `tw` uses
+// rather than only what the file says.
+func effectiveProviderConfig(name string) (string, config.ProviderConfig, error) {
+	cfgPath, _, _, err := loadConfigFile()
+	if err != nil {
+		return "", config.ProviderConfig{}, err
+	}
+	eff, err := config.LoadEffective(cfgPath)
+	if err != nil {
+		return "", config.ProviderConfig{}, err
+	}
+	return selectedProviderConfig(eff.File, name)
+}
+
 // showStatus prints msg on stderr as a transient status line and returns a
 // func that erases it, so the wait is visible but leaves nothing behind in
 // the output.
@@ -146,15 +162,11 @@ var configModelListCmd = &cobra.Command{
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
-		_, cfg, _, err := loadConfigFile()
-		if err != nil {
-			return err
-		}
 		var name string
 		if len(args) == 1 {
 			name = args[0]
 		}
-		name, pc, err := selectedProviderConfig(cfg, name)
+		name, pc, err := effectiveProviderConfig(name)
 		if err != nil {
 			return err
 		}
@@ -219,11 +231,7 @@ var configTestCmd = &cobra.Command{
 	Short:        "Test connectivity for the selected provider",
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		_, cfg, _, err := loadConfigFile()
-		if err != nil {
-			return err
-		}
-		name, pc, err := selectedProviderConfig(cfg, "")
+		name, pc, err := effectiveProviderConfig("")
 		if err != nil {
 			return err
 		}
