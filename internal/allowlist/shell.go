@@ -91,6 +91,9 @@ func validateAssignments(assigns []*syntax.Assign) error {
 		if assign == nil || assign.Append || assign.Naked || assign.Index != nil || assign.Array != nil || assign.Name == nil {
 			return fmt.Errorf("dynamic assignment requires approval")
 		}
+		if !harmlessEnvVar(assign.Name.Value) {
+			return fmt.Errorf("setting %s requires approval", assign.Name.Value)
+		}
 		if assign.Value == nil {
 			continue
 		}
@@ -99,6 +102,19 @@ func validateAssignments(assigns []*syntax.Assign) error {
 		}
 	}
 	return nil
+}
+
+// harmlessEnvVar reports whether a variable is safe to set in front of an
+// allowlisted command. A literal value is not enough: PAGER, GIT_EXTERNAL_DIFF,
+// LESSOPEN, LD_PRELOAD, BASH_ENV, PATH and many more make a read-only command
+// run whatever the value names. So this is an allow list of variables that
+// only change formatting or locale, and everything else needs approval.
+func harmlessEnvVar(name string) bool {
+	switch name {
+	case "LANG", "LANGUAGE", "TZ", "NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE", "COLUMNS", "LINES", "TERM":
+		return true
+	}
+	return strings.HasPrefix(name, "LC_")
 }
 
 func literalWord(word *syntax.Word) (string, bool) {
