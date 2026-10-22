@@ -85,17 +85,32 @@ func consumesSubcommandValue(valueFlags []string, token string) bool {
 	return false
 }
 
+// tokenMatchesDeniedFlag reports whether an argument turns on a denied flag,
+// in any of the spellings the tool's own parser would accept:
+//
+//   - a long flag exactly, with =value attached, or abbreviated: getopt_long
+//     takes any unambiguous prefix, so sort --out=f is sort --output=f;
+//   - a short flag on its own, with its value attached (-ofile), or inside a
+//     bundle (sort -uo f, fd -Hx rm). A bundle is scanned for the letter
+//     anywhere, which can also hit an attached value that merely contains it.
+//     That only costs an approval prompt, where missing a real flag would run
+//     the command unasked.
+//
+// Single-dash multi-letter flags (find's -delete) are whole words and only
+// match exactly.
 func tokenMatchesDeniedFlag(token, blocked string) bool {
 	if token == blocked {
 		return true
 	}
 	if strings.HasPrefix(blocked, "--") {
-		return strings.HasPrefix(token, blocked+"=")
+		name, _, _ := strings.Cut(token, "=")
+		return len(name) > 2 && strings.HasPrefix(name, "--") && strings.HasPrefix(blocked, name)
 	}
-	// "--" flags returned above, so this is a short flag like -o, which also
-	// matches with its value attached (-ofile).
-	if strings.HasPrefix(blocked, "-") && len(blocked) == 2 {
-		return strings.HasPrefix(token, blocked)
+	if len(blocked) == 2 && blocked[0] == '-' {
+		if len(token) < 2 || token[0] != '-' || token[1] == '-' {
+			return false
+		}
+		return strings.IndexByte(token[1:], blocked[1]) >= 0
 	}
 	return false
 }

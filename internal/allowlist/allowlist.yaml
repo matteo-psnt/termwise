@@ -66,7 +66,8 @@ rules:
   # ── Text processing ──────────────────────────────────────────────────────────
   - cmd: sort
     deny:
-      flags: [-o, --output]
+      # --compress-program runs the named program on temp files.
+      flags: [-o, --output, --compress-program]
   - cmd: uniq
   - cmd: cut
   - cmd: tr
@@ -151,7 +152,11 @@ rules:
         - help
         - version
     deny:
-      flags: [-c, --config-env]
+      # -c and --config-env set config such as core.fsmonitor or
+      # diff.external, which name programs git runs; --exec-path moves where
+      # git finds its helper programs; --ext-diff runs a configured external
+      # diff; --output writes the diff or log to a file.
+      flags: [-c, --config-env, --exec-path, --ext-diff, --output]
 
   # ── Go ──────────────────────────────────────────────────────────────────────
   - cmd: go
