@@ -173,6 +173,13 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m wizardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// ctrl+c quits from every step, including wizWorking, which takes no
+	// other keys while the fetch (up to 15s) is in flight.
+	if msg.String() == "ctrl+c" {
+		m.done = true
+		return m, tea.Quit
+	}
+
 	switch m.step {
 	case wizPickProvider:
 		return m.handlePickProviderKey(msg)
@@ -200,7 +207,7 @@ func (m wizardModel) handlePickProviderKey(msg tea.KeyPressMsg) (tea.Model, tea.
 		return m, nil
 	}
 	switch msg.String() {
-	case "q", "ctrl+c", "esc":
+	case "q", "esc":
 		m.done = true
 		return m, tea.Quit
 	case "enter", " ":
@@ -230,7 +237,7 @@ func (m wizardModel) handlePickAuthKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 		return m, nil
 	}
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "q":
 		m.done = true
 		return m, tea.Quit
 	case "b", "esc":
@@ -253,9 +260,6 @@ func (m wizardModel) handlePickAuthKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 
 func (m wizardModel) handleEnterValueKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "ctrl+c":
-		m.done = true
-		return m, tea.Quit
 	case "esc":
 		m.input.Blur()
 		m.inputErr = ""
@@ -290,7 +294,7 @@ func (m wizardModel) handlePickModelKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		return m, nil
 	}
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "q":
 		m.done = true
 		return m, tea.Quit
 	case "b", "esc":
@@ -308,7 +312,7 @@ func (m wizardModel) handlePickModelKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 
 func (m wizardModel) handleErrKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "q":
 		m.done = true
 		return m, tea.Quit
 	case "b", "esc":
