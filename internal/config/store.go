@@ -5,10 +5,14 @@ import (
 	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/cliname"
+	"github.com/matteo-psnt/termwise/internal/models"
 )
 
 // UseProvider sets the selected provider.
-// Returns an error if name is not in the known provider catalog.
+// Returns an error if name is not in the known provider catalog. A provider
+// with no config block gets one with its default env var and model, so the
+// config is runnable straight away rather than broken until auth and model
+// are set separately.
 func UseProvider(cfg *FileConfig, name string) error {
 	if !isKnownProvider(name) {
 		return fmt.Errorf(
@@ -17,6 +21,26 @@ func UseProvider(cfg *FileConfig, name string) error {
 		)
 	}
 	cfg.SelectedProvider = name
+	if _, ok := cfg.Providers[name]; !ok {
+		pc := ProviderConfig{Model: models.DefaultModel(name)}
+		if env := DefaultEnvVar(name); env != "" {
+			pc.Auth = "env"
+			pc.EnvVar = env
+		}
+		SetProvider(cfg, name, pc)
+	}
+	return nil
+}
+
+// SetBaseURL points a provider at a different server — an OpenAI-compatible
+// proxy, a remote Ollama. An empty url restores the provider's default.
+func SetBaseURL(cfg *FileConfig, providerName, url string) error {
+	if url != "" && !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		return fmt.Errorf("base URL %q must start with http:// or https://", url)
+	}
+	pc := cfg.Providers[providerName]
+	pc.BaseURL = url
+	SetProvider(cfg, providerName, pc)
 	return nil
 }
 

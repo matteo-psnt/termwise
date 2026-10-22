@@ -15,8 +15,12 @@ type Info struct {
 	// its only user-facing config knob is a base URL. UI flows skip the
 	// auth-method picker and prompt for a URL directly. True for self-hosted
 	// endpoints like Ollama.
-	NoAuth  bool
-	Factory Factory
+	NoAuth bool
+	// ServerURL is a NoAuth provider's default address in the form its users
+	// know it (http://localhost:11434), shown as the hint and placeholder
+	// when asking for one. Empty for hosted providers.
+	ServerURL string
+	Factory   Factory
 }
 
 var (

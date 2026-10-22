@@ -309,6 +309,9 @@ func openProgram(cfg openProgramConfig) (string, error) {
 				Content: "Config warnings:\n" + strings.Join(warnings, "\n"),
 			})
 		}
+		if notice := config.EnvOnlyNotice(cfg.cfgPath); notice != "" {
+			m.thread = append(m.thread, SystemEntry{Content: notice})
+		}
 	}
 
 	p := tea.NewProgram(m, programOpts...)

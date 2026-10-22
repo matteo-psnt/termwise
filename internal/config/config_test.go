@@ -506,3 +506,98 @@ func assertEqual(t *testing.T, label, want, got string) {
 		t.Errorf("%s: want %q, got %q", label, want, got)
 	}
 }
+
+func TestEnvOnlyNotice(t *testing.T) {
+	for _, p := range ProviderInfos() {
+		if p.DefaultEnvVar != "" {
+			t.Setenv(p.DefaultEnvVar, "")
+		}
+	}
+	missing := filepath.Join(t.TempDir(), "config.toml")
+
+	if got := EnvOnlyNotice(missing); got != "" {
+		t.Errorf("no file, no key: got %q, want empty", got)
+	}
+
+	t.Setenv("OPENAI_API_KEY", "sk-oai")
+	got := EnvOnlyNotice(missing)
+	if !strings.Contains(got, "OpenAI") || !strings.Contains(got, "$OPENAI_API_KEY") {
+		t.Errorf("env-only notice = %q, want it to name OpenAI and $OPENAI_API_KEY", got)
+	}
+
+	present := writeConfig(t, `selected_provider = "openai"`)
+	if got := EnvOnlyNotice(present); got != "" {
+		t.Errorf("config file exists: got %q, want empty", got)
+	}
+}
+
+func TestUseProviderFillsDefaultsForNewProvider(t *testing.T) {
+	var cfg FileConfig
+	if err := UseProvider(&cfg, "openai"); err != nil {
+		t.Fatal(err)
+	}
+	pc := cfg.Providers["openai"]
+	assertEqual(t, "Auth", "env", pc.Auth)
+	assertEqual(t, "EnvVar", "OPENAI_API_KEY", pc.EnvVar)
+	if pc.Model == "" {
+		t.Error("new provider block has no model")
+	}
+	if errs := Validate(cfg); len(errs) > 0 {
+		t.Errorf("config after a bare `use` is invalid: %v", errs)
+	}
+}
+
+func TestUseProviderKeepsExistingBlock(t *testing.T) {
+	cfg := FileConfig{Providers: map[string]ProviderConfig{
+		"openai": {Auth: "cmd", APIKeyCmd: "op read x", Model: "gpt-4o"},
+	}}
+	if err := UseProvider(&cfg, "openai"); err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t, "Auth", "cmd", cfg.Providers["openai"].Auth)
+	assertEqual(t, "Model", "gpt-4o", cfg.Providers["openai"].Model)
+}
+
+func TestSetBaseURLValidatesScheme(t *testing.T) {
+	var cfg FileConfig
+	if err := SetBaseURL(&cfg, "ollama", "gpu-box:11434"); err == nil {
+		t.Error("accepted a URL with no scheme")
+	}
+	if err := SetBaseURL(&cfg, "ollama", "http://gpu-box:11434"); err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t, "BaseURL", "http://gpu-box:11434", cfg.Providers["ollama"].BaseURL)
+	if err := SetBaseURL(&cfg, "ollama", ""); err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t, "BaseURL", "", cfg.Providers["ollama"].BaseURL)
+}
+
+func TestEnvOverridesProviderAndModel(t *testing.T) {
+	t.Setenv("GROQ_API_KEY", "sk-groq")
+	t.Setenv(EnvProvider, "groq")
+	t.Setenv(EnvModel, "llama-3.3-70b-versatile")
+	path := writeConfig(t, `
+selected_provider = "anthropic"
+
+[providers.anthropic]
+auth    = "env"
+env_var = "ANTHROPIC_API_KEY"
+model   = "claude-haiku-4-5-20251001"
+`)
+	_, rc, err := LoadAndResolve(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t, "ProviderName", "groq", rc.ProviderName)
+	assertEqual(t, "Model", "llama-3.3-70b-versatile", rc.Model)
+	assertEqual(t, "KeySource", "$GROQ_API_KEY", rc.KeySource)
+}
+
+func TestEnvOverrideRejectsUnknownProvider(t *testing.T) {
+	t.Setenv(EnvProvider, "nope")
+	path := writeConfig(t, `selected_provider = "anthropic"`)
+	if _, _, err := LoadAndResolve(path); err == nil || !strings.Contains(err.Error(), EnvProvider) {
+		t.Errorf("err = %v, want it to name %s", err, EnvProvider)
+	}
+}

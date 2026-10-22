@@ -123,3 +123,13 @@ providers:
   ollama:
     default_model: ""
     models: []
+
+  openrouter:
+    # OpenRouter serves hundreds of models under vendor/model IDs; the wizard
+    # lists them live. This default is only for the env-key-only fallback.
+    default_model: openai/gpt-4o-mini
+    models: []
+
+  lmstudio:
+    default_model: ""
+    models: []

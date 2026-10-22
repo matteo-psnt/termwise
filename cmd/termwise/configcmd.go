@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -13,10 +15,13 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
+	"github.com/matteo-psnt/termwise/internal/shellrc"
+	"github.com/matteo-psnt/termwise/internal/tty"
 	"github.com/matteo-psnt/termwise/internal/tui/configui"
 )
 
@@ -50,7 +55,17 @@ var configCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Warning: %s\n\nOpening file for repair — fix it and save, or delete it to start fresh.\n\n", err)
 			return editConfig()
 		}
-		return configui.Open(cfgPath, cfg, exists)
+		if !interactive() {
+			return fmt.Errorf("the setup screen needs a terminal — from a script, use `%[1]s config use <provider> [--model …]` (see `%[1]s config use --help`)",
+				cliname.Name())
+		}
+		if err := configui.Open(cfgPath, cfg, exists); err != nil {
+			return err
+		}
+		if !exists && configExists(cfgPath) && interactive() {
+			offerShellIntegration(os.Stdin, os.Stdout)
+		}
+		return nil
 	},
 }
 
@@ -70,12 +85,14 @@ var configShowCmd = &cobra.Command{
 		}
 		cfg, exists, err := config.LoadConfig(cfgPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: %s\n  Run `%s config --edit` to repair the file.\n", err, cliname.Name())
-			return nil
+			return fmt.Errorf("%w\n  Run `%s config --edit` to repair the file", err, cliname.Name())
 		}
 		if !exists {
-			fmt.Fprintf(os.Stderr, "No configuration file — run `%s config` to set up.\n", cliname.Name())
-			return nil
+			if notice := config.EnvOnlyNotice(cfgPath); notice != "" {
+				fmt.Fprintln(os.Stderr, notice)
+				return nil
+			}
+			return fmt.Errorf("no configuration file — run `%s config` to set up", cliname.Name())
 		}
 		if asJSON {
 			return printShowJSON(cfgPath, cfg)
@@ -89,14 +106,85 @@ var configShowCmd = &cobra.Command{
 // ---------------------------------------------------------------------------
 
 var configUseCmd = &cobra.Command{
-	Use:          "use <provider>",
-	Short:        "Set the active provider",
-	Example:      fmt.Sprintf("  %[1]s config use anthropic\n  %[1]s config use openai", cliname.Name()),
+	Use:   "use <provider>",
+	Short: "Set the active provider, optionally with its model, auth and address",
+	Long: `Set the active provider. A provider that has no config yet gets its
+default API key env var and recommended model, so this one command is enough
+to get a working setup; the flags change any of those in the same step.`,
+	Example: fmt.Sprintf("  %[1]s config use anthropic\n"+
+		"  %[1]s config use openai --model gpt-4o --env-var WORK_OPENAI_KEY\n"+
+		"  %[1]s config use openrouter --cmd \"op read op://dev/openrouter/key\"\n"+
+		"  %[1]s config use ollama --base-url http://gpu-box:11434 --model qwen3:14b", cliname.Name()),
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		model, _ := cmd.Flags().GetString("model")
+		envVar, _ := cmd.Flags().GetString("env-var")
+		keyCmd, _ := cmd.Flags().GetString("cmd")
+		baseURL, _ := cmd.Flags().GetString("base-url")
+		if envVar != "" && keyCmd != "" {
+			return fmt.Errorf("--env-var and --cmd cannot be used together")
+		}
 		return mutateConfig(func(cfg *config.FileConfig) error {
-			return config.UseProvider(cfg, args[0])
+			if err := config.UseProvider(cfg, name); err != nil {
+				return err
+			}
+			if model != "" {
+				if err := config.SetModel(cfg, name, model); err != nil {
+					return err
+				}
+			}
+			if envVar != "" {
+				if err := config.SetAuthEnv(cfg, name, envVar); err != nil {
+					return err
+				}
+			}
+			if keyCmd != "" {
+				if err := config.SetAuthCmd(cfg, name, keyCmd); err != nil {
+					return err
+				}
+			}
+			if baseURL != "" {
+				return config.SetBaseURL(cfg, name, baseURL)
+			}
+			return nil
+		})
+	},
+}
+
+// ---------------------------------------------------------------------------
+// tw config base-url
+// ---------------------------------------------------------------------------
+
+var configBaseURLCmd = &cobra.Command{
+	Use:   "base-url <url>",
+	Short: "Point the selected provider at a different server",
+	Long: `Point the selected provider at a different server: an OpenAI-compatible
+proxy such as LiteLLM, a self-hosted model server, or Ollama on another
+machine. --reset goes back to the provider's default address.`,
+	Example: fmt.Sprintf("  %[1]s config base-url http://gpu-box:11434\n"+
+		"  %[1]s config base-url https://litellm.internal/v1\n"+
+		"  %[1]s config base-url --reset", cliname.Name()),
+	Args:         cobra.MaximumNArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		reset, _ := cmd.Flags().GetBool("reset")
+		if reset == (len(args) == 1) {
+			return fmt.Errorf("give a URL, or --reset to use the provider's default")
+		}
+		url := ""
+		if len(args) == 1 {
+			url = args[0]
+		}
+		return mutateActiveProvider(func(cfg *config.FileConfig, name string) error {
+			if err := config.SetBaseURL(cfg, name, url); err != nil {
+				return err
+			}
+			if url != "" && !provider.HasNoAuth(name) {
+				fmt.Fprintf(os.Stderr, "Note: your %s API key will be sent to %s.\n", name, url)
+			}
+			return nil
 		})
 	},
 }
@@ -176,7 +264,8 @@ var configModelSetCmd = &cobra.Command{
 			models, err := config.ListProviderModels(ctx, name, pc)
 			fmt.Fprintf(os.Stderr, "\r\033[K")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not validate model for %s — saved anyway\n", name)
+				fmt.Fprintf(os.Stderr, "Warning: could not check the model against %s — saved anyway\n  %s\n",
+					name, strings.ReplaceAll(err.Error(), "\n", "\n  "))
 				return nil
 			}
 			for _, m := range models {
@@ -226,16 +315,62 @@ var configAuthShellCmd = &cobra.Command{
 }
 
 var configAuthKeychainCmd = &cobra.Command{
-	Use:          "keychain <ENTRY>",
-	Short:        "Use a macOS Keychain entry for auth",
-	Example:      fmt.Sprintf("  %[1]s config auth keychain termwise-anthropic", cliname.Name()),
-	Args:         cobra.ExactArgs(1),
+	Use:   "keychain [ENTRY]",
+	Short: "Use a system keychain entry for auth",
+	Long: `Use a system keychain entry (service "termwise") for auth.
+
+--store saves a key first: it is read from stdin, or asked for without echo
+when stdin is a terminal, so it never lands in your shell history. With
+--store the entry name defaults to termwise-<provider>.`,
+	Example: fmt.Sprintf("  %[1]s config auth keychain --store\n"+
+		"  op read op://dev/anthropic/key | %[1]s config auth keychain --store\n"+
+		"  %[1]s config auth keychain termwise-anthropic", cliname.Name()),
+	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		store, _ := cmd.Flags().GetBool("store")
+		if !store && len(args) == 0 {
+			return fmt.Errorf("name the keychain entry, or pass --store to save a key")
+		}
 		return mutateActiveProvider(func(cfg *config.FileConfig, name string) error {
-			return config.SetAuthKeychain(cfg, name, args[0])
+			entry := config.DefaultKeychainEntry(name)
+			if len(args) == 1 {
+				entry = args[0]
+			}
+			if store {
+				key, err := readSecret(fmt.Sprintf("%s API key: ", name))
+				if err != nil {
+					return err
+				}
+				if err := config.StoreKeychainEntry(entry, key); err != nil {
+					return fmt.Errorf("saving to keychain: %w", err)
+				}
+			}
+			return config.SetAuthKeychain(cfg, name, entry)
 		})
 	},
+}
+
+// readSecret reads one secret: from a piped stdin as-is, or from a terminal
+// without echoing it.
+func readSecret(prompt string) (string, error) {
+	var raw []byte
+	var err error
+	if tty.IsTerminal(os.Stdin) {
+		fmt.Fprint(os.Stderr, prompt)
+		raw, err = term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(os.Stderr)
+	} else {
+		raw, err = io.ReadAll(os.Stdin)
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading key: %w", err)
+	}
+	key := strings.TrimSpace(string(raw))
+	if key == "" {
+		return "", fmt.Errorf("no key given")
+	}
+	return key, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -284,18 +419,23 @@ var configTestCmd = &cobra.Command{
 
 var configDoctorCmd = &cobra.Command{
 	Use:          "doctor",
-	Short:        "Report configuration issues",
+	Short:        "Check configuration, provider connection and shell setup",
 	SilenceUsage: true,
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
 		cfgPath, err := config.DefaultConfigPath()
 		if err != nil {
 			return err
 		}
-		if !runDoctor(cfgPath) {
+		offline, _ := cmd.Flags().GetBool("offline")
+		if !runDoctor(cfgPath, !offline) {
 			os.Exit(1)
 		}
 		return nil
 	},
+}
+
+func init() {
+	configDoctorCmd.Flags().Bool("offline", false, "Skip the check that contacts the provider")
 }
 
 // ---------------------------------------------------------------------------
@@ -433,25 +573,34 @@ func sortedProviderNames(cfg config.FileConfig) []string {
 }
 
 // runDoctor prints a per-check diagnostic report and returns true if all pass.
-func runDoctor(cfgPath string) bool {
+// online adds a live request to the provider. Warnings point at something
+// worth knowing but do not fail the run.
+func runDoctor(cfgPath string, online bool) bool {
 	allOk := true
 	pass := func(msg string) { fmt.Printf("  ✓ %s\n", msg) }
 	fail := func(msg string) { fmt.Printf("  ✗ %s\n", msg); allOk = false }
+	warn := func(msg string) { fmt.Printf("  ! %s\n", msg) }
+	hint := func(format string, a ...any) { fmt.Printf("    → "+format+"\n", a...) }
 
 	fmt.Printf("Config: %s\n\n", cfgPath)
 
 	cfg, exists, parseErr := config.LoadConfig(cfgPath)
 	if parseErr != nil {
 		fail("File: " + parseErr.Error())
-		fmt.Printf("    → Run `%s config --edit` to repair\n", cliname.Name())
+		hint("Run `%s config --edit` to repair", cliname.Name())
 		return false
 	}
-	if !exists {
-		fail("File: not found")
-		fmt.Printf("    → Run `%s config` to create it\n", cliname.Name())
+	if exists {
+		pass("File: exists and valid TOML")
+	} else if zero, ok := config.ZeroConfigDefaults(); ok {
+		pass("File: none — running from an API key in the environment")
+		hint("Run `%s config` to save a config", cliname.Name())
+		cfg = zero
+	} else {
+		fail("File: not found, and no provider API key in the environment")
+		hint("Run `%s config` to set up", cliname.Name())
 		return false
 	}
-	pass("File: exists and valid TOML")
 
 	// selected_provider set and known.
 	if cfg.SelectedProvider == "" {
@@ -482,10 +631,11 @@ func runDoctor(cfgPath string) bool {
 		pass("Model: " + pc.Model)
 	} else {
 		fail("Model: not set")
-		fmt.Println("    → Run: tw config model set <model>")
+		hint("Run: %s config model set <model>", cliname.Name())
 	}
 
 	// Auth credentials.
+	authOk := true
 	if provider.HasNoAuth(cfg.SelectedProvider) {
 		pass("Auth: not required")
 	} else {
@@ -495,8 +645,28 @@ func runDoctor(cfgPath string) bool {
 			pass("Auth: " + authDesc + " — key resolved")
 		} else {
 			fail("Auth: " + authDesc + " — " + authErr.Error())
+			authOk = false
 		}
 	}
+
+	// Connection: the only check that proves the key and URL actually work.
+	switch {
+	case !online:
+		warn("Connection: skipped (--offline)")
+	case !known || !authOk:
+		warn("Connection: skipped until the problems above are fixed")
+	default:
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		err := config.CheckProviderConnectivity(ctx, cfg.SelectedProvider, pc)
+		cancel()
+		if err == nil {
+			pass("Connection: " + cfg.SelectedProvider + " answered")
+		} else {
+			fail("Connection: " + strings.ReplaceAll(err.Error(), "\n", "\n    "))
+		}
+	}
+
+	doctorShell(pass, warn, hint, cfg)
 
 	// Settings — validated through the central registry so each SettingDef owns its rules.
 	for _, def := range config.Settings {
@@ -677,6 +847,16 @@ func init() {
 
 	configShowCmd.Flags().Bool("json", false, "Output as JSON")
 
+	configUseCmd.ValidArgs = config.ProviderNames()
+	configUseCmd.Flags().String("model", "", "Model to use")
+	configUseCmd.Flags().String("env-var", "", "Read the API key from this environment variable")
+	configUseCmd.Flags().String("cmd", "", "Run this command to get the API key")
+	configUseCmd.Flags().String("base-url", "", "Server address, for proxies and self-hosted servers")
+
+	configBaseURLCmd.Flags().Bool("reset", false, "Use the provider's default address")
+
+	configAuthKeychainCmd.Flags().Bool("store", false, "Save a key to the keychain first")
+
 	configModelCmd.AddCommand(configModelListCmd)
 	configModelCmd.AddCommand(configModelSetCmd)
 
@@ -686,9 +866,56 @@ func init() {
 
 	configCmd.AddCommand(configShowCmd)
 	configCmd.AddCommand(configUseCmd)
+	configCmd.AddCommand(configBaseURLCmd)
 	configCmd.AddCommand(configModelCmd)
 	configCmd.AddCommand(configAuthCmd)
 	configCmd.AddCommand(configTestCmd)
 	configCmd.AddCommand(configDoctorCmd)
 	configCmd.AddCommand(configRemoveCmd)
+}
+
+// doctorShell checks the pieces outside the config file that `tw` and the
+// keybinding depend on. Everything here is a warning: termwise itself works
+// without the integration.
+func doctorShell(pass, warn func(string), hint func(string, ...any), cfg config.FileConfig) {
+	if _, err := exec.LookPath("termwise"); err == nil {
+		pass("PATH: termwise found")
+	} else {
+		warn("PATH: termwise is not on your PATH, so `tw` and the shell integration cannot run it")
+		if exe, err := os.Executable(); err == nil {
+			hint("Add %s to PATH in your shell's startup file", displayPath(filepath.Dir(exe)))
+		}
+	}
+
+	shell, ok := shellrc.Detect()
+	loaded := os.Getenv(cliname.EnvVar) != ""
+	switch {
+	case loaded:
+		pass("Shell integration: loaded in this shell")
+	case !ok:
+		warn("Shell integration: not loaded, and $SHELL is not zsh, bash or fish")
+	default:
+		path, err := shellrc.Path(shell)
+		if err != nil {
+			break
+		}
+		if installed, _ := shellrc.Installed(path); installed {
+			warn("Shell integration: in " + displayPath(path) + " but not loaded in this shell")
+			hint("Open a new terminal, or run `exec %s`", shell)
+		} else {
+			warn("Shell integration: not installed — no `tw` command or keybinding")
+			hint("Run `termwise init --install`")
+		}
+	}
+
+	binding := cfg.Settings.Keybinding
+	if binding == "" {
+		binding = "^T"
+	}
+	if binding == "^T" {
+		if _, err := exec.LookPath("fzf"); err == nil {
+			warn("Keybinding: fzf is installed, and its shell keybindings also use Ctrl+T — whichever loads last wins")
+			hint("Pick another key in `%s config` → Keybinding", cliname.Name())
+		}
+	}
 }

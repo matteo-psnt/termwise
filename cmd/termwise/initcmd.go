@@ -2,32 +2,67 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/keybinding"
+	"github.com/matteo-psnt/termwise/internal/shellrc"
 )
 
 var initCmd = &cobra.Command{
-	Use:   "init <shell>",
+	Use:   "init [shell]",
 	Short: "Output shell integration setup code",
 	Long: `Output shell integration setup for your rc file.
 
 Add to ~/.zshrc:
   eval "$(termwise init zsh)"
 
-	Add to ~/.bashrc:
+Add to ~/.bashrc:
   eval "$(termwise init bash)"
 
-  Add to ~/.config/fish/config.fish:
-  termwise init fish | source`,
-	Args:          cobra.ExactArgs(1),
+Add to ~/.config/fish/config.fish:
+  termwise init fish | source
+
+Or let termwise add the line for you with --install, which picks the shell
+from $SHELL when none is given. --uninstall removes the line again.`,
+	Example:       "  termwise init zsh\n  termwise init --install\n  termwise init --uninstall",
+	Args:          cobra.MaximumNArgs(1),
 	SilenceUsage:  true,
 	SilenceErrors: true,
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		install, _ := cmd.Flags().GetBool("install")
+		uninstall, _ := cmd.Flags().GetBool("uninstall")
+		if install && uninstall {
+			return fmt.Errorf("--install and --uninstall cannot be used together")
+		}
+
+		var shell string
+		if len(args) == 1 {
+			shell = args[0]
+		} else if install || uninstall {
+			detected, ok := shellrc.Detect()
+			if !ok {
+				return fmt.Errorf("could not tell your shell from $SHELL — name it: termwise init --install zsh|bash|fish")
+			}
+			shell = detected
+		} else {
+			return fmt.Errorf("name a shell: termwise init zsh|bash|fish (or termwise init --install)")
+		}
+
+		switch {
+		case install:
+			return installShellIntegration(shell)
+		case uninstall:
+			return uninstallShellIntegration(shell)
+		}
+
 		kb := readKeybinding()
-		switch args[0] {
+		switch shell {
 		case "zsh":
 			fmt.Print(zshSetup(kb))
 		case "bash":
@@ -35,10 +70,80 @@ Add to ~/.zshrc:
 		case "fish":
 			fmt.Print(fishSetup(kb))
 		default:
-			return fmt.Errorf("unsupported shell %q — supported: zsh, bash, fish", args[0])
+			return fmt.Errorf("unsupported shell %q — supported: zsh, bash, fish", shell)
 		}
 		return nil
 	},
+}
+
+func init() {
+	initCmd.Flags().Bool("install", false, "Add the integration to your shell's startup file")
+	initCmd.Flags().Bool("uninstall", false, "Remove the line --install added")
+}
+
+func installShellIntegration(shell string) error {
+	path, err := shellrc.Path(shell)
+	if err != nil {
+		return err
+	}
+	added, err := shellrc.Install(path, shell)
+	if err != nil {
+		return fmt.Errorf("updating %s: %w", path, err)
+	}
+	if !added {
+		fmt.Printf("%s already loads the termwise integration.\n", displayPath(path))
+		return nil
+	}
+	fmt.Printf("Added to %s:\n  %s\n\nOpen a new terminal, or run `exec %s`, to get `tw` and %s.\n",
+		displayPath(path), shellrc.Line(shell), shell, keybinding.Label(readKeybinding()))
+	warnIfNotOnPath()
+	return nil
+}
+
+func uninstallShellIntegration(shell string) error {
+	path, err := shellrc.Path(shell)
+	if err != nil {
+		return err
+	}
+	removed, err := shellrc.Remove(path)
+	if err != nil {
+		return fmt.Errorf("updating %s: %w", path, err)
+	}
+	if removed {
+		fmt.Printf("Removed the termwise integration from %s.\n", displayPath(path))
+		return nil
+	}
+	if ok, _ := shellrc.Installed(path); ok {
+		return fmt.Errorf("%s loads termwise with a line --install did not add — remove it by hand", displayPath(path))
+	}
+	fmt.Printf("%s does not load the termwise integration.\n", displayPath(path))
+	return nil
+}
+
+// warnIfNotOnPath catches the go-install case: the rc line and the tw
+// function both call `termwise` by name, so neither works until it resolves.
+func warnIfNotOnPath() {
+	if _, err := exec.LookPath("termwise"); err == nil {
+		return
+	}
+	dir := "the directory termwise is in"
+	if exe, err := os.Executable(); err == nil {
+		dir = displayPath(filepath.Dir(exe))
+	}
+	fmt.Fprintf(os.Stderr, "\nwarning: termwise is not on your PATH, so the line above will fail.\n"+
+		"  Add %s to PATH in your shell's startup file.\n", dir)
+}
+
+// displayPath shortens a path under $HOME to ~/… for messages.
+func displayPath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if rel, err := filepath.Rel(home, path); err == nil && !strings.HasPrefix(rel, "..") {
+		return filepath.Join("~", rel)
+	}
+	return path
 }
 
 // readKeybinding returns the configured keybinding, defaulting to "^T".
@@ -72,7 +177,7 @@ tw() {
                 command termwise explain --session-id "$$" "$@"
                 return
                 ;;
-            config|init|help|--help|-h)
+            config|init|help|--help|-h|completion|__complete|__completeNoDesc)
                 command termwise "$@"
                 return
                 ;;
@@ -99,6 +204,11 @@ _termwise_widget() {
     zle reset-prompt
 }
 zle -N _termwise_widget
+# Complete tw like termwise, when completion is set up. The tw function passes
+# __complete through, which is what the completion script calls.
+if (( $+functions[compdef] )); then
+    compdef tw=termwise
+fi
 # Remove any previous _termwise_widget binding before applying the configured one.
 while IFS= read -r _tw_key; do
     bindkey -r "$_tw_key"
@@ -114,7 +224,7 @@ func bashSetup(binding string) string {
 export TERMWISE_INVOKED_AS=tw
 tw() {
     case "$1" in
-        ask|config|init|help|--help|-h)
+        ask|config|init|help|--help|-h|completion|__complete|__completeNoDesc)
             command termwise "$@"
             return
             ;;
@@ -143,6 +253,15 @@ _termwise_widget() {
         READLINE_POINT=${#READLINE_LINE}
     fi
 }
+# Complete tw like termwise. bash-completion loads scripts lazily, so ask it
+# for termwise's now; without bash-completion this is a no-op.
+if declare -F _completion_loader >/dev/null; then
+    _completion_loader termwise 2>/dev/null
+fi
+if declare -F __start_termwise >/dev/null; then
+    complete -o default -F __start_termwise tw
+fi
+
 # Remove any previous _termwise_widget binding before applying the configured one.
 while IFS= read -r _tw_key; do
     bind -r "\"$_tw_key\"" 2>/dev/null
@@ -164,7 +283,7 @@ func fishSetup(binding string) string {
 set -gx TERMWISE_INVOKED_AS tw
 function tw --description 'termwise'
     switch "$argv[1]"
-        case ask config init help --help -h
+        case ask config init help --help -h completion __complete __completeNoDesc
             command termwise $argv
             return
         case explain
@@ -177,6 +296,8 @@ function tw --description 'termwise'
         command termwise --session-id $fish_pid
     end
 end
+
+complete -c tw -w termwise
 
 function _termwise_widget
     # string collect keeps a multi-line result as one value; $pipestatus[2] is

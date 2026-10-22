@@ -25,12 +25,17 @@ type ResolvedConfig struct {
 	Model        string
 	APIKey       string
 	BaseURL      string
+	// KeySource says where APIKey came from, for error messages:
+	// "$OPENAI_API_KEY", "api_key_cmd", or a keychain entry. Empty when the
+	// provider needs no key.
+	KeySource string
 }
 
 // ResolvedAuth holds the resolved API key and an optional base URL override.
 type ResolvedAuth struct {
 	APIKey  string
 	BaseURL string
+	Source  string // see ResolvedConfig.KeySource
 }
 
 // Resolve derives a ResolvedConfig from a FileConfig.
@@ -60,8 +65,13 @@ func Resolve(cfg FileConfig) (ResolvedConfig, error) {
 		Model:        pc.Model,
 		APIKey:       auth.APIKey,
 		BaseURL:      auth.BaseURL,
+		KeySource:    auth.Source,
 	}, nil
 }
+
+// ErrNoConfig is returned when there is no config file and no API key in the
+// environment to fall back on. Interactive entry points use it to start setup.
+var ErrNoConfig = errors.New("no configuration found")
 
 // LoadAndResolve loads, validates, and resolves the config at path, returning
 // both the raw FileConfig (for settings access) and the resolved runtime config.
@@ -73,15 +83,42 @@ func LoadAndResolve(path string) (FileConfig, ResolvedConfig, error) {
 	if !exists {
 		var ok bool
 		cfg, ok = ZeroConfigDefaults()
-		if !ok {
-			return FileConfig{}, ResolvedConfig{}, fmt.Errorf("no configuration found — run `%s config` to set up", cliname.Name())
+		if !ok && os.Getenv(EnvProvider) == "" {
+			return FileConfig{}, ResolvedConfig{}, fmt.Errorf("%w — run `%s config` to set up, or export an API key such as ANTHROPIC_API_KEY or OPENAI_API_KEY", ErrNoConfig, cliname.Name())
 		}
+	}
+	if err := applyEnvOverrides(&cfg); err != nil {
+		return FileConfig{}, ResolvedConfig{}, err
 	}
 	if err := ValidateForRuntime(cfg); err != nil {
 		return FileConfig{}, ResolvedConfig{}, err
 	}
 	rc, err := Resolve(cfg)
 	return cfg, rc, err
+}
+
+// Environment variables that override the config file for one run, so a
+// script or CI job can pick a provider and model without writing config.
+const (
+	EnvProvider = "TERMWISE_PROVIDER"
+	EnvModel    = "TERMWISE_MODEL"
+)
+
+// applyEnvOverrides applies TERMWISE_PROVIDER and TERMWISE_MODEL to cfg in
+// memory. A provider with no block in the file gets the same defaults
+// `config use` would write.
+func applyEnvOverrides(cfg *FileConfig) error {
+	if name := os.Getenv(EnvProvider); name != "" {
+		if err := UseProvider(cfg, name); err != nil {
+			return fmt.Errorf("%s: %w", EnvProvider, err)
+		}
+	}
+	if model := os.Getenv(EnvModel); model != "" && cfg.SelectedProvider != "" {
+		pc := cfg.Providers[cfg.SelectedProvider]
+		pc.Model = model
+		SetProvider(cfg, cfg.SelectedProvider, pc)
+	}
+	return nil
 }
 
 // LoadRuntimeConfig loads the config file, falls back to zero-config defaults
@@ -115,33 +152,56 @@ func ZeroConfigDefaults() (FileConfig, bool) {
 	return FileConfig{}, false
 }
 
+// EnvOnlyNotice describes the zero-config fallback when it is in effect:
+// there is no file at path, so the provider comes from an API key in the
+// environment. It returns "" when a config file exists or no key is set.
+func EnvOnlyNotice(path string) string {
+	if _, err := os.Stat(path); err == nil {
+		return ""
+	}
+	cfg, ok := ZeroConfigDefaults()
+	if !ok {
+		return ""
+	}
+	name := cfg.SelectedProvider
+	pc := cfg.Providers[name]
+	return fmt.Sprintf("No config file — using %s via $%s (model %s). Run `%s config` to save or change this.",
+		displayName(name), pc.EnvVar, pc.Model, cliname.Name())
+}
+
 // NewClientFromResolved constructs a provider client from a ResolvedConfig.
 // Auth credentials must already be resolved in rc.
 func NewClientFromResolved(rc ResolvedConfig) (provider.AgentClient, error) {
-	return provider.NewClient(rc.ProviderName, provider.Config{
+	client, err := provider.NewClient(rc.ProviderName, provider.Config{
 		APIKey:  rc.APIKey,
 		Model:   rc.Model,
 		BaseURL: rc.BaseURL,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return withErrorHints(client, rc), nil
 }
 
 // ResolveAuth returns the resolved API key and base URL for a provider config.
 // If the configured auth method fails, it tries the provider's well-known env
 // var as a fallback before returning an error.
 func ResolveAuth(name string, pc ProviderConfig) (ResolvedAuth, error) {
-	key, err := resolveKey(name, pc)
+	key, source, err := resolveKey(name, pc)
 	if err != nil {
 		if fb := DefaultEnvVar(name); fb != "" {
 			if v := os.Getenv(fb); v != "" {
-				return ResolvedAuth{APIKey: v, BaseURL: pc.BaseURL}, nil
+				return ResolvedAuth{APIKey: v, BaseURL: pc.BaseURL, Source: "$" + fb}, nil
 			}
 		}
 		return ResolvedAuth{}, err
 	}
-	return ResolvedAuth{APIKey: key, BaseURL: pc.BaseURL}, nil
+	return ResolvedAuth{APIKey: key, BaseURL: pc.BaseURL, Source: source}, nil
 }
 
-func resolveKey(name string, pc ProviderConfig) (string, error) {
+// resolveKey returns the API key for pc and a description of where it came
+// from.
+func resolveKey(name string, pc ProviderConfig) (string, string, error) {
 	method := pc.Auth
 	if method == "" {
 		method = "env"
@@ -155,44 +215,44 @@ func resolveKey(name string, pc ProviderConfig) (string, error) {
 		}
 		if envVar == "" {
 			// Provider requires no key (e.g. Ollama local).
-			return "", nil
+			return "", "", nil
 		}
 		val := os.Getenv(envVar)
 		if val == "" {
-			return "", fmt.Errorf("environment variable %q is not set", envVar)
+			return "", "", fmt.Errorf("environment variable %q is not set", envVar)
 		}
-		return val, nil
+		return val, "$" + envVar, nil
 
 	case "cmd":
 		if pc.APIKeyCmd == "" {
-			return "", fmt.Errorf("auth is \"cmd\" but api_key_cmd is not set in [providers.%s]", name)
+			return "", "", fmt.Errorf("auth is \"cmd\" but api_key_cmd is not set in [providers.%s]", name)
 		}
 		out, err := exec.Command("sh", "-c", pc.APIKeyCmd).Output()
 		if err != nil {
 			var exitErr *exec.ExitError
 			if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-				return "", fmt.Errorf("%s", strings.TrimSpace(string(exitErr.Stderr)))
+				return "", "", fmt.Errorf("%s", strings.TrimSpace(string(exitErr.Stderr)))
 			}
-			return "", fmt.Errorf("api_key_cmd failed: %w", err)
+			return "", "", fmt.Errorf("api_key_cmd failed: %w", err)
 		}
 		key := strings.TrimSpace(string(out))
 		if key == "" {
-			return "", fmt.Errorf("api_key_cmd produced no output")
+			return "", "", fmt.Errorf("api_key_cmd produced no output")
 		}
-		return key, nil
+		return key, "api_key_cmd", nil
 
 	case "keychain":
 		if pc.KeychainEntry == "" {
-			return "", fmt.Errorf("auth is \"keychain\" but keychain_entry is not set in [providers.%s]", name)
+			return "", "", fmt.Errorf("auth is \"keychain\" but keychain_entry is not set in [providers.%s]", name)
 		}
 		key, err := keyring.Get("termwise", pc.KeychainEntry)
 		if err != nil {
-			return "", fmt.Errorf("keychain entry %q not found", pc.KeychainEntry)
+			return "", "", fmt.Errorf("keychain entry %q not found — run `%s config` to store a key", pc.KeychainEntry, cliname.Name())
 		}
-		return key, nil
+		return key, fmt.Sprintf("keychain entry %q", pc.KeychainEntry), nil
 
 	default:
-		return "", fmt.Errorf(
+		return "", "", fmt.Errorf(
 			"unknown auth %q in [providers.%s]\n  Valid methods: env, cmd, keychain",
 			method, name,
 		)
@@ -204,9 +264,16 @@ func DefaultKeychainEntry(providerName string) string {
 	return "termwise-" + providerName
 }
 
-// StoreKeychain writes an API key into the macOS Keychain under the termwise service.
+// StoreKeychain writes an API key into the system keychain under the termwise
+// service, at the provider's default entry.
 func StoreKeychain(providerName, apiKey string) error {
-	return keyring.Set("termwise", DefaultKeychainEntry(providerName), apiKey)
+	return StoreKeychainEntry(DefaultKeychainEntry(providerName), apiKey)
+}
+
+// StoreKeychainEntry writes an API key into the system keychain under the
+// termwise service.
+func StoreKeychainEntry(entry, apiKey string) error {
+	return keyring.Set("termwise", entry, apiKey)
 }
 
 // ListProviderModels returns the models available for the given provider config.
@@ -240,9 +307,18 @@ func CheckProviderConnectivity(ctx context.Context, name string, pc ProviderConf
 }
 
 func newProviderClientWithAuth(name string, pc ProviderConfig, auth ResolvedAuth) (provider.AgentClient, error) {
-	return provider.NewClient(name, provider.Config{
+	client, err := provider.NewClient(name, provider.Config{
 		APIKey:  auth.APIKey,
 		Model:   pc.Model,
 		BaseURL: auth.BaseURL,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return withErrorHints(client, ResolvedConfig{
+		ProviderName: name,
+		Model:        pc.Model,
+		BaseURL:      auth.BaseURL,
+		KeySource:    auth.Source,
+	}), nil
 }

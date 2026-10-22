@@ -1,0 +1,83 @@
+package main
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+
+	"github.com/matteo-psnt/termwise/internal/cliname"
+	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/keybinding"
+	"github.com/matteo-psnt/termwise/internal/shellrc"
+	"github.com/matteo-psnt/termwise/internal/tty"
+	"github.com/matteo-psnt/termwise/internal/tui/configui"
+)
+
+// resolveTUIRuntimeOrSetup is resolveTUIRuntime for entry points a person is
+// sitting at: with nothing configured it runs setup and carries on, rather
+// than exiting with instructions to go and run setup.
+func resolveTUIRuntimeOrSetup() (tuiRuntime, error) {
+	rt, err := resolveTUIRuntime()
+	if !errors.Is(err, config.ErrNoConfig) || !interactive() {
+		return rt, err
+	}
+	cfgPath, perr := config.DefaultConfigPath()
+	if perr != nil {
+		return rt, err
+	}
+	if serr := configui.Open(cfgPath, config.FileConfig{}, false); serr != nil {
+		return tuiRuntime{}, serr
+	}
+	if !configExists(cfgPath) {
+		return tuiRuntime{}, fmt.Errorf("setup was not finished — run `%s config` when you're ready", cliname.Name())
+	}
+	offerShellIntegration(os.Stdin, os.Stdout)
+	return resolveTUIRuntime()
+}
+
+func interactive() bool {
+	return tty.IsTerminal(os.Stdin) && tty.IsTerminal(os.Stdout)
+}
+
+func configExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// offerShellIntegration asks to add the integration to the user's rc file
+// once setup has produced a config. It stays quiet when the integration is
+// already loaded or already in the file, and when it cannot tell the shell.
+func offerShellIntegration(in io.Reader, out io.Writer) {
+	if os.Getenv(cliname.EnvVar) != "" {
+		return
+	}
+	shell, ok := shellrc.Detect()
+	if !ok {
+		return
+	}
+	path, err := shellrc.Path(shell)
+	if err != nil {
+		return
+	}
+	if installed, _ := shellrc.Installed(path); installed {
+		_, _ = fmt.Fprintf(out, "Open a new terminal to get `tw` and %s — %s already loads them.\n",
+			keybinding.Label(readKeybinding()), displayPath(path))
+		return
+	}
+
+	_, _ = fmt.Fprintf(out, "\nAdd the `tw` command and the %s shortcut to %s? [Y/n] ",
+		keybinding.Label(readKeybinding()), displayPath(path))
+	answer, _ := bufio.NewReader(in).ReadString('\n')
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "", "y", "yes":
+		if err := installShellIntegration(shell); err != nil {
+			_, _ = fmt.Fprintf(out, "Could not update %s: %v\n", displayPath(path), err)
+		}
+	default:
+		_, _ = fmt.Fprintf(out, "Skipped. To add it later, run `termwise init --install`, or add this line to %s:\n  %s\n",
+			displayPath(path), shellrc.Line(shell))
+	}
+}
