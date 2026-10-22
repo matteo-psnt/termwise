@@ -39,17 +39,23 @@ func (m editorModel) renderInner() string {
 }
 
 func (m editorModel) renderNormal() string {
-	var b strings.Builder
+	// Rows are rendered into their own builder first and split into lines,
+	// so the list can be windowed by screen line: section headers take two.
+	var b, list strings.Builder
+	cursorLine := 0
 
 	for i, row := range m.rows {
 		focused := i == m.cursor
+		if focused {
+			cursorLine = strings.Count(list.String(), "\n")
+		}
 
 		switch row.kind {
 		case rowSectionHeader:
 			if i > 0 {
-				b.WriteString("\n")
+				list.WriteString("\n")
 			}
-			b.WriteString("  " + m.styles.Title.Render(row.label) + "\n")
+			list.WriteString("  " + m.styles.Title.Render(row.label) + "\n")
 
 		case rowProvHeader:
 			prefix := m.rowPrefix(focused)
@@ -58,9 +64,9 @@ func (m editorModel) renderNormal() string {
 				indicator = " " + m.connIndicator()
 			}
 			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render(row.provider) + indicator + "\n")
+				list.WriteString(prefix + m.styles.Selected.Render(row.provider) + indicator + "\n")
 			} else {
-				b.WriteString(prefix + row.provider + indicator + "\n")
+				list.WriteString(prefix + row.provider + indicator + "\n")
 			}
 
 		case rowProvModel:
@@ -68,36 +74,68 @@ func (m editorModel) renderNormal() string {
 			if val == "" {
 				val = "(none)"
 			}
-			m.renderRow(&b, focused, "     Model   ", val)
+			m.renderRow(&list, focused, "     Model   ", val)
 
 		case rowProvEffort:
-			m.renderRow(&b, focused, "     Effort  ", displayEffort(m.cfg.Providers[row.provider].Effort))
+			m.renderRow(&list, focused, "     Effort  ", displayEffort(m.cfg.Providers[row.provider].Effort))
 
 		case rowProvAuth:
-			m.renderRow(&b, focused, "     Auth    ", describeAuth(row.provider, m.cfg.Providers[row.provider]))
+			m.renderRow(&list, focused, "     Auth    ", describeAuth(row.provider, m.cfg.Providers[row.provider]))
 
 		case rowAddProvider:
 			prefix := m.rowPrefix(focused)
 			if focused {
-				b.WriteString(prefix + m.styles.Selected.Render("+ Add provider") + "\n")
+				list.WriteString(prefix + m.styles.Selected.Render("+ Add provider") + "\n")
 			} else {
-				b.WriteString(prefix + m.styles.Dim.Render("+ Add provider") + "\n")
+				list.WriteString(prefix + m.styles.Dim.Render("+ Add provider") + "\n")
 			}
 
 		case rowSetting:
 			def := config.Settings[row.settingIdx]
-			m.renderRow(&b, focused, fmt.Sprintf("%-*s", settingLabelWidth(), def.Label), displayValue(def, m.cfg))
+			m.renderRow(&list, focused, fmt.Sprintf("%-*s", settingLabelWidth(), def.Label), displayValue(def, m.cfg))
 		}
 	}
 
-	b.WriteString("\n")
+	var footer string
 	if len(m.rows) > 0 && m.cursor < len(m.rows) {
 		row := m.rows[m.cursor]
 		width := m.footerWidth()
-		b.WriteString(m.styles.Dim.Render(padToWidth(row.desc, width)) + "\n")
-		b.WriteString(m.styles.Dim.Render(padToWidth(m.effectiveHint(row), width)))
+		footer = m.styles.Dim.Render(padToWidth(row.desc, width)) + "\n" +
+			m.styles.Dim.Render(padToWidth(m.effectiveHint(row), width))
 	}
 
+	b.WriteString(m.windowList(list.String(), cursorLine, lipgloss.Height(footer)))
+	b.WriteString("\n" + footer)
+	return b.String()
+}
+
+// windowList cuts the rendered list down to the lines that fit on screen
+// above a footer footerLines tall, scrolled to keep cursorLine visible. Short
+// terminals otherwise lose the bottom rows, and with them the footer, off the
+// screen.
+func (m editorModel) windowList(list string, cursorLine, footerLines int) string {
+	lines := strings.Split(strings.TrimSuffix(list, "\n"), "\n")
+	// The box's border, the blank line under the list, and the footer.
+	chrome := 2 + 1 + footerLines
+	if m.height <= 0 || len(lines) <= m.height-chrome {
+		return list
+	}
+	// Two more for the scroll markers, which are always drawn while
+	// scrolling (blank when nothing is cut off) so the box keeps its height.
+	size := max(m.height-chrome-2, 3)
+	start, end := listWindow(len(lines), cursorLine, size)
+	var b strings.Builder
+	if start > 0 {
+		b.WriteString(m.styles.Dim.Render("  ↑ more"))
+	}
+	b.WriteString("\n")
+	for _, line := range lines[start:end] {
+		b.WriteString(line + "\n")
+	}
+	if end < len(lines) {
+		b.WriteString(m.styles.Dim.Render("  ↓ more"))
+	}
+	b.WriteString("\n")
 	return b.String()
 }
 
