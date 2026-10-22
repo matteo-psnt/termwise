@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
-	"github.com/matteo-psnt/termwise/internal/shellrc"
 )
 
 // ---------------------------------------------------------------------------
@@ -167,34 +165,27 @@ func runDoctor(cfgPath string, online bool) bool {
 // keybinding depend on. Everything here is a warning: termwise itself works
 // without the integration.
 func doctorShell(pass, warn func(string), hint func(string, ...any), cfg config.FileConfig) {
-	if _, err := exec.LookPath("termwise"); err == nil {
+	if ok, dir := termwiseOnPath(); ok {
 		pass("PATH: termwise found")
 	} else {
 		warn("PATH: termwise is not on your PATH, so `tw` and the shell integration cannot run it")
-		if exe, err := os.Executable(); err == nil {
-			hint("Add %s to PATH in your shell's startup file", config.ShortenHome(filepath.Dir(exe)))
+		if dir != "" {
+			hint("Add %s to PATH in your shell's startup file", dir)
 		}
 	}
 
-	shell, ok := shellrc.Detect()
-	loaded := os.Getenv(cliname.EnvVar) != ""
-	switch {
-	case loaded:
+	state, shell, path := detectShellIntegration()
+	switch state {
+	case integrationLoaded:
 		pass("Shell integration: loaded in this shell")
-	case !ok:
+	case integrationUnsupported:
 		warn("Shell integration: not loaded, and $SHELL is not zsh, bash or fish")
-	default:
-		path, err := shellrc.Path(shell)
-		if err != nil {
-			break
-		}
-		if installed, _ := shellrc.Installed(path); installed {
-			warn("Shell integration: in " + config.ShortenHome(path) + " but not loaded in this shell")
-			hint("Open a new terminal, or run `exec %s`", shell)
-		} else {
-			warn("Shell integration: not installed — no `tw` command or keybinding")
-			hint("Run `termwise init --install`")
-		}
+	case integrationInstalled:
+		warn("Shell integration: in " + config.ShortenHome(path) + " but not loaded in this shell")
+		hint("Open a new terminal, or run `exec %s`", shell)
+	case integrationNotInstalled:
+		warn("Shell integration: not installed — no `tw` command or keybinding")
+		hint("Run `termwise init --install`")
 	}
 
 	if kb := cfg.Settings.Keybinding; kb == "" || kb == config.DefaultKeybinding {

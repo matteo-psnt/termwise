@@ -46,20 +46,13 @@ func interactive() bool {
 // once setup has produced a config. It stays quiet when the integration is
 // already loaded or already in the file, and when it cannot tell the shell.
 func offerShellIntegration(in io.Reader, out io.Writer) {
-	if os.Getenv(cliname.EnvVar) != "" {
-		return
-	}
-	shell, ok := shellrc.Detect()
-	if !ok {
-		return
-	}
-	path, err := shellrc.Path(shell)
-	if err != nil {
-		return
-	}
-	if installed, _ := shellrc.Installed(path); installed {
+	state, shell, path := detectShellIntegration()
+	if state == integrationInstalled {
 		_, _ = fmt.Fprintf(out, "Open a new terminal to get `tw` and %s — %s already loads them.\n",
 			keybinding.Label(readKeybinding()), config.ShortenHome(path))
+		return
+	}
+	if state != integrationNotInstalled {
 		return
 	}
 
