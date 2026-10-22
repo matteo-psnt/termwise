@@ -106,3 +106,14 @@ func TestSearchToolDescriptionsListSkippedDirs(t *testing.T) {
 		}
 	}
 }
+
+func TestBroadGlobStillSkipsVCSDirs(t *testing.T) {
+	grepDir(t, map[string]string{".git/config": "foo\n", "a.txt": "foo\n"})
+	globOut, _ := glob(context.Background(), map[string]any{"pattern": "*"})
+	grepOut, _ := grep(context.Background(), map[string]any{"pattern": "foo", "glob": "*"})
+	for name, out := range map[string]string{"glob": globOut, "grep": grepOut} {
+		if strings.Contains(out, ".git") || !strings.Contains(out, "a.txt") {
+			t.Errorf("%s with glob \"*\": got %q", name, out)
+		}
+	}
+}

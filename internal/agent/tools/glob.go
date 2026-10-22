@@ -83,12 +83,7 @@ func glob(ctx context.Context, input map[string]any) (string, bool) {
 	}
 
 	args := []string{"--files", "--hidden"}
-	for _, dir := range vcsExcludeGlobs {
-		args = append(args, "--glob", "!"+dir)
-	}
-	for _, p := range splitGlobPatterns(pattern) {
-		args = append(args, "--glob", p)
-	}
+	args = append(args, globArgs(splitGlobPatterns(pattern))...)
 	args = append(args, absPath)
 
 	lines, runErr := runRipgrep(ctx, args)

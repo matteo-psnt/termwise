@@ -168,9 +168,6 @@ func grep(ctx context.Context, input map[string]any) (string, bool) {
 
 func buildGrepArgs(input map[string]any, pattern, outputMode, absPath string) []string {
 	args := []string{"--hidden", "--max-columns", ripgrepMaxColumns}
-	for _, dir := range vcsExcludeGlobs {
-		args = append(args, "--glob", "!"+dir)
-	}
 	if b, _ := input["multiline"].(bool); b {
 		args = append(args, "-U", "--multiline-dotall")
 	}
@@ -181,11 +178,8 @@ func buildGrepArgs(input map[string]any, pattern, outputMode, absPath string) []
 	if t, _ := input["type"].(string); t != "" {
 		args = append(args, "--type", t)
 	}
-	if g, _ := input["glob"].(string); g != "" {
-		for _, p := range splitGlobPatterns(g) {
-			args = append(args, "--glob", p)
-		}
-	}
+	g, _ := input["glob"].(string)
+	args = append(args, globArgs(splitGlobPatterns(g))...)
 	// Use -e for dash-prefixed patterns to avoid rg flag parsing.
 	if strings.HasPrefix(pattern, "-") {
 		args = append(args, "-e", pattern)
