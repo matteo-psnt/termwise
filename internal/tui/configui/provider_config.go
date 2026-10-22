@@ -2,7 +2,9 @@ package configui
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -19,7 +21,9 @@ func serverURL(providerName string) string {
 // must never reach the config file: the entry name is always the provider's
 // default, the one StoreKeychain writes to.
 func buildProviderConfigFromAuthInput(providerName, method, inputVal, fallback string) config.ProviderConfig {
-	val := inputVal
+	// Pasted values often carry a trailing newline or stray spaces, which
+	// would end up in the env var name, command or URL.
+	val := strings.TrimSpace(inputVal)
 	if val == "" {
 		val = fallback
 	}
@@ -47,6 +51,10 @@ func buildProviderConfigFromAuthInput(providerName, method, inputVal, fallback s
 // directly rather than read back from the keychain, and stored only once the
 // provider accepts it, so a mistyped key never replaces one that works.
 func listModelsFor(ctx context.Context, providerName string, pc config.ProviderConfig, apiKey string) ([]provider.Model, error) {
+	apiKey = strings.TrimSpace(apiKey)
+	if pc.AuthMethod() == "keychain" && apiKey == "" {
+		return nil, errors.New("API key cannot be empty")
+	}
 	var list []provider.Model
 	var err error
 	if pc.AuthMethod() == "keychain" {

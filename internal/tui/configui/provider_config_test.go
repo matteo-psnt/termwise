@@ -27,6 +27,10 @@ func TestBuildProviderConfigFromAuthInput(t *testing.T) {
 			config.ProviderConfig{Auth: "cmd", APIKeyCmd: "pass show k"}},
 		{"keychain never stores the raw key", "openai", "keychain", "sk-secret", "",
 			config.ProviderConfig{Auth: "keychain", KeychainEntry: config.DefaultKeychainEntry("openai")}},
+		{"typed value trimmed", "openai", "cmd", "  pass show k \n", "",
+			config.ProviderConfig{Auth: "cmd", APIKeyCmd: "pass show k"}},
+		{"blank value falls back", "openai", "env", "   ", "OPENAI_API_KEY",
+			config.ProviderConfig{Auth: "env", EnvVar: "OPENAI_API_KEY"}},
 		{"no-auth default URL omitted", "ollama", "env", "", "http://localhost:11434",
 			config.ProviderConfig{Auth: "env"}},
 		{"no-auth custom URL kept", "ollama", "env", "http://box:11434", "http://localhost:11434",
@@ -113,5 +117,24 @@ func TestAuthEditorBadKeyKeepsKeychain(t *testing.T) {
 	}
 	if got := stored(); got != "sk-old" {
 		t.Errorf("keychain = %q after a rejected key, want the old key kept", got)
+	}
+}
+
+func TestKeychainKeyTrimmedAndNeverBlank(t *testing.T) {
+	stored := mockKeychain(t, "sk-old")
+	srv := fakeOpenAI(t, "sk-good")
+	pc := config.ProviderConfig{Auth: "keychain", KeychainEntry: config.DefaultKeychainEntry("openai"), BaseURL: srv.URL}
+
+	if _, err := listModelsFor(context.Background(), "openai", pc, "  \n"); err == nil {
+		t.Error("blank key accepted")
+	}
+	if got := stored(); got != "sk-old" {
+		t.Fatalf("keychain = %q after a blank key, want the old key kept", got)
+	}
+	if _, err := listModelsFor(context.Background(), "openai", pc, " sk-good\n"); err != nil {
+		t.Fatalf("pasted key with whitespace: %v", err)
+	}
+	if got := stored(); got != "sk-good" {
+		t.Errorf("keychain = %q, want the trimmed key", got)
 	}
 }
