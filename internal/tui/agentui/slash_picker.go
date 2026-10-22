@@ -56,8 +56,21 @@ func newSlashPicker(cmd, title, subtitle string, options []slashOption, current 
 	}
 }
 
-// Update returns (updated, chosenValue, submitted, cancelled).
-func (p slashPicker) Update(msg tea.KeyPressMsg) (slashPicker, string, bool, bool) {
+// slashPickerAction reports what a keypress did to a slashPicker, so callers
+// can preview on a move without remembering where the cursor was before.
+type slashPickerAction int
+
+const (
+	pickerIgnored   slashPickerAction = iota // the key changed nothing
+	pickerMoved                              // the cursor moved to another row
+	pickerSubmitted                          // Enter on a row; the value is returned
+	pickerCancelled                          // Esc, or Enter on an empty list
+)
+
+// Update applies a keypress and returns the updated picker, what happened, and
+// the chosen value when the action is pickerSubmitted.
+func (p slashPicker) Update(msg tea.KeyPressMsg) (slashPicker, slashPickerAction, string) {
+	prev := p.cursor
 	switch msg.Code {
 	case tea.KeyUp:
 		if p.cursor > 0 {
@@ -69,11 +82,11 @@ func (p slashPicker) Update(msg tea.KeyPressMsg) (slashPicker, string, bool, boo
 		}
 	case tea.KeyEnter:
 		if len(p.options) == 0 {
-			return p, "", false, true
+			return p, pickerCancelled, ""
 		}
-		return p, p.options[p.cursor].Value, true, false
+		return p, pickerSubmitted, p.options[p.cursor].Value
 	case tea.KeyEscape:
-		return p, "", false, true
+		return p, pickerCancelled, ""
 	}
 	switch msg.String() {
 	case "ctrl+p", "k":
@@ -85,7 +98,10 @@ func (p slashPicker) Update(msg tea.KeyPressMsg) (slashPicker, string, bool, boo
 			p.cursor++
 		}
 	}
-	return p, "", false, false
+	if p.cursor != prev {
+		return p, pickerMoved, ""
+	}
+	return p, pickerIgnored, ""
 }
 
 // View renders the picker in the input row.
