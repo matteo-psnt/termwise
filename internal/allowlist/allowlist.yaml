@@ -120,9 +120,6 @@ rules:
     deny:
       # -o/--out writes the result to a file.
       flags: [-o, --out]
-  - cmd: fx
-
-  # ── System info ─────────────────────────────────────────────────────────────
   - cmd: pwd
   - cmd: which
   - cmd: whereis
@@ -234,12 +231,13 @@ rules:
       subcommands: [list, ls, info, outdated, audit, why]
     deny:
       flags: [--fix]
-  - cmd: yarn
-    parse:
-      subcommand_value_flags: [--cwd]
-      bool_flags: [-s, --silent, --json, --no-progress]
-    allow:
-      subcommands: [list, info, outdated, why, check, licenses]
+
+  # Not here on purpose: tools whose behaviour the repository itself can
+  # turn into running code, so a cloned repo could run anything through an
+  # "allowed" command. yarn runs .yarnrc.yml's yarnPath; bundle evaluates the
+  # Gemfile (Ruby); uv tree can resolve and build packages and rewrite
+  # uv.lock; fx evaluates JavaScript arguments. (ruff check is allowed only
+  # with --no-fix, because pyproject can set fix = true.)
 
   # ── Python package tools ─────────────────────────────────────────────────────
   - cmd: pip
@@ -258,15 +256,6 @@ rules:
     deny:
       # --python re-runs pip under the named interpreter.
       flags: [--python]
-  - cmd: uv
-    parse:
-      subcommand_value_flags: [--config-file, --directory, --project]
-      bool_flags: [-q, --quiet, -v, --verbose, --offline, --no-cache, --no-progress]
-    allow:
-      subcommands: [tree]
-    deny:
-      # --python picks the interpreter uv runs to query the environment.
-      flags: [-p, --python]
   - cmd: poetry
     parse:
       bool_flags: [-q, --quiet, -v, -vv, -vvv, --verbose, -n, --no-interaction, --no-ansi, --ansi]
@@ -276,7 +265,7 @@ rules:
       subcommands: [show, check, version, export]
     deny:
       flags: [-o, --output]
-  - cmd: ruff
+  - cmd: ruff   # check must carry --no-fix (validateRuffCommand)
     parse:
       bool_flags: [-q, --quiet, -v, --verbose, -s, --silent]
     allow:
@@ -286,9 +275,6 @@ rules:
       flags: [--fix, --fix-only, --unsafe-fixes, --add-noqa, -o, --output-file]
 
   # ── Ruby / Bundler ───────────────────────────────────────────────────────────
-  - cmd: bundle
-    allow:
-      subcommands: [list, show, check, outdated, version, info]
   - cmd: gem
     allow:
       subcommands: [list, info, outdated, contents, dependency, search, spec]

@@ -881,7 +881,7 @@ func TestUnknownGlobalFlagHidesSubcommand(t *testing.T) {
 		`cargo -q tree`,
 		`pip -q list`,
 		`pip --disable-pip-version-check list`,
-		`ruff -q check .`,
+		`ruff -q check --no-fix .`,
 		`dpkg -l`,
 		`brew --version`,
 		`rpm -qa`,
@@ -948,7 +948,6 @@ func TestConfigFlagsThatRunProgramsNeedApproval(t *testing.T) {
 		`docker --context prod ps`,
 		`cargo metadata --format-version 1`,
 		`pip list --outdated`,
-		`uv tree --depth 1`,
 		`podman ps -a`,
 	)
 }
@@ -1041,9 +1040,9 @@ func TestWritingFlagsOnAllowedToolsNeedApproval(t *testing.T) {
 		`ss -D /tmp/dump`,
 	)
 	requireSafe(t,
-		`ruff check .`,
+		`ruff check --no-fix .`,
 		`ruff check --no-fix --statistics .`,
-		`ruff check --select E501 src`,
+		`ruff check --no-fix --select E501 src`,
 		`ruff --version`,
 		`poetry version`,
 		`poetry version -s`,
@@ -1283,7 +1282,7 @@ func TestEverydayReadOnlyCommandsStayApproved(t *testing.T) {
 		`pip list --outdated`,
 		`pip show requests`,
 		`poetry show --tree`,
-		`ruff check src`,
+		`ruff check --no-fix src`,
 		`docker ps -a`,
 		`docker logs --tail 50 web`,
 		`kubectl get pods -n kube-system`,
@@ -1299,4 +1298,26 @@ func TestEverydayReadOnlyCommandsStayApproved(t *testing.T) {
 			t.Errorf("NeedsApproval(%q) = true, want false (%s)", cmd, ApprovalReason(cmd))
 		}
 	}
+}
+
+// Tools a repository can turn into running its own code, and ruff check
+// without --no-fix, need approval however they are invoked.
+func TestRepoDrivenToolsNeedApproval(t *testing.T) {
+	t.Parallel()
+	requireApproval(t,
+		`yarn list`,
+		`yarn info react`,
+		`bundle list`,
+		`bundle show rails`,
+		`uv tree`,
+		`uv tree --depth 1`,
+		`fx data.json`,
+		`ruff check .`,
+		`ruff check src`,
+		`ruff -q check .`,
+	)
+	requireSafe(t,
+		`ruff check --no-fix .`,
+		`ruff --version`,
+	)
 }

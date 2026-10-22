@@ -15,6 +15,7 @@ func defaultValidators() map[string]validator {
 		"hostname":   validateHostnameCommand,
 		"nvidia-smi": validateNvidiaSmiCommand,
 		"poetry":     validatePoetryCommand,
+		"ruff":       validateRuffCommand,
 		"sysctl":     validateSysctlCommand,
 		"uniq":       validateUniqCommand,
 		"xargs":      validateXargsCommand,
@@ -314,6 +315,20 @@ func validatePoetryCommand(e *ruleEngine, cmd parsedCommand) string {
 		}
 	}
 	return ""
+}
+
+// validateRuffCommand requires --no-fix on ruff check. A repository's
+// pyproject.toml or ruff.toml can set fix = true, and then a plain ruff
+// check rewrites the files it checks; --no-fix overrides that setting.
+func validateRuffCommand(e *ruleEngine, cmd parsedCommand) string {
+	i := subcommandIndex(e.ruleMetadata(cmd.Name), cmd.Args)
+	if i < 0 || cmd.Args[i] != "check" {
+		return ""
+	}
+	if slices.Contains(cmd.Args[i+1:], "--no-fix") {
+		return ""
+	}
+	return "ruff check may apply fixes the project config enables; add --no-fix to run it read-only"
 }
 
 // validateXxdCommand rejects a second operand, which xxd writes its output
