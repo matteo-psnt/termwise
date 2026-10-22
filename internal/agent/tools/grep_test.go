@@ -96,3 +96,13 @@ func TestSearchToolsNameTheMissingDefaultPath(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchToolDescriptionsListSkippedDirs(t *testing.T) {
+	for _, desc := range []string{GrepDef.Description, GlobDef.Description} {
+		for _, dir := range vcsExcludeGlobs {
+			if !strings.Contains(desc, dir) {
+				t.Errorf("description does not mention skipped dir %s:\n%s", dir, desc)
+			}
+		}
+	}
+}

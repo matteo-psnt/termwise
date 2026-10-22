@@ -37,7 +37,7 @@ Usage:
 - output_mode: "files_with_matches" (default) lists file paths, "content" shows matching lines, "count" shows match counts per file.
 - Pattern syntax is ripgrep (not POSIX grep) — literal braces need escaping (e.g. "interface\\{\\}" to match "interface{}").
 - Set multiline=true to let . match newlines and patterns span lines.
-- Respects .gitignore and skips .git/.svn/.hg by default.
+- Respects .gitignore and skips ` + strings.Join(vcsExcludeGlobs, "/") + ` by default.
 - Pagination: head_limit caps results (default 250), offset skips entries; head_limit=0 means unlimited.`,
 	InputSchema: map[string]any{
 		"type": "object",

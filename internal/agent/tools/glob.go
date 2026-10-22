@@ -31,7 +31,7 @@ Usage:
 - Use glob to find files by name pattern (e.g. "**/*.go", "src/**/*.ts").
 - Supports brace expansion (e.g. "**/*.{ts,tsx}").
 - Returns matching file paths sorted by modification time (newest first), capped at ` + strconv.Itoa(defaultGlobLimit) + `.
-- Respects .gitignore and skips .git/.svn/.hg by default.
+- Respects .gitignore and skips ` + strings.Join(vcsExcludeGlobs, "/") + ` by default.
 - For open-ended searches that require multiple rounds of globbing/grepping, use grep with the glob filter directly.`,
 	InputSchema: map[string]any{
 		"type": "object",
