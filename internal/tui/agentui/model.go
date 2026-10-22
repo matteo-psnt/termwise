@@ -120,11 +120,6 @@ func newModel(cfg modelConfig) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
-	contextWindow := 32_000
-	if md := models.Find(cfg.providerName, cfg.modelID); md != nil && md.Context > 0 {
-		contextWindow = md.Context
-	}
-
 	ctx, cancel := newGenerationContext()
 	suggestionCtx, suggestionCancel := context.WithCancel(context.Background())
 
@@ -135,7 +130,7 @@ func newModel(cfg modelConfig) Model {
 		mode:             cfg.mode,
 		system:           cfg.system,
 		toolDefs:         cfg.toolDefs,
-		contextWindow:    contextWindow,
+		contextWindow:    contextWindowFor(cfg.providerName, cfg.modelID),
 		llmJudge:         cfg.llmJudge,
 		suggestions:      cfg.suggestions,
 		effort:           cfg.effort,
@@ -366,11 +361,21 @@ func (m *Model) applyModel(providerName, modelID string) error {
 	m.providerName = providerName
 	m.modelID = modelID
 	m.effort = pc.Effort
-	m.contextWindow = 32_000
-	if md := models.Find(providerName, modelID); md != nil && md.Context > 0 {
-		m.contextWindow = md.Context
-	}
+	m.contextWindow = contextWindowFor(providerName, modelID)
 	return nil
+}
+
+// defaultContextWindow is assumed for models the catalog does not know, or
+// lists without a context size. Erring small is the safe direction: it only
+// makes trimContext drop old tool results sooner.
+const defaultContextWindow = 32_000
+
+// contextWindowFor returns the context window, in tokens, of a provider's model.
+func contextWindowFor(providerName, modelID string) int {
+	if md := models.Find(providerName, modelID); md != nil && md.Context > 0 {
+		return md.Context
+	}
+	return defaultContextWindow
 }
 
 // persistActiveModel writes the currently active provider+model to the config

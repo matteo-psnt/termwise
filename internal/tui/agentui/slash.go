@@ -362,16 +362,12 @@ func previewModel(m Model, value string) Model {
 	if !ok || providerName == "" || modelID == "" {
 		return m
 	}
-	md := models.Find(providerName, modelID)
-	if md == nil {
+	if models.Find(providerName, modelID) == nil {
 		return m
 	}
 	m.providerName = providerName
 	m.modelID = modelID
-	m.contextWindow = 32_000
-	if md.Context > 0 {
-		m.contextWindow = md.Context
-	}
+	m.contextWindow = contextWindowFor(providerName, modelID)
 	return m
 }
 
