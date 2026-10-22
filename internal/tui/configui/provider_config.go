@@ -61,7 +61,10 @@ func listModelsFor(ctx context.Context, providerName string, pc config.ProviderC
 	if pc.AuthMethod() == "keychain" {
 		list, err = listModelsWithKey(ctx, providerName, pc, apiKey)
 	} else {
-		list, err = config.ListProviderModels(ctx, providerName, pc)
+		// This is a check that the settings work now, so ask the provider:
+		// the model cache can be days old, and would "verify" a revoked key
+		// or a server that is down.
+		list, err = config.FetchProviderModels(ctx, providerName, pc)
 	}
 	if err != nil {
 		return nil, err

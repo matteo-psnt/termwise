@@ -138,3 +138,24 @@ func TestKeychainKeyTrimmedAndNeverBlank(t *testing.T) {
 		t.Errorf("keychain = %q, want the trimmed key", got)
 	}
 }
+
+// Verification must reach the provider: a key that worked once and was
+// cached must not still "verify" after it has been revoked.
+func TestVerificationIgnoresTheModelCache(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	srv := fakeOpenAI(t, "sk-good")
+	pc := config.ProviderConfig{Auth: "env", EnvVar: "TW_VERIFY_KEY", BaseURL: srv.URL}
+
+	t.Setenv("TW_VERIFY_KEY", "sk-good")
+	if _, err := listModelsFor(context.Background(), "openai", pc, "", nil); err != nil {
+		t.Fatalf("good key: %v", err)
+	}
+	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"revoked"}}`))
+	})
+	if _, err := listModelsFor(context.Background(), "openai", pc, "", nil); err == nil {
+		t.Fatal("a revoked key verified from the cache")
+	}
+}
