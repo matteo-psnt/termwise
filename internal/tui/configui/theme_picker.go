@@ -9,23 +9,22 @@ import (
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
 
+// themePickerModel has no styles of its own: the editor restyles itself for
+// the theme under the cursor (see updateThemePicker), and View draws with
+// those, so the picker is always shown in the palette it is previewing.
 type themePickerModel struct {
-	styles    configStyles
-	hasDarkBg bool
-	cursor    int
-	prev      string // original theme name, restored on cancel
+	cursor int
+	prev   string // original theme name, restored on cancel
 
 	result    string
 	done      bool
 	cancelled bool
 }
 
-func newThemePicker(current string, hasDarkBg bool, styles configStyles) themePickerModel {
+func newThemePicker(current string) themePickerModel {
 	return themePickerModel{
-		styles:    styles,
-		hasDarkBg: hasDarkBg,
-		cursor:    themeIndex(current),
-		prev:      theme.Normalize(current),
+		cursor: themeIndex(current),
+		prev:   theme.Normalize(current),
 	}
 }
 
@@ -53,12 +52,10 @@ func (m themePickerModel) Update(msg tea.Msg) (themePickerModel, tea.Cmd) {
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
-			m.styles = newStylesForTheme(m.hasDarkBg, palettes[m.cursor].Name)
 		}
 	case "down", "j":
 		if m.cursor < len(palettes)-1 {
 			m.cursor++
-			m.styles = newStylesForTheme(m.hasDarkBg, palettes[m.cursor].Name)
 		}
 	case "enter", " ":
 		m.result = palettes[m.cursor].Name
@@ -67,26 +64,26 @@ func (m themePickerModel) Update(msg tea.Msg) (themePickerModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m themePickerModel) View() string {
+func (m themePickerModel) View(styles configStyles, hasDarkBg bool) string {
 	palettes := theme.All()
 	selected := theme.Normalize(m.prev) // show badge on original selection
 
 	var b strings.Builder
 	b.WriteString("Theme palette:\n\n")
 	for i, p := range palettes {
-		line := paletteSwatches(m.hasDarkBg, p) + " " + p.Label
+		line := paletteSwatches(hasDarkBg, p) + " " + p.Label
 		if p.Name == selected {
-			line += " " + m.styles.Dim.Render("(selected)")
+			line += " " + styles.Dim.Render("(selected)")
 		}
 		if i == m.cursor {
-			b.WriteString(m.styles.Selected.Render("▶ ") + line + "\n")
+			b.WriteString(styles.Selected.Render("▶ ") + line + "\n")
 		} else {
 			b.WriteString("  " + line + "\n")
 		}
 	}
 	b.WriteString("\n")
-	b.WriteString(renderThemePreview(m.hasDarkBg, palettes[m.cursor]))
-	b.WriteString("\n\n" + m.styles.Dim.Render("↑/↓ preview   enter select   esc cancel"))
+	b.WriteString(renderThemePreview(hasDarkBg, palettes[m.cursor]))
+	b.WriteString("\n\n" + styles.Dim.Render("↑/↓ preview   enter select   esc cancel"))
 	return b.String()
 }
 

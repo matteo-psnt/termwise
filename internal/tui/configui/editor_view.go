@@ -28,7 +28,7 @@ func (m editorModel) renderInner() string {
 	case m.keybinding != nil:
 		return header + m.keybinding.View()
 	case m.themePicker != nil:
-		return header + m.themePicker.View()
+		return header + m.themePicker.View(m.styles, m.hasDarkBg)
 	case m.enumPicker != nil:
 		return header + m.enumPicker.View()
 	case m.addWizard != nil:
