@@ -154,6 +154,7 @@ func newModel(cfg modelConfig) Model {
 		exchanges:        cfg.exchanges,
 		cfgPath:          cfg.cfgPath,
 		cwd:              workDirFull(),
+		slashCache:       &slashMatchCache{},
 		tuiTopRow:        cfg.initialCursorRow,
 	}
 	// Cursor query failed; clampAnchor will pin to the bottom on first WindowSizeMsg.

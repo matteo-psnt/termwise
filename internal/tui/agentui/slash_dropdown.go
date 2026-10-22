@@ -8,8 +8,28 @@ func (m Model) visibleSlashMatches() []slashMatch {
 	if m.slashSel.closed || m.histIdx >= 0 {
 		return nil
 	}
-	matches, _ := computeSlashMatches(m, m.input.Value())
+	value := m.input.Value()
+	if c := m.slashCache; c != nil && c.valid && c.value == value && c.providerName == m.providerName {
+		return c.matches
+	}
+	matches, _ := computeSlashMatches(m, value)
+	if m.slashCache != nil {
+		*m.slashCache = slashMatchCache{valid: true, value: value, providerName: m.providerName, matches: matches}
+	}
 	return matches
+}
+
+// slashMatchCache holds the last computeSlashMatches result. /model argument
+// completion reads the config file, and visibleSlashMatches runs several times
+// per keystroke and on every frame (key handling, the input row, the
+// dropdown, the layout height); caching per input value turns that into one
+// read per change of input. providerName is part of the key because /model
+// sorts the active provider first.
+type slashMatchCache struct {
+	valid        bool
+	value        string
+	providerName string
+	matches      []slashMatch
 }
 
 // handleSlashDropdownKey handles navigation and acceptance keys when the

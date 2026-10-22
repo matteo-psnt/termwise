@@ -99,6 +99,9 @@ type sharedState struct {
 	// Always-on completion dropdowns
 	slashSel completionState
 	atSel    completionState
+	// slashCache is a pointer so the value-receiver render path can fill it
+	// and every copy of the Model shares it. Nil disables caching.
+	slashCache *slashMatchCache
 
 	// Mouse / selection / copy toast (always-on widgets)
 	links          []linkPosition
