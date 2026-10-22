@@ -1,15 +1,24 @@
 package allowlist
 
 import (
+	"slices"
 	"strings"
 )
 
 func defaultValidators() map[string]validator {
 	return map[string]validator{
-		"find":   validateFindCommand,
-		"go":     validateGoCommand,
-		"sysctl": validateSysctlCommand,
-		"xargs":  validateXargsCommand,
+		"bat":        validateBatCommand,
+		"dasel":      validateDaselCommand,
+		"date":       validateDateCommand,
+		"find":       validateFindCommand,
+		"go":         validateGoCommand,
+		"hostname":   validateHostnameCommand,
+		"nvidia-smi": validateNvidiaSmiCommand,
+		"poetry":     validatePoetryCommand,
+		"sysctl":     validateSysctlCommand,
+		"uniq":       validateUniqCommand,
+		"xargs":      validateXargsCommand,
+		"xxd":        validateXxdCommand,
 	}
 }
 
@@ -254,4 +263,206 @@ func isXargsStandaloneFlag(flag string) bool {
 		return true
 	}
 	return false
+}
+
+// validateBatCommand rejects bat cache, whose --build and --clear rewrite or
+// delete bat's syntax cache. bat only treats cache as a subcommand in first
+// place, but rejecting the word anywhere keeps this simple; a file named
+// cache costs one prompt.
+func validateBatCommand(_ *ruleEngine, cmd parsedCommand) bool {
+	return !slices.Contains(cmd.Args, "cache")
+}
+
+// validateDaselCommand rejects dasel's write subcommands. cobra finds a
+// subcommand after root flags whose values it knows and this does not, so
+// the words are rejected wherever they appear.
+func validateDaselCommand(_ *ruleEngine, cmd parsedCommand) bool {
+	for _, tok := range cmd.Args {
+		if tok == "put" || tok == "delete" {
+			return false
+		}
+	}
+	return true
+}
+
+// validatePoetryCommand keeps poetry version read-only: with an argument
+// (patch, 1.2.3, ...) it rewrites the version in pyproject.toml.
+func validatePoetryCommand(e *ruleEngine, cmd parsedCommand) bool {
+	i := subcommandIndex(e.ruleMetadata(cmd.Name), cmd.Args)
+	if i < 0 || cmd.Args[i] != "version" {
+		return true
+	}
+	for _, tok := range cmd.Args[i+1:] {
+		if !strings.HasPrefix(tok, "-") || tok == "-" {
+			return false
+		}
+	}
+	return true
+}
+
+// validateXxdCommand rejects a second operand, which xxd writes its output
+// to (a second operand of "-" is stdout). xxd stops reading options at the
+// first operand, so every word after it is an operand, dashes or not.
+func validateXxdCommand(_ *ruleEngine, cmd parsedCommand) bool {
+	var operands []string
+	for i := 0; i < len(cmd.Args); i++ {
+		tok := cmd.Args[i]
+		if tok == "--" {
+			operands = append(operands, cmd.Args[i+1:]...)
+			break
+		}
+		if len(tok) < 2 || tok[0] != '-' {
+			operands = append(operands, cmd.Args[i:]...)
+			break
+		}
+		// xxd reads --flag as -flag. Only a flag written exactly takes the
+		// next word as its value; when unsure, the word counts as an operand,
+		// which can only cost a prompt.
+		word := tok
+		if strings.HasPrefix(word, "--") {
+			word = word[1:]
+		}
+		switch word {
+		case "-c", "-cols", "-g", "-groupsize", "-l", "-len", "-n", "-name", "-o", "-offset", "-s", "-seek", "-R":
+			i++
+		}
+	}
+	return len(operands) < 2 || (len(operands) == 2 && operands[1] == "-")
+}
+
+// validateUniqCommand rejects a second operand, which uniq writes its output
+// to. Only exact value flags skip their value; anything unsure counts as an
+// operand.
+func validateUniqCommand(_ *ruleEngine, cmd parsedCommand) bool {
+	operands := 0
+	for i := 0; i < len(cmd.Args); i++ {
+		tok := cmd.Args[i]
+		if tok == "--" {
+			operands += len(cmd.Args) - i - 1
+			break
+		}
+		if len(tok) < 2 || tok[0] != '-' {
+			operands++
+			continue
+		}
+		switch tok {
+		case "-f", "-s", "-w", "--skip-fields", "--skip-chars", "--check-chars":
+			i++
+		}
+	}
+	return operands < 2
+}
+
+// validateDateCommand rejects setting the clock: -s/--set, or an operand that
+// is not a +FORMAT, which GNU and BSD date both take as the new time (BSD
+// date -j only parses it, so operands are fine there).
+//
+// Short flags are scanned as getopt bundles. d, f, r, v and z take a value
+// (the rest of the bundle, or the next word); I takes only an attached one,
+// so -Iseconds does not hide an s.
+func validateDateCommand(_ *ruleEngine, cmd parsedCommand) bool {
+	noSet := false
+	var operands []string
+	for i := 0; i < len(cmd.Args); i++ {
+		tok := cmd.Args[i]
+		if tok == "--" {
+			operands = append(operands, cmd.Args[i+1:]...)
+			break
+		}
+		if len(tok) < 2 || tok[0] != '-' {
+			operands = append(operands, tok)
+			continue
+		}
+		if strings.HasPrefix(tok, "--") {
+			if tokenMatchesDeniedFlag(tok, "--set") {
+				return false
+			}
+			switch tok {
+			case "--date", "--file", "--reference":
+				i++
+			}
+			continue
+		}
+	scan:
+		for j := 1; j < len(tok); j++ {
+			switch tok[j] {
+			case 's':
+				return false
+			case 'j':
+				noSet = true
+			case 'I':
+				break scan
+			case 'd', 'f', 'r', 'v', 'z':
+				if j == len(tok)-1 {
+					i++
+				}
+				break scan
+			}
+		}
+	}
+	if noSet {
+		return true
+	}
+	for _, op := range operands {
+		if !strings.HasPrefix(op, "+") {
+			return false
+		}
+	}
+	return true
+}
+
+// validateHostnameCommand allows only flags that print a name or address.
+// An operand, -F/--file or -b/--boot sets the hostname, so anything not
+// known to read fails closed.
+func validateHostnameCommand(_ *ruleEngine, cmd parsedCommand) bool {
+	for _, tok := range cmd.Args {
+		switch tok {
+		case "-s", "--short", "-f", "--fqdn", "--long", "-d", "--domain",
+			"-i", "--ip-address", "-I", "--all-ip-addresses", "-A", "--all-fqdns",
+			"-a", "--alias", "-y", "--yp", "--nis", "-v", "--verbose",
+			"-h", "--help", "-V", "--version":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// validateNvidiaSmiCommand allows only nvidia-smi's query forms. Most of its
+// other flags (-r, -pm, -pl, -ac, -lgc, -c, -e, -mig, ...) and subcommands
+// change GPU state, and -f writes a log file, so anything not known to read
+// fails closed.
+func validateNvidiaSmiCommand(_ *ruleEngine, cmd parsedCommand) bool {
+	args := cmd.Args
+	if len(args) > 0 && args[0] == "topo" {
+		for _, tok := range args[1:] {
+			if tok != "-m" && tok != "--matrix" {
+				return false
+			}
+		}
+		return true
+	}
+	for i := 0; i < len(args); i++ {
+		tok := args[i]
+		name, _, hasValue := strings.Cut(tok, "=")
+		switch name {
+		case "-L", "--list-gpus", "-q", "--query", "-x", "--xml-format",
+			"-u", "--unit", "-h", "--help", "--version":
+			if hasValue {
+				return false
+			}
+		case "-d", "--display", "-i", "--id", "-l", "--loop", "-lms", "--loop-ms",
+			"--format", "--query-gpu", "--query-compute-apps", "--query-accounted-apps",
+			"--query-retired-pages", "--query-remapped-rows", "--query-supported-clocks":
+			if !hasValue {
+				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+					return false
+				}
+				i++
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }

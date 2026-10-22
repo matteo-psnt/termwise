@@ -21,9 +21,14 @@ rules:
   - cmd: eza
   - cmd: tree
     deny:
-      flags: [-o]
+      # -o writes the listing to a file; -R reruns tree in each directory
+      # with -o 00Tree.html.
+      flags: [-o, -R]
   - cmd: stat
   - cmd: file
+    deny:
+      # -C compiles a magic file and writes the .mgc next to it.
+      flags: [-C, --compile]
   - cmd: du
   - cmd: df
   - cmd: cd
@@ -35,19 +40,23 @@ rules:
 
   # ── File reading ────────────────────────────────────────────────────────────
   - cmd: cat
-  - cmd: bat
+  - cmd: bat   # bat cache --build/--clear rewrites its cache (validateBatCommand)
     deny:
       flags: [--pager]
   - cmd: head
   - cmd: tail
   - cmd: less
     deny:
-      flags: [-o, -O]
+      # -o/-O and --log-file/--LOG-FILE copy the input to a file. A lesskey
+      # file can set LESSOPEN, which less runs as a preprocessor.
+      flags: [-o, -O, --log-file, --LOG-FILE, -k, --lesskey-file, --lesskey-src, --lesskey-content]
   - cmd: more
   - cmd: wc
   - cmd: strings
   - cmd: xxd
     deny:
+      # -r turns a hex dump back into binary. A second positional argument
+      # is an output file (validateXxdCommand).
       flags: [-r]
   - cmd: od
 
@@ -55,7 +64,8 @@ rules:
   - cmd: grep
   - cmd: rg
     deny:
-      flags: [--pre]
+      # --pre and --hostname-bin name programs rg runs.
+      flags: [--pre, --hostname-bin]
   - cmd: ag
     deny:
       flags: [--pager]
@@ -71,7 +81,7 @@ rules:
     deny:
       # --compress-program runs the named program on temp files.
       flags: [-o, --output, --compress-program]
-  - cmd: uniq
+  - cmd: uniq   # a second positional argument is an output file (validateUniqCommand)
   - cmd: cut
   - cmd: tr
   - cmd: diff
@@ -93,9 +103,16 @@ rules:
   - cmd: jq
   - cmd: yq
     deny:
-      flags: [-i, --inplace]
+      # -i/--inplace (mikefarah) and --in-place (python yq) rewrite the input;
+      # -s/--split-exp/--split-exp-file write one file per result.
+      flags: [-i, --inplace, --in-place, -s, --split-exp, --split-exp-file]
   - cmd: tomlq
-  - cmd: dasel
+    deny:
+      flags: [-i, --in-place]
+  - cmd: dasel   # put and delete write the file (validateDaselCommand)
+    deny:
+      # -o/--out writes the result to a file.
+      flags: [-o, --out]
   - cmd: fx
 
   # ── System info ─────────────────────────────────────────────────────────────
@@ -105,9 +122,9 @@ rules:
   - cmd: type
   - cmd: echo
   - cmd: printf
-  - cmd: date
+  - cmd: date   # -s/--set or a bare datetime operand sets the clock (validateDateCommand)
   - cmd: uname
-  - cmd: hostname
+  - cmd: hostname   # a name operand or -F/-b sets the hostname (validateHostnameCommand)
   - cmd: whoami
   - cmd: id
   - cmd: uptime
@@ -122,7 +139,7 @@ rules:
   - cmd: top
   - cmd: htop
   - cmd: btop
-  - cmd: nvidia-smi
+  - cmd: nvidia-smi   # most flags change GPU state, so only known queries pass (validateNvidiaSmiCommand)
 
   # ── Network inspection ──────────────────────────────────────────
   - cmd: dig
@@ -134,6 +151,9 @@ rules:
   - cmd: traceroute
   - cmd: netstat
   - cmd: ss
+    deny:
+      # -K/--kill closes sockets; -D/--diag dumps to a file.
+      flags: [-K, --kill, -D, --diag]
 
   # ── Git ─────────────────────────────────────────────────────────────────────
   - cmd: git
@@ -241,6 +261,8 @@ rules:
     parse:
       bool_flags: [-q, --quiet, -v, -vv, -vvv, --verbose, -n, --no-interaction, --no-ansi, --ansi]
     allow:
+      # version with an argument bumps the version in pyproject.toml
+      # (validatePoetryCommand).
       subcommands: [show, check, version, export]
     deny:
       flags: [-o, --output]
@@ -249,6 +271,9 @@ rules:
       bool_flags: [-q, --quiet, -v, --verbose, -s, --silent]
     allow:
       subcommands: [check, --version]
+    deny:
+      # These edit the checked files or write a report file.
+      flags: [--fix, --fix-only, --unsafe-fixes, --add-noqa, -o, --output-file]
 
   # ── Ruby / Bundler ───────────────────────────────────────────────────────────
   - cmd: bundle
@@ -345,6 +370,16 @@ rules:
   - cmd: rpm
     allow:
       subcommands: [-q, -qi, -ql, -qa, --query]
+    deny:
+      # Macro expansion runs %(shell) and %{lua:} code; --pipe runs a
+      # command on the output.
+      flags: [--eval, -E, --define, -D, --macros, --rcfile, --load, --pipe]
   - cmd: pacman
     allow:
-      subcommands: [-Q, -Qi, -Ql, -Qs, -Si, -Ss, --query, --sync]
+      # --sync alone installs; -Si and -Ss only read.
+      subcommands: [-Q, -Qi, -Ql, -Qs, -Si, -Ss, --query]
+    deny:
+      # With -S: -y refreshes the databases, -u upgrades, -c cleans the
+      # cache, -w downloads. --config and --hookdir can name programs pacman
+      # runs.
+      flags: [-y, -u, -c, -w, --refresh, --sysupgrade, --clean, --downloadonly, --sync, --config, --hookdir]
