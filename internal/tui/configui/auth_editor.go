@@ -175,7 +175,7 @@ func (m authEditorModel) handleEnterValue(msg tea.KeyPressMsg) (authEditorModel,
 		}
 	case "enter":
 		if m.input.missing() {
-			m.inputErr = "value cannot be empty"
+			m.inputErr = errEmptyValue
 			return m, nil
 		}
 		m.input.Blur()
@@ -207,27 +207,28 @@ func (m *authEditorModel) setupInput() {
 }
 
 // buildResult constructs the ProviderConfig from the current input state.
+// Only auth is being edited, so the rest of the existing block is kept; a
+// keyed provider's base URL is a proxy or gateway the key belongs to.
 func (m authEditorModel) buildResult() config.ProviderConfig {
-	return buildProviderConfigFromAuthInput(m.provider, m.method, m.input.Value(), m.input.fallback)
+	pc := buildProviderConfigFromAuthInput(m.provider, m.method, m.input.Value(), m.input.fallback)
+	pc.Model = m.existing.Model
+	pc.Effort = m.existing.Effort
+	if !providerpkg.HasNoAuth(m.provider) {
+		pc.BaseURL = m.existing.BaseURL
+	}
+	return pc
 }
 
 func (m authEditorModel) verifyCmd() tea.Cmd {
 	provider := m.provider
-	method := m.method
 	inputVal := m.input.Value()
-	fallback := m.input.fallback
+	pc := m.buildResult()
 
 	return func() tea.Msg {
-		pc, err := prepareProviderConfig(provider, method, inputVal, fallback)
-		if err != nil {
-			return editorAuthMsg{err: err}
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := config.CheckProviderConnectivity(ctx, provider, pc); err != nil {
-			return editorAuthMsg{err: err}
-		}
-		return editorAuthMsg{}
+		_, err := listModelsFor(ctx, provider, pc, inputVal)
+		return editorAuthMsg{err: err}
 	}
 }
 

@@ -36,6 +36,9 @@ func (a *authInput) setup(providerName, method, initial string) {
 	a.Focus()
 }
 
+// errEmptyValue is shown when enter is pressed on a field that is missing.
+const errEmptyValue = "value cannot be empty"
+
 // missing reports whether the field is blank with no fallback to stand in.
 func (a authInput) missing() bool {
 	return strings.TrimSpace(a.Value()) == "" && a.fallback == ""

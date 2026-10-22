@@ -59,8 +59,9 @@ func describeAuth(providerName string, pc config.ProviderConfig) string {
 		if v == "" {
 			v = "(not set)"
 		}
-		if len(v) > 40 {
-			v = v[:37] + "..."
+		// Cut by rune: slicing bytes can split a multi-byte character.
+		if r := []rune(v); len(r) > 40 {
+			v = string(r[:37]) + "..."
 		}
 		return "cmd · " + v
 	case "keychain":

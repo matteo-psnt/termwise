@@ -1,7 +1,10 @@
 package configui
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -18,7 +21,9 @@ func serverURL(providerName string) string {
 // must never reach the config file: the entry name is always the provider's
 // default, the one StoreKeychain writes to.
 func buildProviderConfigFromAuthInput(providerName, method, inputVal, fallback string) config.ProviderConfig {
-	val := inputVal
+	// Pasted values often carry a trailing newline or stray spaces, which
+	// would end up in the env var name, command or URL.
+	val := strings.TrimSpace(inputVal)
 	if val == "" {
 		val = fallback
 	}
@@ -41,14 +46,47 @@ func buildProviderConfigFromAuthInput(providerName, method, inputVal, fallback s
 	return pc
 }
 
-// prepareProviderConfig is buildProviderConfigFromAuthInput for a config that
-// is about to be used: for keychain, inputVal is the raw API key and has to be
-// in the keychain before anything can authenticate with the result.
-func prepareProviderConfig(providerName, method, inputVal, fallback string) (config.ProviderConfig, error) {
-	if method == "keychain" {
-		if err := config.StoreKeychain(providerName, inputVal); err != nil {
-			return config.ProviderConfig{}, fmt.Errorf("keychain write: %w", err)
+// listModelsFor lists the models available with pc, failing if there are
+// none. For keychain auth, apiKey is the key just typed in: it is tried
+// directly rather than read back from the keychain, and stored only once the
+// provider accepts it, so a mistyped key never replaces one that works.
+func listModelsFor(ctx context.Context, providerName string, pc config.ProviderConfig, apiKey string) ([]provider.Model, error) {
+	apiKey = strings.TrimSpace(apiKey)
+	if pc.AuthMethod() == "keychain" && apiKey == "" {
+		return nil, errors.New("API key cannot be empty")
+	}
+	var list []provider.Model
+	var err error
+	if pc.AuthMethod() == "keychain" {
+		list, err = listModelsWithKey(ctx, providerName, pc, apiKey)
+	} else {
+		list, err = config.ListProviderModels(ctx, providerName, pc)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(list) == 0 {
+		return nil, fmt.Errorf("no models returned by %s", providerName)
+	}
+	if pc.AuthMethod() == "keychain" {
+		if err := config.StoreKeychain(providerName, apiKey); err != nil {
+			return nil, fmt.Errorf("keychain write: %w", err)
 		}
 	}
-	return buildProviderConfigFromAuthInput(providerName, method, inputVal, fallback), nil
+	return list, nil
+}
+
+// listModelsWithKey lists pc's models authenticating with apiKey, bypassing
+// pc's auth method (and the model cache, which is keyed by resolved auth).
+func listModelsWithKey(ctx context.Context, providerName string, pc config.ProviderConfig, apiKey string) ([]provider.Model, error) {
+	client, err := config.NewClientFromResolved(config.ResolvedConfig{
+		ProviderName: providerName,
+		Model:        pc.Model,
+		APIKey:       apiKey,
+		BaseURL:      pc.BaseURL,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return client.ListModels(ctx)
 }

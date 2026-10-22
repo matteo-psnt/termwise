@@ -54,7 +54,7 @@ func (m themePickerModel) Update(msg tea.Msg) (themePickerModel, tea.Cmd) {
 		m.cancelled = true
 		m.done = true
 	case "enter", " ":
-		m.result = palettes[m.cursor].Name
+		m.result = m.PreviewName()
 		m.done = true
 	}
 	return m, nil
@@ -78,7 +78,7 @@ func (m themePickerModel) View(styles configStyles, hasDarkBg bool) string {
 		}
 	}
 	b.WriteString("\n")
-	b.WriteString(renderThemePreview(hasDarkBg, palettes[m.cursor]))
+	b.WriteString(renderThemePreview(hasDarkBg, theme.Get(m.PreviewName())))
 	b.WriteString("\n\n" + styles.Dim.Render("↑/↓ preview   enter select   esc cancel"))
 	return b.String()
 }
