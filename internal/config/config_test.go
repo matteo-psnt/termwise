@@ -771,3 +771,22 @@ func TestEnvOnlyNoticeWithoutModel(t *testing.T) {
 		t.Errorf("notice = %q, want it to say no model is set", got)
 	}
 }
+
+func TestLoadAndResolveModelHintWithoutFile(t *testing.T) {
+	for _, p := range provider.Catalog() {
+		if p.DefaultEnvVar != "" {
+			t.Setenv(p.DefaultEnvVar, "")
+		}
+	}
+	t.Setenv(EnvProvider, "ollama")
+	t.Setenv(EnvModel, "")
+	_, _, err := LoadAndResolve(filepath.Join(t.TempDir(), "config.toml"))
+	if err == nil {
+		t.Fatal("LoadAndResolve with no model: want an error")
+	}
+	// `config model set` fails with no file: "no provider selected".
+	if msg := err.Error(); strings.Contains(msg, "config model set") ||
+		!strings.Contains(msg, EnvModel+"=<model>") || !strings.Contains(msg, "config use ollama --model <model>") {
+		t.Errorf("err = %q, want it to suggest %s or `config use ollama --model`", msg, EnvModel)
+	}
+}

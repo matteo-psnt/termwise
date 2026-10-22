@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/cliname"
@@ -11,6 +12,11 @@ import (
 // Validate checks a FileConfig for structural correctness without making any
 // network calls. Returns a list of human-readable diagnostics; empty means valid.
 func Validate(cfg FileConfig) []string {
+	return validate(cfg, fmt.Sprintf("Run `%s config model set <model>`", cliname.Name()))
+}
+
+// validate is Validate with the hint to give for a missing model.
+func validate(cfg FileConfig, modelHint string) []string {
 	var errs []string
 
 	// Validate all settings through the registry so each SettingDef owns its own rules.
@@ -44,28 +50,34 @@ func Validate(cfg FileConfig) []string {
 		return errs
 	}
 
-	errs = append(errs, validateProviderConfig(cfg.SelectedProvider, pc)...)
+	errs = append(errs, validateProviderConfig(cfg.SelectedProvider, pc, modelHint)...)
 	return errs
 }
 
 // validateForRuntime joins validation errors into a single error suitable for
 // display at startup. Returns nil when valid.
-func validateForRuntime(cfg FileConfig) error {
-	errs := Validate(cfg)
+func validateForRuntime(eff Effective) error {
+	cfg := eff.File
+	modelHint := fmt.Sprintf("Run `%s config model set <model>`", cliname.Name())
+	if !eff.Exists || os.Getenv(EnvProvider) != "" {
+		// `config model set` edits the file's selected provider: with no
+		// file it fails with "no provider selected", and with
+		// TERMWISE_PROVIDER it would set the wrong provider's model.
+		modelHint = fmt.Sprintf("Set %s=<model>, or run `%s config use %s --model <model>`",
+			EnvModel, cliname.Name(), cfg.SelectedProvider)
+	}
+	errs := validate(cfg, modelHint)
 	if len(errs) == 0 {
 		return nil
 	}
 	return fmt.Errorf("%s", strings.Join(errs, "\n"))
 }
 
-func validateProviderConfig(name string, pc ProviderConfig) []string {
+func validateProviderConfig(name string, pc ProviderConfig, modelHint string) []string {
 	var errs []string
 
 	if pc.Model == "" {
-		errs = append(errs, fmt.Sprintf(
-			"missing model in [providers.%s]\n  Run `%s config model set <model>`",
-			name, cliname.Name(),
-		))
+		errs = append(errs, fmt.Sprintf("missing model in [providers.%s]\n  %s", name, modelHint))
 	}
 
 	switch method := pc.AuthMethod(); method {
