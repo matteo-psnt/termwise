@@ -47,9 +47,8 @@ type Styles struct {
 }
 
 func newStyles(hasDarkBg bool, palette theme.Palette) Styles {
-	ld := lipgloss.LightDark(hasDarkBg)
 	resolve := func(c theme.Color) color.Color {
-		return ld(lipgloss.Color(c.Light), lipgloss.Color(c.Dark))
+		return lipgloss.Color(c.Pick(hasDarkBg))
 	}
 	accent := resolve(palette.Accent)
 	errCol := resolve(palette.Error)

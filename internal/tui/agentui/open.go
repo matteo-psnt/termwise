@@ -3,7 +3,6 @@ package agentui
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -166,15 +165,11 @@ func OpenShellWidget(
 }
 
 func readProgramStdin() (string, bool, error) {
-	stdinPiped := !tty.IsTerminal(os.Stdin)
-	if stdinPiped {
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return "", false, fmt.Errorf("reading stdin: %w", err)
-		}
-		return strings.TrimRight(string(data), "\n"), true, nil
+	text, piped, err := tty.ReadPiped(os.Stdin)
+	if err != nil {
+		return "", false, fmt.Errorf("reading stdin: %w", err)
 	}
-	return "", false, nil
+	return text, piped, nil
 }
 
 func openProgram(cfg openProgramConfig) (string, error) {
