@@ -655,3 +655,20 @@ func TestLoadEffectiveReportsOverridesWithoutAFile(t *testing.T) {
 		t.Errorf("Overrides = %q, want [%s=ollama]", eff.Overrides, EnvProvider)
 	}
 }
+
+func TestResolveAuthCmdFailureKeepsOnlyFirstLineOfStderr(t *testing.T) {
+	mustUnsetenv(t, "GROQ_API_KEY")
+	long := strings.Repeat("x", 500)
+	pc := ProviderConfig{Auth: "cmd", APIKeyCmd: "printf '\\nvault locked: " + long + "\\nsecret-detail\\n' >&2; exit 1"}
+	_, err := ResolveAuth("groq", pc)
+	if err == nil {
+		t.Fatal("expected error for failing cmd")
+	}
+	msg := err.Error()
+	if !strings.HasPrefix(msg, "api_key_cmd failed: vault locked: ") {
+		t.Errorf("err = %q, want it to say api_key_cmd failed and give the first line", msg)
+	}
+	if strings.Contains(msg, "secret-detail") || len([]rune(msg)) > 250 {
+		t.Errorf("err = %q, want only the first line, truncated", msg)
+	}
+}

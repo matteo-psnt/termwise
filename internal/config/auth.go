@@ -67,7 +67,7 @@ func resolveKey(name string, pc ProviderConfig) (string, string, error) {
 		if err != nil {
 			var exitErr *exec.ExitError
 			if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-				return "", "", fmt.Errorf("%s", strings.TrimSpace(string(exitErr.Stderr)))
+				return "", "", fmt.Errorf("api_key_cmd failed: %s", firstLine(string(exitErr.Stderr), 200))
 			}
 			return "", "", fmt.Errorf("api_key_cmd failed: %w", err)
 		}
@@ -93,4 +93,21 @@ func resolveKey(name string, pc ProviderConfig) (string, string, error) {
 			method, name,
 		)
 	}
+}
+
+// firstLine returns the first non-blank line of s, cut to at most n runes.
+// A password manager's stderr can run long or echo more than an error
+// message, and the result ends up in terminal output and bug reports.
+func firstLine(s string, n int) string {
+	for line := range strings.Lines(s) {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if r := []rune(line); len(r) > n {
+			return string(r[:n]) + "…"
+		}
+		return line
+	}
+	return ""
 }
