@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -91,11 +90,11 @@ func installShellIntegration(shell string) error {
 		return fmt.Errorf("updating %s: %w", path, err)
 	}
 	if !added {
-		fmt.Printf("%s already loads the termwise integration.\n", displayPath(path))
+		fmt.Printf("%s already loads the termwise integration.\n", config.ShortenHome(path))
 		return nil
 	}
 	fmt.Printf("Added to %s:\n  %s\n\nOpen a new terminal, or run `exec %s`, to get `tw` and %s.\n",
-		displayPath(path), shellrc.Line(shell), shell, keybinding.Label(readKeybinding()))
+		config.ShortenHome(path), shellrc.Line(shell), shell, keybinding.Label(readKeybinding()))
 	warnIfNotOnPath()
 	return nil
 }
@@ -110,13 +109,13 @@ func uninstallShellIntegration(shell string) error {
 		return fmt.Errorf("updating %s: %w", path, err)
 	}
 	if removed {
-		fmt.Printf("Removed the termwise integration from %s.\n", displayPath(path))
+		fmt.Printf("Removed the termwise integration from %s.\n", config.ShortenHome(path))
 		return nil
 	}
 	if ok, _ := shellrc.Installed(path); ok {
-		return fmt.Errorf("%s loads termwise with a line --install did not add — remove it by hand", displayPath(path))
+		return fmt.Errorf("%s loads termwise with a line --install did not add — remove it by hand", config.ShortenHome(path))
 	}
-	fmt.Printf("%s does not load the termwise integration.\n", displayPath(path))
+	fmt.Printf("%s does not load the termwise integration.\n", config.ShortenHome(path))
 	return nil
 }
 
@@ -128,22 +127,10 @@ func warnIfNotOnPath() {
 	}
 	dir := "the directory termwise is in"
 	if exe, err := os.Executable(); err == nil {
-		dir = displayPath(filepath.Dir(exe))
+		dir = config.ShortenHome(filepath.Dir(exe))
 	}
 	fmt.Fprintf(os.Stderr, "\nwarning: termwise is not on your PATH, so the line above will fail.\n"+
 		"  Add %s to PATH in your shell's startup file.\n", dir)
-}
-
-// displayPath shortens a path under $HOME to ~/… for messages.
-func displayPath(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return path
-	}
-	if rel, err := filepath.Rel(home, path); err == nil && !strings.HasPrefix(rel, "..") {
-		return filepath.Join("~", rel)
-	}
-	return path
 }
 
 // readKeybinding returns the configured keybinding, defaulting to "^T".

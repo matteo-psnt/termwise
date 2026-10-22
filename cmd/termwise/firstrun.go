@@ -64,20 +64,20 @@ func offerShellIntegration(in io.Reader, out io.Writer) {
 	}
 	if installed, _ := shellrc.Installed(path); installed {
 		_, _ = fmt.Fprintf(out, "Open a new terminal to get `tw` and %s — %s already loads them.\n",
-			keybinding.Label(readKeybinding()), displayPath(path))
+			keybinding.Label(readKeybinding()), config.ShortenHome(path))
 		return
 	}
 
 	_, _ = fmt.Fprintf(out, "\nAdd the `tw` command and the %s shortcut to %s? [Y/n] ",
-		keybinding.Label(readKeybinding()), displayPath(path))
+		keybinding.Label(readKeybinding()), config.ShortenHome(path))
 	answer, _ := bufio.NewReader(in).ReadString('\n')
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "", "y", "yes":
 		if err := installShellIntegration(shell); err != nil {
-			_, _ = fmt.Fprintf(out, "Could not update %s: %v\n", displayPath(path), err)
+			_, _ = fmt.Fprintf(out, "Could not update %s: %v\n", config.ShortenHome(path), err)
 		}
 	default:
 		_, _ = fmt.Fprintf(out, "Skipped. To add it later, run `termwise init --install`, or add this line to %s:\n  %s\n",
-			displayPath(path), shellrc.Line(shell))
+			config.ShortenHome(path), shellrc.Line(shell))
 	}
 }

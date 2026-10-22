@@ -609,3 +609,22 @@ func TestAuthMethodDefaultsToEnv(t *testing.T) {
 		}
 	}
 }
+
+func TestShortenHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	tests := map[string]string{
+		home:                            "~",
+		home + "/":                      "~",
+		filepath.Join(home, ".zshrc"):   "~/.zshrc",
+		filepath.Join(home, "..dotdot"): "~/..dotdot", // a name starting with "..", still under $HOME
+		home + "x/.zshrc":               home + "x/.zshrc",
+		filepath.Dir(home):              filepath.Dir(home),
+		"relative/path":                 "relative/path",
+	}
+	for in, want := range tests {
+		if got := ShortenHome(in); got != want {
+			t.Errorf("ShortenHome(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

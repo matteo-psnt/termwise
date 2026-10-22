@@ -876,7 +876,7 @@ func doctorShell(pass, warn func(string), hint func(string, ...any), cfg config.
 	} else {
 		warn("PATH: termwise is not on your PATH, so `tw` and the shell integration cannot run it")
 		if exe, err := os.Executable(); err == nil {
-			hint("Add %s to PATH in your shell's startup file", displayPath(filepath.Dir(exe)))
+			hint("Add %s to PATH in your shell's startup file", config.ShortenHome(filepath.Dir(exe)))
 		}
 	}
 
@@ -893,7 +893,7 @@ func doctorShell(pass, warn func(string), hint func(string, ...any), cfg config.
 			break
 		}
 		if installed, _ := shellrc.Installed(path); installed {
-			warn("Shell integration: in " + displayPath(path) + " but not loaded in this shell")
+			warn("Shell integration: in " + config.ShortenHome(path) + " but not loaded in this shell")
 			hint("Open a new terminal, or run `exec %s`", shell)
 		} else {
 			warn("Shell integration: not installed — no `tw` command or keybinding")

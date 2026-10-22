@@ -62,7 +62,7 @@ func CheckConfigWarnings(path string) []string {
 	if !errors.As(err, &sm) {
 		return nil
 	}
-	displayPath := shortenHomePath(path)
+	displayPath := ShortenHome(path)
 	out := make([]string, 0, len(sm.Errors))
 	for _, de := range sm.Errors {
 		key := strings.Join(de.Key(), ".")
@@ -72,20 +72,20 @@ func CheckConfigWarnings(path string) []string {
 	return out
 }
 
-// shortenHomePath replaces the leading $HOME segment with "~" for compactness
-// in user-facing messages. Returns path unchanged when not under $HOME.
-func shortenHomePath(path string) string {
+// ShortenHome replaces a leading $HOME with "~" for compactness in
+// user-facing messages, and returns path unchanged when it is not under
+// $HOME. It compares cleaned paths, so a trailing slash on $HOME or a
+// "dir/../" in path does not defeat it.
+func ShortenHome(path string) string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return path
 	}
-	if path == home {
-		return "~"
+	rel, err := filepath.Rel(home, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return path
 	}
-	if rel, ok := strings.CutPrefix(path, home+string(os.PathSeparator)); ok {
-		return "~" + string(os.PathSeparator) + rel
-	}
-	return path
+	return filepath.Join("~", rel)
 }
 
 // SaveConfig writes cfg to path atomically.
