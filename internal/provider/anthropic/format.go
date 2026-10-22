@@ -1,7 +1,6 @@
 package anthropic
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -186,7 +185,7 @@ func fromChatResponse(msg *sdk.Message) (*provider.ChatResponse, error) {
 		case "text":
 			resp.Content += block.Text
 		case "tool_use":
-			input, err := parseToolInput(block.Input)
+			input, err := provider.ParseToolInput(block.Input)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse tool input for %q: %w", block.Name, err)
 			}
@@ -211,16 +210,4 @@ func extractText(blocks []sdk.ContentBlockUnion) string {
 		}
 	}
 	return b.String()
-}
-
-// parseToolInput unmarshals the raw JSON input into a map.
-func parseToolInput(raw json.RawMessage) (map[string]any, error) {
-	if len(raw) == 0 {
-		return map[string]any{}, nil
-	}
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil, err
-	}
-	return m, nil
 }

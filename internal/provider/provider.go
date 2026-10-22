@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 )
 
 // ----------------------------------------------------------------------------
@@ -124,4 +126,25 @@ type Config struct {
 	APIKey  string // resolved API key (empty for providers that need no auth, e.g. ollama)
 	Model   string // model ID to use
 	BaseURL string // optional override; empty means use provider default
+}
+
+// ----------------------------------------------------------------------------
+// Helpers for client packages
+// ----------------------------------------------------------------------------
+
+// DefaultRequestTimeout bounds each HTTP request a client makes.
+const DefaultRequestTimeout = 30 * time.Second
+
+// ParseToolInput unmarshals a tool call's raw JSON arguments into a map.
+// Empty input yields an empty map, since models may omit arguments for a
+// tool that takes none.
+func ParseToolInput(raw []byte) (map[string]any, error) {
+	if len(raw) == 0 {
+		return map[string]any{}, nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }

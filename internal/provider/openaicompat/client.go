@@ -4,15 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
-
-const requestTimeout = 30 * time.Second
 
 // Client implements provider.AgentClient for any OpenAI-compatible API.
 type Client struct {
@@ -30,7 +27,7 @@ func New(name, defaultBaseURL string, cfg provider.Config) (*Client, error) {
 	opts := []option.RequestOption{
 		option.WithAPIKey(cfg.APIKey),
 		option.WithBaseURL(baseURL),
-		option.WithRequestTimeout(requestTimeout),
+		option.WithRequestTimeout(provider.DefaultRequestTimeout),
 	}
 	return &Client{
 		sdk:  openai.NewClient(opts...),

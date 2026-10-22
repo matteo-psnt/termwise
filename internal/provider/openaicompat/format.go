@@ -141,7 +141,7 @@ func fromChatResponse(msg *openai.ChatCompletion) (*provider.ChatResponse, error
 	resp.StopReason = choice.FinishReason
 	resp.Content = choice.Message.Content
 	for _, tc := range choice.Message.ToolCalls {
-		input, err := parseToolInput(tc.Function.Arguments)
+		input, err := provider.ParseToolInput([]byte(tc.Function.Arguments))
 		if err != nil {
 			return nil, fmt.Errorf("parse tool input for %q: %w", tc.Function.Name, err)
 		}
@@ -152,17 +152,6 @@ func fromChatResponse(msg *openai.ChatCompletion) (*provider.ChatResponse, error
 		})
 	}
 	return resp, nil
-}
-
-func parseToolInput(args string) (map[string]any, error) {
-	if args == "" {
-		return map[string]any{}, nil
-	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(args), &m); err != nil {
-		return nil, err
-	}
-	return m, nil
 }
 
 // filterModels applies per-provider filtering to remove noisy/irrelevant models.

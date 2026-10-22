@@ -4,15 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	sdkoption "github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
-
-const requestTimeout = 30 * time.Second
 
 // Client implements provider.AgentClient for the Anthropic API.
 type Client struct {
@@ -23,7 +20,7 @@ type Client struct {
 func New(cfg provider.Config) (*Client, error) {
 	opts := []sdkoption.RequestOption{
 		sdkoption.WithAPIKey(cfg.APIKey),
-		sdkoption.WithRequestTimeout(requestTimeout),
+		sdkoption.WithRequestTimeout(provider.DefaultRequestTimeout),
 	}
 	if cfg.BaseURL != "" {
 		opts = append(opts, sdkoption.WithBaseURL(cfg.BaseURL))
