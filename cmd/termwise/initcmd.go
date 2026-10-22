@@ -133,20 +133,19 @@ func warnIfNotOnPath() {
 		"  Add %s to PATH in your shell's startup file.\n", dir)
 }
 
-// readKeybinding returns the configured keybinding, defaulting to "^T".
+// readKeybinding returns the configured keybinding, or the default when
+// there is none — including when the config file is missing or unreadable,
+// since the shell integration should still load.
 func readKeybinding() string {
 	cfgPath, err := config.DefaultConfigPath()
 	if err != nil {
-		return "^T"
+		return config.DefaultKeybinding
 	}
-	cfg, exists, err := config.LoadConfig(cfgPath)
-	if err != nil || !exists {
-		return "^T"
+	cfg, _, err := config.LoadConfig(cfgPath)
+	if err != nil || cfg.Settings.Keybinding == "" {
+		return config.DefaultKeybinding
 	}
-	if cfg.Settings.Keybinding != "" {
-		return cfg.Settings.Keybinding
-	}
-	return "^T"
+	return cfg.Settings.Keybinding
 }
 
 func zshSetup(binding string) string {
@@ -264,7 +263,7 @@ func fishSetup(binding string) string {
 	// failing, which would silently steal those keystrokes.
 	fishKey, ok := keybinding.ToFish(binding)
 	if !ok {
-		fishKey = "ctrl-t"
+		fishKey, _ = keybinding.ToFish(config.DefaultKeybinding)
 	}
 	return fmt.Sprintf(`# termwise shell integration
 set -gx TERMWISE_INVOKED_AS tw

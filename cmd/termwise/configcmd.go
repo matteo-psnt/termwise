@@ -901,11 +901,7 @@ func doctorShell(pass, warn func(string), hint func(string, ...any), cfg config.
 		}
 	}
 
-	binding := cfg.Settings.Keybinding
-	if binding == "" {
-		binding = "^T"
-	}
-	if binding == "^T" {
+	if kb := cfg.Settings.Keybinding; kb == "" || kb == config.DefaultKeybinding {
 		if _, err := exec.LookPath("fzf"); err == nil {
 			warn("Keybinding: fzf is installed, and its shell keybindings also use Ctrl+T — whichever loads last wins")
 			hint("Pick another key in `%s config` → Keybinding", cliname.Name())
