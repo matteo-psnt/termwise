@@ -26,6 +26,15 @@ func DefaultEnvVar(name string) string {
 	return info.DefaultEnvVar
 }
 
+// displayName returns a provider's human-readable name, or name itself for
+// one that is not in the catalog.
+func displayName(name string) string {
+	if info, ok := provider.Lookup(name); ok {
+		return info.DisplayName
+	}
+	return name
+}
+
 func isKnownProvider(name string) bool {
 	_, ok := provider.Lookup(name)
 	return ok

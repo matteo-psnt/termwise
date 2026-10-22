@@ -132,10 +132,3 @@ func unwrapNet(err error) error {
 	}
 	return err
 }
-
-func displayName(name string) string {
-	if info, ok := provider.Lookup(name); ok {
-		return info.DisplayName
-	}
-	return name
-}
