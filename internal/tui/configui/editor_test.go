@@ -15,15 +15,21 @@ func TestDisplayValueFormatsToggleInTitleCase(t *testing.T) {
 		},
 	}
 
-	llmJudge := config.Settings[2]
-	if got := displayValue(llmJudge, cfg); got != "On" {
+	if got := displayValue(mustSetting(t, "llm_judge"), cfg); got != "On" {
 		t.Fatalf("displayValue(llm_judge) = %q, want %q", got, "On")
 	}
-
-	autoResume := config.Settings[3]
-	if got := displayValue(autoResume, cfg); got != "Off" {
+	if got := displayValue(mustSetting(t, "auto_resume"), cfg); got != "Off" {
 		t.Fatalf("displayValue(auto_resume) = %q, want %q", got, "Off")
 	}
+}
+
+func mustSetting(t *testing.T, key string) config.SettingDef {
+	t.Helper()
+	def, ok := config.FindSetting(key)
+	if !ok {
+		t.Fatalf("no setting %q", key)
+	}
+	return def
 }
 
 func TestListWindow(t *testing.T) {
