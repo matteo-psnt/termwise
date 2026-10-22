@@ -325,8 +325,8 @@ func TestSanitizeSuggestionTextIsRuneSafe(t *testing.T) {
 	}
 }
 
-// trimContext returns a trimmed copy for the request; the caller's messages are
-// the session history and must keep the full tool results.
+// trimContext returns a trimmed copy and leaves its input alone; the caller
+// decides what becomes the history.
 func TestTrimContextDoesNotMutateInput(t *testing.T) {
 	large := strings.Repeat("x", 2_000)
 	messages := []provider.Message{{
@@ -509,5 +509,98 @@ func TestWheelScrollUpSurvivesRefresh(t *testing.T) {
 	m.refreshViewport()
 	if m.vp.YOffset() != offset {
 		t.Fatalf("refresh moved a wheel-scrolled view from %d to %d", offset, m.vp.YOffset())
+	}
+}
+
+// Dropping an earlier tool result edits history, which invalidates every
+// later thinking block; replaying them is a 400 on Anthropic. All provider
+// state goes once anything is trimmed, and stays when nothing is.
+func TestTrimContextClearsProviderStateOnlyWhenItTrims(t *testing.T) {
+	state := []byte(`{"thinking":"signed"}`)
+	large := strings.Repeat("x", 4_000)
+	messages := []provider.Message{
+		{Role: "assistant", ToolCalls: []provider.ToolCall{{ID: "1", Name: "read"}}, ProviderState: state},
+		{Role: "user", ToolResults: []provider.ToolResult{{ToolCallID: "1", Content: large}}},
+		{Role: "assistant", Content: "done", ProviderState: state},
+	}
+
+	trimmed := trimContext(messages, 2_000)
+	for i, msg := range trimmed {
+		if msg.ProviderState != nil {
+			t.Errorf("trimmed[%d].ProviderState = %s, want nil", i, msg.ProviderState)
+		}
+	}
+	if messages[0].ProviderState == nil {
+		t.Error("input ProviderState was cleared")
+	}
+
+	kept := trimContext(messages, 1_000_000)
+	if kept[0].ProviderState == nil || kept[2].ProviderState == nil {
+		t.Error("ProviderState cleared although nothing was trimmed")
+	}
+}
+
+// The command tool ends the turn, and today the agent loop drops the calls
+// after it, so the next submit answers them with notRunResult. When the agent
+// package starts answering those calls itself, its results must be kept as
+// they are: one result per call, nothing duplicated or overwritten.
+func TestCommandToolResultsStayOnePerCall(t *testing.T) {
+	calls := []provider.ToolCall{
+		{ID: "cmd", Name: "command", Input: map[string]any{"content": "ls"}},
+		{ID: "read", Name: "read", Input: map[string]any{"path": "x"}},
+	}
+	for name, tc := range map[string]struct {
+		collected []provider.ToolResult
+		readWant  string
+	}{
+		"agent drops later calls": {
+			collected: []provider.ToolResult{{ToolCallID: "cmd", Content: "ok"}},
+			readWant:  notRunResult,
+		},
+		"agent answers later calls": {
+			collected: []provider.ToolResult{{ToolCallID: "cmd", Content: "ok"}, {ToolCallID: "read", Content: "file body"}},
+			readWant:  "file body",
+		},
+		"agent answers them first": {
+			collected: []provider.ToolResult{{ToolCallID: "read", Content: "file body"}, {ToolCallID: "cmd", Content: "ok"}},
+			readWant:  "file body",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			m := Model{
+				sharedState: sharedState{
+					ctx:              ctx,
+					cancel:           cancel,
+					suggestionCtx:    ctx,
+					suggestionCancel: func() {},
+					contextWindow:    32_000,
+					vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
+					messages: []provider.Message{
+						{Role: "user", Content: "list files"},
+						{Role: "assistant", ToolCalls: calls},
+					},
+				},
+				state: stateThinking,
+			}
+			next, _ := m.handleRespondEvent(respondEvent{Content: "ls", Collected: tc.collected})
+			next, _ = next.(Model).submitMessage("thanks")
+			msgs := next.(Model).messages
+
+			if len(msgs) != 4 {
+				t.Fatalf("got %d messages, want prompt, calls, results, new prompt: %#v", len(msgs), msgs)
+			}
+			got := map[string][]string{}
+			for _, tr := range msgs[2].ToolResults {
+				got[tr.ToolCallID] = append(got[tr.ToolCallID], tr.Content)
+			}
+			if len(msgs[2].ToolResults) != 2 || len(got["cmd"]) != 1 || len(got["read"]) != 1 {
+				t.Fatalf("results = %#v, want exactly one for cmd and one for read", msgs[2].ToolResults)
+			}
+			if got["read"][0] != tc.readWant {
+				t.Errorf("read result = %q, want %q", got["read"][0], tc.readWant)
+			}
+		})
 	}
 }

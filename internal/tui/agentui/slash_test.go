@@ -3,6 +3,7 @@ package agentui
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/matteo-psnt/termwise/internal/config"
@@ -71,5 +72,28 @@ func TestModelArgCompletionIsCachedPerInputValue(t *testing.T) {
 	m.input.SetValue("/model anthropic/c")
 	if changed := m.visibleSlashMatches(); len(changed) != 0 {
 		t.Fatalf("a new input value served stale matches: %v", changed)
+	}
+}
+
+// /effort follows config.EffortLevels, so a level the config gains (xhigh,
+// max) is offered and accepted without a second list to update.
+func TestEffortLevelsFollowConfig(t *testing.T) {
+	saved := config.EffortLevels
+	t.Cleanup(func() { config.EffortLevels = saved })
+	config.EffortLevels = []string{"low", "medium", "high", "xhigh", "max"}
+
+	if got := effortArgOptions(Model{}); !slices.Equal(got, config.EffortLevels) {
+		t.Errorf("effortArgOptions = %v, want %v", got, config.EffortLevels)
+	}
+	for _, level := range []string{"xhigh", "MAX"} {
+		if normalizeEffortInput(level) == "" {
+			t.Errorf("normalizeEffortInput(%q) rejected a configured level", level)
+		}
+	}
+	if got := normalizeEffortInput("med"); got != "medium" {
+		t.Errorf(`normalizeEffortInput("med") = %q, want "medium"`, got)
+	}
+	if normalizeEffortInput("huge") != "" {
+		t.Error(`normalizeEffortInput("huge") accepted an unknown level`)
 	}
 }

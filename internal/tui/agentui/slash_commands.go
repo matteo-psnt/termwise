@@ -2,6 +2,7 @@ package agentui
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -62,8 +63,10 @@ func previewTheme(m Model, value string) Model {
 
 // --- /effort ---------------------------------------------------------------
 
+// effortArgOptions reads config.EffortLevels rather than keeping a copy, so
+// the picker offers exactly what the config accepts as models gain levels.
 func effortArgOptions(_ Model) []string {
-	return []string{"low", "medium", "high"}
+	return slices.Clone(config.EffortLevels)
 }
 
 func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
@@ -78,7 +81,7 @@ func runEffort(m Model, args []string) (tea.Model, tea.Cmd) {
 	}
 	level := normalizeEffortInput(args[0])
 	if level == "" {
-		return m.show(ErrorEntry{Content: "Unknown effort level '" + args[0] + "' — valid: low, med, high"})
+		return m.show(ErrorEntry{Content: "Unknown effort level '" + args[0] + "' — valid: " + strings.Join(config.EffortLevels, ", ")})
 	}
 	m = previewEffort(m, level)
 	m.updateConfigFile(func(cfg *config.FileConfig) {
@@ -108,13 +111,13 @@ func previewEffort(m Model, value string) Model {
 }
 
 func normalizeEffortInput(s string) string {
-	switch strings.ToLower(s) {
-	case "low":
-		return "low"
-	case "med", "medium":
-		return "medium"
-	case "high":
-		return "high"
+	s = strings.ToLower(s)
+	// "med" matches the status bar's abbreviation of medium.
+	if s == "med" {
+		s = "medium"
+	}
+	if slices.Contains(config.EffortLevels, s) {
+		return s
 	}
 	return ""
 }

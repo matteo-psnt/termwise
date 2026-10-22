@@ -143,11 +143,11 @@ func (m Model) effectiveEffort() string {
 	return config.EffectiveEffort(m.providerName, m.modelID, m.effort)
 }
 
-// trimContext drops oldest tool results when approaching the context window limit.
-//
-// The returned slice is a new outer slice, but the copy is shallow: each
-// message's ToolResults still shares its backing array with the input, so a
-// dropped result is overwritten in the caller's messages too.
+// trimContext drops oldest tool results when approaching the context window
+// limit. The input is not modified. When anything is dropped, every message's
+// ProviderState is cleared too (see below), so the result must replace the
+// caller's history rather than be used for one request: replaying the
+// untrimmed history next turn would edit earlier turns all over again.
 func trimContext(messages []provider.Message, contextWindow int) []provider.Message {
 	const (
 		fixedTokens   = 700 // system prompt + tool defs estimate
@@ -182,22 +182,35 @@ func trimContext(messages []provider.Message, contextWindow int) []provider.Mess
 	out := make([]provider.Message, len(messages))
 	copy(out, messages)
 
+	changed := false
+trim:
 	for i := range out {
 		if len(out[i].ToolResults) > 0 {
 			// copy(out, messages) shares each ToolResults backing array with
-			// the caller; clone before rewriting so the session's own history
-			// (what gets saved and resumed) keeps the full results.
+			// the caller; clone before rewriting so the input is not modified.
 			out[i].ToolResults = slices.Clone(out[i].ToolResults)
 		}
 		for j := range out[i].ToolResults {
 			if out[i].ToolResults[j].Content != dropped {
 				out[i].ToolResults[j].Content = dropped
+				changed = true
 				if estimate(out) <= limit {
-					return out
+					break trim
 				}
 			}
 		}
 	}
 
+	// Editing an earlier turn invalidates every thinking block after it:
+	// Anthropic rejects the replayed blocks outright on newer accounts and
+	// silently discards the reasoning on the rest. Its documented recovery is
+	// to strip all thinking once, so drop every message's provider state. The
+	// caller keeps this result as its history, so later requests only append
+	// to it and the new thinking blocks stay valid until the next trim.
+	if changed {
+		for i := range out {
+			out[i].ProviderState = nil
+		}
+	}
 	return out
 }

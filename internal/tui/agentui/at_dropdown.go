@@ -38,14 +38,38 @@ func atFragment(value string) (string, bool) {
 	return token[1:], true
 }
 
+// quotedAtFragment returns the path fragment of an unclosed @"… token at the
+// end of value. Paths with spaces are completed in this quoted form, since the
+// bare form would end at the first space, both for the model reading the
+// prompt and for atFragment; the fragment may therefore contain spaces.
+func quotedAtFragment(value string) (string, bool) {
+	i := strings.LastIndex(value, `@"`)
+	if i < 0 || (i > 0 && !strings.ContainsRune(" \t\n", rune(value[i-1]))) {
+		return "", false
+	}
+	frag := value[i+2:]
+	if strings.ContainsAny(frag, "\"\n") {
+		return "", false
+	}
+	return frag, true
+}
+
+// needsAtQuote reports whether a path must be written @"…" to stay one token.
+func needsAtQuote(path string) bool {
+	return strings.ContainsAny(path, " \t")
+}
+
 // computeAtMatches lists the completions for the @-token at the end of value.
 // dir entries sort before files so that descending a tree stays a single
 // keystroke, and dotfiles stay hidden unless the fragment is reaching for one —
 // the same rule the shell uses, and the reason .git does not crowd the list.
 func computeAtMatches(value, cwd string) []slashMatch {
-	frag, ok := atFragment(value)
-	if !ok {
-		return nil
+	frag, quoted := quotedAtFragment(value)
+	if !quoted {
+		var ok bool
+		if frag, ok = atFragment(value); !ok {
+			return nil
+		}
 	}
 
 	// Split the fragment into the directory to list and the prefix to match.
@@ -114,10 +138,20 @@ func computeAtMatches(value, cwd string) []slashMatch {
 			suffix = "/"
 			label += "/"
 		}
-		matches = append(matches, slashMatch{
-			Label:      label,
-			Completion: r.name[len(base):] + suffix,
-		})
+		match := slashMatch{Label: label, Completion: r.name[len(base):] + suffix}
+		switch {
+		case quoted && !r.isDir:
+			match.Completion = r.name[len(base):] + `" `
+		case !quoted && needsAtQuote(r.name):
+			// The quote has to open before the path, so rewrite the whole
+			// "@frag" token rather than append to it.
+			if !r.isDir {
+				suffix = `" `
+			}
+			match.Completion = `@"` + dirPart + r.name + suffix
+			match.Replace = len(frag) + 1
+		}
+		matches = append(matches, match)
 	}
 	return matches
 }

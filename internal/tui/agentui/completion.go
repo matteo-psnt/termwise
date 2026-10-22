@@ -88,11 +88,12 @@ func (m Model) acceptCompletion(matches []slashMatch, sel *completionState) Mode
 	if sel.cursor < 0 || sel.cursor >= len(matches) {
 		return m
 	}
-	completion := matches[sel.cursor].Completion
-	if completion == "" {
+	match := matches[sel.cursor]
+	if match.Completion == "" {
 		return m
 	}
-	m.input.SetValue(m.input.Value() + completion)
+	value := m.input.Value()
+	m.input.SetValue(value[:len(value)-min(match.Replace, len(value))] + match.Completion)
 	m.input.CursorEnd()
 	sel.cursor = 0
 	return m

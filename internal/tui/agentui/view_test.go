@@ -76,6 +76,48 @@ func TestWrapToWidthHardBreaksUnbrokenTokens(t *testing.T) {
 	}
 }
 
+// CJK and emoji are one rune but two cells. Counting runes let a line of them
+// run past the right border of the command box.
+func TestWrapToWidthMeasuresCells(t *testing.T) {
+	for _, line := range []string{
+		strings.Repeat("日本語", 10),
+		"echo " + strings.Repeat("🚀 ", 12),
+		"grep 中文 " + strings.Repeat("ファイル", 5),
+	} {
+		segs := wrapToWidth(line, 10)
+		var joined string
+		for i, s := range segs {
+			if w := lipgloss.Width(s); w > 10 {
+				t.Errorf("wrapToWidth(%q)[%d] = %q is %d cells wide, want <= 10", line, i, s, w)
+			}
+			joined += strings.ReplaceAll(s, " ", "")
+		}
+		if joined != strings.ReplaceAll(line, " ", "") {
+			t.Errorf("wrapToWidth(%q) lost text: %q", line, segs)
+		}
+	}
+}
+
+func TestCommandBlockKeepsWideCharactersInsideTheBox(t *testing.T) {
+	m := newModel(modelConfig{providerName: "anthropic", modelID: "claude-sonnet-4-6", themeName: theme.DefaultName, initialCursorRow: -1})
+	out := m.renderCommandBlock("cmd", "echo "+strings.Repeat("日本語 ", 20), 30)
+	for i, line := range strings.Split(out, "\n") {
+		if w := lipgloss.Width(line); w != 30 {
+			t.Errorf("line %d is %d cells wide, want 30: %q", i, w, line)
+		}
+	}
+}
+
+func TestTruncateLabelMeasuresCells(t *testing.T) {
+	got := truncateLabel("echo "+strings.Repeat("日本", 10), 20)
+	if w := lipgloss.Width(got); w > 20 {
+		t.Errorf("truncateLabel gave %q, %d cells wide; want <= 20", got, w)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("truncateLabel gave %q; want an ellipsis", got)
+	}
+}
+
 func TestWrapToWidthLeavesShortLinesAlone(t *testing.T) {
 	if got := wrapToWidth("ls -la", 40); len(got) != 1 || got[0] != "ls -la" {
 		t.Errorf("wrapToWidth() = %q", got)

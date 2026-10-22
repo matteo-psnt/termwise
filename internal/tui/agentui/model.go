@@ -166,13 +166,42 @@ func newModel(cfg modelConfig) Model {
 	if cfg.initialSession != nil && len(cfg.initialSession.Messages) > 0 {
 		sh.messages = cfg.initialSession.Messages
 		sh.thread = deserializeThread(cfg.initialSession.Thread)
-	} else if cfg.stdin != "" {
+	}
+	// Not an else: piped stdin is attached to the next message whether or not
+	// a session was resumed, and without the marker it went out unseen.
+	if cfg.stdin != "" {
 		sh.thread = append(sh.thread, UserEntry{
 			Content: fmt.Sprintf("[stdin: %d lines]", strings.Count(cfg.stdin, "\n")+1),
 		})
 	}
 
-	return Model{sharedState: sh}
+	m := Model{sharedState: sh}
+	if cfg.initialSession != nil && len(cfg.initialSession.Messages) > 0 {
+		m.restoreSessionModel(*cfg.initialSession)
+	}
+	return m
+}
+
+// restoreSessionModel switches to the provider and model the resumed session
+// was using. The conversation was shaped by that model (and Anthropic's
+// thinking state is only valid for it), so silently continuing on whatever is
+// selected today changes who you are talking to mid-thread. When it can't be
+// restored, the current model stays and a notice says so. The switch is not
+// persisted: resuming one session shouldn't change the default for new ones.
+func (m *Model) restoreSessionModel(s history.Session) {
+	if s.ProviderName == "" || s.ModelID == "" {
+		return
+	}
+	if s.ProviderName == m.providerName && s.ModelID == m.modelID {
+		return
+	}
+	if err := m.applyModel(s.ProviderName, s.ModelID); err == nil {
+		return
+	}
+	m.thread = append(m.thread, SystemEntry{Content: fmt.Sprintf(
+		"This session used %s, which isn't available now; continuing on %s.",
+		modelOptionFor(s.ProviderName, s.ModelID), modelOptionFor(m.providerName, m.modelID),
+	)})
 }
 
 // Init implements tea.Model.
@@ -283,6 +312,7 @@ func (m *Model) saveSession() {
 	}
 	s := history.Session{
 		ID:           m.sessionID,
+		Mode:         m.sessionMode.historyName(),
 		ProviderName: m.providerName,
 		ModelID:      m.modelID,
 		Messages:     m.messages,

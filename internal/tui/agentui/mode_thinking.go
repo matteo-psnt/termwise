@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
 )
@@ -66,12 +67,14 @@ func formatElapsed(start time.Time) string {
 	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 }
 
+// truncateLabel cuts s to width terminal cells, ending in an ellipsis. Cells,
+// not runes: the label is often a command, and a wide character counted as
+// one let the row run past the viewport.
 func truncateLabel(s string, width int) string {
-	r := []rune(s)
-	if width < 2 || len(r) <= width {
+	if width < 2 || ansi.StringWidth(s) <= width {
 		return s
 	}
-	return string(r[:width-1]) + "…"
+	return ansi.Truncate(s, width, "…")
 }
 
 func (thinkingMode) helpBindings(_ Model) []binding {
