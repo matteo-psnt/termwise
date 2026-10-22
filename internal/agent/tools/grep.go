@@ -198,7 +198,9 @@ func outputModeArgs(input map[string]any, outputMode string) []string {
 	case "files_with_matches":
 		return []string{"-l"}
 	case "count":
-		return []string{"-c"}
+		// rg drops the "path:" prefix when searching a single file, and a
+		// path can itself contain ':'. Force the name and end it with NUL.
+		return []string{"-c", "--with-filename", "--null"}
 	case "content":
 		args := []string{}
 		showLine := true
@@ -255,17 +257,18 @@ func formatCount(lines []string, cwd string, headLimit, offset int) string {
 	totalMatches := 0
 	relLines := make([]string, 0, len(paged))
 	for _, line := range paged {
-		idx := strings.LastIndex(line, ":")
-		if idx <= 0 {
+		// Lines are "path\x00count"; see outputModeArgs.
+		path, count, ok := strings.Cut(line, "\x00")
+		if !ok {
 			continue
 		}
-		n, err := strconv.Atoi(line[idx+1:])
+		n, err := strconv.Atoi(count)
 		if err != nil {
 			continue
 		}
 		totalFiles++
 		totalMatches += n
-		relLines = append(relLines, relativizePath(line[:idx], cwd)+line[idx:])
+		relLines = append(relLines, relativizePath(path, cwd)+":"+count)
 	}
 	body := strings.Join(relLines, "\n")
 	if body == "" {
