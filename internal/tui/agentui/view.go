@@ -120,7 +120,7 @@ func (m Model) renderCommandBlock(label, content string, w int) string {
 	top := "╭" + labelPart + strings.Repeat("─", fillCount) + "╮"
 
 	lines := []string{top}
-	for _, raw := range strings.Split(content, "\n") {
+	for _, raw := range strings.Split(visibleControls(content), "\n") {
 		for _, seg := range wrapToWidth(raw, body) {
 			gap := max(inner-lipgloss.Width(seg)-pad, 0)
 			lines = append(lines, "│"+strings.Repeat(" ", pad)+seg+strings.Repeat(" ", gap)+"│")
