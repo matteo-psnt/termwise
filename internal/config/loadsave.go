@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/matteo-psnt/termwise/internal/cliname"
 )
 
 // DefaultConfigPath returns ~/.config/termwise/config.toml.
@@ -96,14 +99,44 @@ func ShortenHome(path string) string {
 	return filepath.Join("~", rel)
 }
 
+// saveWarnings is where SaveConfig reports a fallback rewrite; tests swap it.
+var saveWarnings io.Writer = os.Stderr
+
 // SaveConfig writes cfg to path atomically.
 // The config directory is created (mode 0700) if it does not exist, and the
 // config file is written with mode 0600 before being renamed into place.
+//
+// An existing file is edited rather than replaced, so the user's comments,
+// formatting and unknown keys survive a save from the CLI or the setup
+// screen. When it cannot be edited safely it is rewritten from scratch, after
+// a copy of it is kept at path.bak and a warning is printed.
 func SaveConfig(path string, cfg FileConfig) error {
-	data, err := toml.Marshal(cfg)
+	old, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("reading config: %w", err)
+	}
+	if err != nil {
+		data, err := toml.Marshal(cfg)
+		if err != nil {
+			return fmt.Errorf("marshaling config: %w", err)
+		}
+		return atomicWriteFile(path, data)
+	}
+
+	data, spliceErr := spliceConfig(old, cfg)
+	if spliceErr == nil {
+		return atomicWriteFile(path, data)
+	}
+	data, err = toml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
+	backup := path + ".bak"
+	if err := atomicWriteFile(backup, old); err != nil {
+		return fmt.Errorf("backing up config before rewriting it: %w", err)
+	}
+	_, _ = fmt.Fprintf(saveWarnings, "%s: warning: could not edit %s in place (%v); rewrote it, previous version saved to %s\n",
+		cliname.Name(), ShortenHome(path), spliceErr, ShortenHome(backup))
 	return atomicWriteFile(path, data)
 }
 
