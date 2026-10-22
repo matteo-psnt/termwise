@@ -9,7 +9,8 @@ import (
 )
 
 // NextToolStep processes pending tool calls until the next externally-visible
-// step. Auto-executed tools run immediately; gated tools (bash) pause for
+// step. Auto-executed tools run immediately; gated tools (bash) run immediately
+// too unless needsApproval rejects the command, in which case they pause for
 // approval; respond/ask tools surface intent to the caller.
 //
 // Dispatch is driven by each tool's registered Step in the tools package — this

@@ -15,8 +15,8 @@ const (
 	// StepExecutor runs immediately and returns its result. Used by read-only
 	// tools like read, grep, glob.
 	StepExecutor StepKind = iota
-	// StepGatedExecutor requires user approval (via needsApproval) before
-	// executing. Used by bash.
+	// StepGatedExecutor executes like StepExecutor unless needsApproval says
+	// GateCommand must be confirmed by the user first. Used by bash.
 	StepGatedExecutor
 	// StepRespond surfaces Content to the user as a final response and ends
 	// the agent turn. Used by command.
