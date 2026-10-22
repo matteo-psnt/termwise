@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRenderIncludesEverythingTheModelNeeds(t *testing.T) {
@@ -98,6 +100,27 @@ func TestDetectOutsideRepoReportsNoGit(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if g := Detect(context.Background(), Options{}).Git; g != nil {
 		t.Errorf("Git = %+v outside a repository, want nil", g)
+	}
+}
+
+// The probe deadline must hold even when git leaves a child process holding
+// its stdout open, which would otherwise keep Output blocked until that
+// child exits.
+func TestDetectGitIsBoundedWhenChildHoldsOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a fake git")
+	}
+	bin := t.TempDir()
+	script := "#!/bin/sh\n/bin/sleep 20 &\necho true\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	start := time.Now()
+	detectGit(context.Background(), t.TempDir())
+	if d := time.Since(start); d > 3*probeTimeout {
+		t.Fatalf("detectGit took %v; the probe timeout is %v", d, probeTimeout)
 	}
 }
 
