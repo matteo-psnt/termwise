@@ -8,11 +8,16 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 const maxBashOutputBytes = 64 * 1024 // 64KB per stream
+
+// bashWaitDelay is how long a cancelled or finished command's output pipes may
+// stay open before Run gives up on them.
+const bashWaitDelay = 500 * time.Millisecond
 
 func init() {
 	stepFns[BashDef.Name] = func(tc provider.ToolCall) Step {
@@ -76,6 +81,10 @@ func bash(ctx context.Context, input map[string]any) (string, bool) {
 	cmd := exec.CommandContext(ctx, commandShell(), "-c", command)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	killProcessGroup(cmd)
+	// Backstop for anything that escaped the group (e.g. a daemon that
+	// called setsid) but still holds the output pipes.
+	cmd.WaitDelay = bashWaitDelay
 
 	err := cmd.Run()
 	exitCode := 0
