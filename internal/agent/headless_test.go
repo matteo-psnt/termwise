@@ -60,3 +60,14 @@ func TestRunHeadlessStopsALoopingModel(t *testing.T) {
 		t.Fatalf("got %d requests, want %d", len(client.requests), maxHeadlessSteps)
 	}
 }
+
+func TestRunHeadlessRejectsEmptyCommand(t *testing.T) {
+	client := &scriptedClient{next: func(int) *provider.ChatResponse {
+		return &provider.ChatResponse{ToolCalls: []provider.ToolCall{
+			{ID: "1", Name: "command", Input: map[string]any{"content": "  "}},
+		}}
+	}}
+	if out, err := RunHeadless(context.Background(), HeadlessConfig{Client: client, Prompt: "hi"}); err == nil {
+		t.Fatalf("got %+v, want an error for an empty command", out)
+	}
+}

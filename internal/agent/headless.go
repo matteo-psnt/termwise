@@ -93,6 +93,11 @@ func RunHeadless(ctx context.Context, cfg HeadlessConfig) (FinalResponse, error)
 			return FinalResponse{}, err
 		}
 		if final != nil {
+			// Same rule as a text answer: printing an empty command and
+			// exiting 0 would look like success to a script.
+			if final.Content == "" {
+				return FinalResponse{}, fmt.Errorf("agent proposed an empty command")
+			}
 			return *final, nil
 		}
 		messages = append(messages, provider.Message{Role: "user", ToolResults: toolResults})
