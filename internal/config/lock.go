@@ -21,10 +21,13 @@ var ErrConfigLocked = errors.New("the config file is being saved by another term
 // on the config at path, and returns the function that releases it. The lock
 // is on a side file: the config itself is replaced by rename on every save,
 // so a lock on its inode would not be seen by the next process.
+//
+// The side file sits next to path as given, not next to a symlink's target:
+// a config.toml linked into a dotfiles repo would otherwise leave an
+// untracked config.toml.lock in the repo. Every termwise process uses the
+// same default path (~/.config/termwise/config.toml), so they still contend
+// on one lock file.
 func lockConfig(path string) (func(), error) {
-	if target, err := filepath.EvalSymlinks(path); err == nil {
-		path = target
-	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("creating directory: %w", err)
 	}
