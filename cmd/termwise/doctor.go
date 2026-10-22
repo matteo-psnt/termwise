@@ -121,10 +121,18 @@ func runDoctor(cfgPath string, online bool) bool {
 		pass("Auth: not required")
 	} else {
 		authDesc := authSummary(cfg.SelectedProvider, pc)
-		_, authErr := config.ResolveAuth(cfg.SelectedProvider, pc)
-		if authErr == nil {
-			pass("Auth: " + authDesc + " — key resolved")
-		} else {
+		auth, authErr := config.ResolveAuth(cfg.SelectedProvider, pc)
+		switch {
+		case authErr == nil && auth.FallbackErr != nil:
+			// ResolveAuth fell back to the provider's default env var: it works
+			// today, but not the way the config says.
+			warn("Auth: " + authDesc + " failed, using " + auth.Source + " instead")
+			hint("%s", strings.ReplaceAll(auth.FallbackErr.Error(), "\n", "\n      "))
+		case authErr == nil && auth.Source == "":
+			pass("Auth: no key needed")
+		case authErr == nil:
+			pass("Auth: key from " + auth.Source)
+		default:
 			fail("Auth: " + authDesc + " — " + authErr.Error())
 			authOk = false
 		}

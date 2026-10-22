@@ -65,3 +65,33 @@ func TestDoctorAppliesEnvOverrides(t *testing.T) {
 		}
 	}
 }
+
+func TestDoctorFlagsAuthFallback(t *testing.T) {
+	cfgPath := isolateConfigEnv(t)
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant")
+	writeTestConfig(t, cfgPath, `selected_provider = "anthropic"
+
+[providers.anthropic]
+auth        = "cmd"
+api_key_cmd = "exit 1"
+model       = "claude-haiku-4-5-20251001"
+`)
+
+	out := captureStdout(t, func() { runDoctor(cfgPath, false) })
+	if !strings.Contains(out, "! Auth: cmd (exit 1) failed, using $ANTHROPIC_API_KEY instead") {
+		t.Errorf("doctor does not flag the fallback to $ANTHROPIC_API_KEY:\n%s", out)
+	}
+	if strings.Contains(out, "key resolved") {
+		t.Errorf("doctor reports the configured method as working:\n%s", out)
+	}
+}
+
+func writeTestConfig(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}

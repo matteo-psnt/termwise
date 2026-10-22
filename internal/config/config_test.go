@@ -316,6 +316,10 @@ func TestResolveAuthEnvFallsBackToCanonicalProviderVar(t *testing.T) {
 		t.Fatalf("ResolveAuth fallback: %v", err)
 	}
 	assertEqual(t, "APIKey", "sk-groq", auth.APIKey)
+	assertEqual(t, "Source", "$GROQ_API_KEY", auth.Source)
+	if auth.FallbackErr == nil || !strings.Contains(auth.FallbackErr.Error(), "TERMWISE_TEST_MISSING_VAR") {
+		t.Errorf("FallbackErr = %v, want the configured method's error", auth.FallbackErr)
+	}
 }
 
 func TestResolveAuthCmd(t *testing.T) {

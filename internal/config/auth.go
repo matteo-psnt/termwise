@@ -17,6 +17,10 @@ type ResolvedAuth struct {
 	APIKey  string
 	BaseURL string
 	Source  string // see ResolvedConfig.KeySource
+	// FallbackErr is set when the configured method failed and the key came
+	// from the provider's default env var instead. The run still works, but
+	// the config does not do what it says, so reports should show this.
+	FallbackErr error
 }
 
 // ResolveAuth returns the resolved API key and base URL for a provider config.
@@ -27,7 +31,7 @@ func ResolveAuth(name string, pc ProviderConfig) (ResolvedAuth, error) {
 	if err != nil {
 		if fb := DefaultEnvVar(name); fb != "" {
 			if v := os.Getenv(fb); v != "" {
-				return ResolvedAuth{APIKey: v, BaseURL: pc.BaseURL, Source: "$" + fb}, nil
+				return ResolvedAuth{APIKey: v, BaseURL: pc.BaseURL, Source: "$" + fb, FallbackErr: err}, nil
 			}
 		}
 		return ResolvedAuth{}, err
