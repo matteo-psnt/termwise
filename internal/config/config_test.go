@@ -630,3 +630,24 @@ func TestShortenHome(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadEffectiveReportsOverridesWithoutAFile(t *testing.T) {
+	for _, p := range provider.Catalog() {
+		if p.DefaultEnvVar != "" {
+			t.Setenv(p.DefaultEnvVar, "")
+		}
+	}
+	t.Setenv(EnvProvider, "ollama")
+	t.Setenv(EnvModel, "")
+	eff, err := LoadEffective(filepath.Join(t.TempDir(), "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eff.Exists {
+		t.Error("Exists = true with no file")
+	}
+	assertEqual(t, "SelectedProvider", "ollama", eff.File.SelectedProvider)
+	if len(eff.Overrides) != 1 || eff.Overrides[0] != EnvProvider+"=ollama" {
+		t.Errorf("Overrides = %q, want [%s=ollama]", eff.Overrides, EnvProvider)
+	}
+}
