@@ -69,7 +69,7 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 // mapErr converts SDK errors to our provider.Error type.
 func mapErr(err error) error {
 	// Anthropic SDK wraps HTTP errors as *sdk.Error (alias for *apierror.Error).
-	return provider.MapError(err, func(err error) (int, bool) {
+	return provider.MapError(displayName, err, func(err error) (int, bool) {
 		var apiErr *sdk.Error
 		if errors.As(err, &apiErr) {
 			return apiErr.StatusCode, true

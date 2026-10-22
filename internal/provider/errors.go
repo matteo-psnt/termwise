@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -17,6 +19,9 @@ const (
 	ErrModelNotFound
 	ErrInputTooLarge
 	ErrProvider // catch-all
+	// ErrServer is a server-side failure (5xx, including 529 overloaded): the request
+	// itself was fine and the same one may succeed if retried later.
+	ErrServer
 )
 
 // Error carries a user-facing reason and an underlying technical error.
@@ -38,8 +43,9 @@ func NewError(kind ErrorKind, reason string, err error) *Error {
 // type they use for HTTP errors, so each client passes a status func that
 // unwraps its own type (with errors.As) and reports the HTTP status code.
 // Everything else — cancellation, deadlines, transport failures — is handled
-// the same way for every provider.
-func MapError(err error, status func(error) (int, bool)) error {
+// the same way for every provider. name is the provider's display name, used
+// in reasons that tell the user whose side the problem is on.
+func MapError(name string, err error, status func(error) (int, bool)) error {
 	if err == nil {
 		return nil
 	}
@@ -54,16 +60,27 @@ func MapError(err error, status func(error) (int, bool)) error {
 	}
 
 	if code, ok := status(err); ok {
-		return FromHTTPStatus(code, err)
+		return FromHTTPStatus(name, code, err)
+	}
+
+	// A transport-level timeout (e.g. a stalled TLS handshake) does not
+	// always wrap DeadlineExceeded, but it is still a timeout, not a fault.
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return NewError(ErrTimeout, "request timed out", err)
 	}
 
 	return NewError(ErrProvider, err.Error(), err)
 }
 
+// statusOverloaded is Anthropic's non-standard "overloaded" status.
+const statusOverloaded = 529
+
 // FromHTTPStatus classifies an API error by its HTTP status code. err is the
 // SDK's error; its message is the reason for anything without a friendlier
 // one, and is also searched to tell an oversized input apart from other 400s.
-func FromHTTPStatus(code int, err error) *Error {
+// name is the provider's display name.
+func FromHTTPStatus(name string, code int, err error) *Error {
 	body := err.Error()
 	switch code {
 	case http.StatusUnauthorized, http.StatusForbidden:
@@ -89,7 +106,17 @@ func FromHTTPStatus(code int, err error) *Error {
 		}
 		return NewError(ErrProvider, body, err)
 
+	case statusOverloaded, http.StatusServiceUnavailable:
+		// The raw body here is an opaque JSON blob that tells the user
+		// nothing more; it stays reachable through Err for debugging.
+		return NewError(ErrServer,
+			name+" is overloaded or unavailable right now — try again in a moment.", err)
+
 	default:
+		if code >= http.StatusInternalServerError {
+			return NewError(ErrServer,
+				fmt.Sprintf("%s had a server error (HTTP %d) — try again.", name, code), err)
+		}
 		return NewError(ErrProvider, body, err)
 	}
 }

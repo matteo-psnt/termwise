@@ -47,7 +47,7 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.Model, error) {
 		})
 	}
 	if err := pager.Err(); err != nil {
-		return nil, mapErr(err)
+		return nil, c.mapErr(err)
 	}
 	return filterModels(c.name, models), nil
 }
@@ -63,14 +63,18 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 
 	msg, err := c.sdk.Chat.Completions.New(ctx, params)
 	if err != nil {
-		return nil, mapErr(err)
+		return nil, c.mapErr(err)
 	}
 	return fromChatResponse(msg)
 }
 
 // mapErr converts SDK errors to our provider.Error type.
-func mapErr(err error) error {
-	return provider.MapError(err, func(err error) (int, bool) {
+func (c *Client) mapErr(err error) error {
+	name := c.name
+	if info, ok := provider.Lookup(c.name); ok {
+		name = info.DisplayName
+	}
+	return provider.MapError(name, err, func(err error) (int, bool) {
 		var apiErr *openai.Error
 		if errors.As(err, &apiErr) {
 			return apiErr.StatusCode, true
