@@ -111,6 +111,12 @@ func SaveConfig(path string, cfg FileConfig) error {
 // same directory, syncs it, chmods it to 0600, then renames it into place.
 // The directory is created with mode 0700 if it does not exist.
 func atomicWriteFile(path string, data []byte) (err error) {
+	// A config kept in a dotfiles repo is often a symlink to it. Renaming
+	// over the link would replace it with a plain file and silently fork
+	// the config from the repo, so write to what it points at instead.
+	if target, err := filepath.EvalSymlinks(path); err == nil {
+		path = target
+	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating directory: %w", err)

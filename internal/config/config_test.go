@@ -690,3 +690,30 @@ func TestResolveAuthCmdTimesOut(t *testing.T) {
 		t.Errorf("ResolveAuth took %s; the timeout did not stop it", d)
 	}
 }
+
+func TestSaveConfigWritesThroughSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "dotfiles", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte(`selected_provider = "openai"`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "config.toml")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SaveConfig(link, FileConfig{SelectedProvider: "groq"}); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("SaveConfig replaced the symlink with a regular file")
+	}
+	cfg, _, err := LoadConfig(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t, "target SelectedProvider", "groq", cfg.SelectedProvider)
+}
