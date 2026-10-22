@@ -12,7 +12,7 @@ func init() {
 // AskInput extracts the question, options, and multi_select flag from an ask
 // tool call.
 func AskInput(tc provider.ToolCall) (question string, options []string, multiSelect bool) {
-	question, _ = tc.Input["question"].(string)
+	question = stringInput(tc.Input, "question")
 	if opts, ok := tc.Input["options"].([]any); ok {
 		for _, o := range opts {
 			if s, ok := o.(string); ok {

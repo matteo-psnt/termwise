@@ -17,7 +17,7 @@ const (
 
 func init() {
 	stepFns[GrepDef.Name] = func(_ provider.ToolCall) Step {
-		return Step{Kind: StepExecutor, Execute: ExecuteGrep}
+		return Step{Kind: StepExecutor, Execute: executor(Grep)}
 	}
 	detailFns[GrepDef.Name] = grepDetail
 }
@@ -102,38 +102,30 @@ Usage:
 
 // GrepPattern returns the pattern argument for a grep tool call.
 func GrepPattern(tc provider.ToolCall) string {
-	p, _ := tc.Input["pattern"].(string)
-	return p
+	return stringInput(tc.Input, "pattern")
 }
 
 // GrepPath returns the path argument for a grep tool call (empty if unset).
 func GrepPath(tc provider.ToolCall) string {
-	p, _ := tc.Input["path"].(string)
-	return p
-}
-
-// ExecuteGrep runs the grep tool for a tool call and packages the result.
-func ExecuteGrep(ctx context.Context, tc provider.ToolCall) provider.ToolResult {
-	content, isErr := Grep(ctx, tc.Input)
-	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
+	return stringInput(tc.Input, "path")
 }
 
 // Grep runs ripgrep with arguments derived from input and returns a formatted
 // text result. Returns (content, isError).
 func Grep(ctx context.Context, input map[string]any) (string, bool) {
-	pattern, _ := input["pattern"].(string)
+	pattern := stringInput(input, "pattern")
 	if pattern == "" {
 		return "error: 'pattern' is required", true
 	}
 
 	cwd, _ := os.Getwd()
-	pathArg, _ := input["path"].(string)
+	pathArg := stringInput(input, "path")
 	absPath, _, err := resolveSearchPath(pathArg, cwd)
 	if err != nil {
 		return fmt.Sprintf("error: path does not exist: %s", pathArg), true
 	}
 
-	outputMode, _ := input["output_mode"].(string)
+	outputMode := stringInput(input, "output_mode")
 	if outputMode == "" {
 		outputMode = "files_with_matches"
 	}
@@ -286,14 +278,4 @@ func formatCount(lines []string, cwd string, headLimit, offset int) string {
 		summary += " with pagination = " + info
 	}
 	return body + summary
-}
-
-func intInput(input map[string]any, key string) (int, bool) {
-	switch v := input[key].(type) {
-	case float64:
-		return int(v), true
-	case int:
-		return v, true
-	}
-	return 0, false
 }

@@ -48,14 +48,14 @@ Read-only commands run automatically. Anything that modifies files, git state, p
 
 // BashCommand returns the command argument for a bash tool call.
 func BashCommand(tc provider.ToolCall) string {
-	c, _ := tc.Input["command"].(string)
-	return c
+	return stringInput(tc.Input, "command")
 }
 
 // ExecuteBash runs the bash tool for a tool call and packages the result.
+// It stays a named function because the approval path outside this package runs
+// bash directly once the user confirms.
 func ExecuteBash(ctx context.Context, tc provider.ToolCall) provider.ToolResult {
-	content, isErr := Bash(ctx, tc.Input)
-	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
+	return executor(Bash)(ctx, tc)
 }
 
 // BashResult is the structured output returned by the bash tool.
@@ -68,7 +68,7 @@ type BashResult struct {
 // Bash executes a shell command and returns the result as a JSON string.
 // Returns (content, isError).
 func Bash(ctx context.Context, input map[string]any) (string, bool) {
-	command, _ := input["command"].(string)
+	command := stringInput(input, "command")
 	if command == "" {
 		return "error: 'command' is required", true
 	}

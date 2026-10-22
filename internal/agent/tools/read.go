@@ -11,14 +11,6 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
-// ExecuteRead runs the read tool for a tool call and packages the result.
-// The ctx argument is unused; it's present to give read the same signature as
-// other executors so they can plug into Step.Execute uniformly.
-func ExecuteRead(_ context.Context, tc provider.ToolCall) provider.ToolResult {
-	content, isErr := Read(tc.Input)
-	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
-}
-
 const (
 	maxReadLines      = 2000
 	maxDirListEntries = 500
@@ -26,7 +18,7 @@ const (
 
 func init() {
 	stepFns[ReadDef.Name] = func(_ provider.ToolCall) Step {
-		return Step{Kind: StepExecutor, Execute: ExecuteRead}
+		return Step{Kind: StepExecutor, Execute: executor(Read)}
 	}
 	detailFns[ReadDef.Name] = ReadPath
 }
@@ -60,15 +52,15 @@ Prefer this over ` + "`bash cat`" + ` or ` + "`bash ls`" + `: it is not gated, t
 
 // ReadPath returns the path argument for a read tool call.
 func ReadPath(tc provider.ToolCall) string {
-	p, _ := tc.Input["path"].(string)
-	return p
+	return stringInput(tc.Input, "path")
 }
 
 // Read executes the read tool. When path points at a directory, it returns a
 // listing of immediate children; otherwise it returns file contents.
-// Returns (content, isError).
-func Read(input map[string]any) (string, bool) {
-	path, _ := input["path"].(string)
+// Returns (content, isError). The ctx argument is unused; it's present to give
+// read the same signature as the other tools so it can go through executor.
+func Read(_ context.Context, input map[string]any) (string, bool) {
+	path := stringInput(input, "path")
 	if path == "" {
 		return "error: 'path' is required", true
 	}
@@ -82,12 +74,12 @@ func Read(input map[string]any) (string, bool) {
 	}
 
 	offset := 0
-	if v, ok := input["offset"].(float64); ok && v >= 0 {
-		offset = int(v)
+	if v, ok := intInput(input, "offset"); ok && v >= 0 {
+		offset = v
 	}
 	limit := maxReadLines
-	if v, ok := input["limit"].(float64); ok && v > 0 && int(v) < maxReadLines {
-		limit = int(v)
+	if v, ok := intInput(input, "limit"); ok && v > 0 && v < maxReadLines {
+		limit = v
 	}
 
 	data, err := os.ReadFile(path)

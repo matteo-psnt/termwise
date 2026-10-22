@@ -10,8 +10,7 @@ func init() {
 
 // CommandContent returns the proposed command body from a command tool call.
 func CommandContent(tc provider.ToolCall) string {
-	c, _ := tc.Input["content"].(string)
-	return c
+	return stringInput(tc.Input, "content")
 }
 
 // CommandDef defines the command tool. The agent loop intercepts command calls

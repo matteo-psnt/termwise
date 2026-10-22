@@ -13,7 +13,7 @@ const defaultGlobLimit = 100
 
 func init() {
 	stepFns[GlobDef.Name] = func(_ provider.ToolCall) Step {
-		return Step{Kind: StepExecutor, Execute: ExecuteGlob}
+		return Step{Kind: StepExecutor, Execute: executor(Glob)}
 	}
 	detailFns[GlobDef.Name] = globDetail
 }
@@ -50,32 +50,24 @@ Usage:
 
 // GlobPattern returns the pattern argument for a glob tool call.
 func GlobPattern(tc provider.ToolCall) string {
-	p, _ := tc.Input["pattern"].(string)
-	return p
+	return stringInput(tc.Input, "pattern")
 }
 
 // GlobPath returns the path argument for a glob tool call (empty if unset).
 func GlobPath(tc provider.ToolCall) string {
-	p, _ := tc.Input["path"].(string)
-	return p
-}
-
-// ExecuteGlob runs the glob tool for a tool call and packages the result.
-func ExecuteGlob(ctx context.Context, tc provider.ToolCall) provider.ToolResult {
-	content, isErr := Glob(ctx, tc.Input)
-	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
+	return stringInput(tc.Input, "path")
 }
 
 // Glob lists files matching a glob pattern, sorted by modification time.
 // Returns (content, isError).
 func Glob(ctx context.Context, input map[string]any) (string, bool) {
-	pattern, _ := input["pattern"].(string)
+	pattern := stringInput(input, "pattern")
 	if pattern == "" {
 		return "error: 'pattern' is required", true
 	}
 
 	cwd, _ := os.Getwd()
-	pathArg, _ := input["path"].(string)
+	pathArg := stringInput(input, "path")
 	absPath, info, err := resolveSearchPath(pathArg, cwd)
 	if err != nil {
 		if absPath == "" {
