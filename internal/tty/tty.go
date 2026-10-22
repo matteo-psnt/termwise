@@ -76,27 +76,9 @@ func QueryCursorRow(in *os.File, out io.Writer) (int, error) {
 		return 0, fmt.Errorf("writing DSR: %w", err)
 	}
 
-	deadline := time.Now().Add(200 * time.Millisecond)
-	_ = in.SetReadDeadline(deadline)
-	defer func() { _ = in.SetReadDeadline(time.Time{}) }()
-
-	// Reply: ESC[<row>;<col>R. Read byte-by-byte until 'R', giving up after
-	// maxReply bytes, far more than any real reply needs.
-	const maxReply = 32
-	var got []byte
-	for len(got) < maxReply {
-		var b [1]byte
-		n, err := in.Read(b[:])
-		if err != nil {
-			return 0, fmt.Errorf("reading DSR reply: %w", err)
-		}
-		if n == 0 {
-			continue
-		}
-		got = append(got, b[0])
-		if b[0] == 'R' {
-			break
-		}
+	got, err := readDSRReply(in, 200*time.Millisecond)
+	if err != nil {
+		return 0, err
 	}
 
 	var row, col int
@@ -117,4 +99,36 @@ func QueryCursorRow(in *os.File, out io.Writer) (int, error) {
 		return 0, fmt.Errorf("DSR row out of range: %d", row)
 	}
 	return row - 1, nil
+}
+
+// readDSRReply reads a cursor position reply (ESC[<row>;<col>R) from in,
+// byte by byte until 'R', giving up after timeout. It waits with poll(2) rather
+// than a read deadline: deadlines need a pollable file, and a terminal never is
+// on macOS (kqueue does not support ttys), so SetReadDeadline fails there and a
+// terminal that never answers would block startup forever. Polling also means
+// no read is left pending to swallow the user's first keystroke later.
+func readDSRReply(in *os.File, timeout time.Duration) ([]byte, error) {
+	fd := int(in.Fd())
+	deadline := time.Now().Add(timeout)
+	// Far more than any real reply needs.
+	const maxReply = 32
+	var got []byte
+	for len(got) < maxReply {
+		if err := waitReadable(fd, time.Until(deadline)); err != nil {
+			return nil, fmt.Errorf("reading DSR reply: %w", err)
+		}
+		var b [1]byte
+		n, err := in.Read(b[:])
+		if err != nil {
+			return nil, fmt.Errorf("reading DSR reply: %w", err)
+		}
+		if n == 0 {
+			continue
+		}
+		got = append(got, b[0])
+		if b[0] == 'R' {
+			break
+		}
+	}
+	return got, nil
 }
