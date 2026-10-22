@@ -92,7 +92,9 @@ func tokenMatchesDeniedFlag(token, blocked string) bool {
 	if strings.HasPrefix(blocked, "--") {
 		return strings.HasPrefix(token, blocked+"=")
 	}
-	if strings.HasPrefix(blocked, "-") && !strings.HasPrefix(blocked, "--") && len(blocked) == 2 {
+	// "--" flags returned above, so this is a short flag like -o, which also
+	// matches with its value attached (-ofile).
+	if strings.HasPrefix(blocked, "-") && len(blocked) == 2 {
 		return strings.HasPrefix(token, blocked)
 	}
 	return false

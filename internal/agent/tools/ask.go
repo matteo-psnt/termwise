@@ -4,15 +4,15 @@ import "github.com/matteo-psnt/termwise/internal/provider"
 
 func init() {
 	stepFns[AskDef.Name] = func(tc provider.ToolCall) Step {
-		q, opts, multi := AskInput(tc)
+		q, opts, multi := askInput(tc)
 		return Step{Kind: StepAsk, Question: q, Options: opts, MultiSelect: multi}
 	}
 }
 
-// AskInput extracts the question, options, and multi_select flag from an ask
+// askInput extracts the question, options, and multi_select flag from an ask
 // tool call.
-func AskInput(tc provider.ToolCall) (question string, options []string, multiSelect bool) {
-	question, _ = tc.Input["question"].(string)
+func askInput(tc provider.ToolCall) (question string, options []string, multiSelect bool) {
+	question = stringInput(tc.Input, "question")
 	if opts, ok := tc.Input["options"].([]any); ok {
 		for _, o := range opts {
 			if s, ok := o.(string); ok {

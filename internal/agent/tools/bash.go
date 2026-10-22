@@ -20,7 +20,7 @@ func init() {
 		return Step{Kind: StepGatedExecutor, GateCommand: BashCommand(tc), Execute: ExecuteBash}
 	}
 	detailFns[BashDef.Name] = BashCommand
-	displayFns[BashDef.Name] = FormatDisplay
+	displayFns[BashDef.Name] = formatDisplay
 }
 
 var BashDef = provider.ToolDef{
@@ -48,27 +48,27 @@ Read-only commands run automatically. Anything that modifies files, git state, p
 
 // BashCommand returns the command argument for a bash tool call.
 func BashCommand(tc provider.ToolCall) string {
-	c, _ := tc.Input["command"].(string)
-	return c
+	return stringInput(tc.Input, "command")
 }
 
 // ExecuteBash runs the bash tool for a tool call and packages the result.
+// It stays a named function because the approval path outside this package runs
+// bash directly once the user confirms.
 func ExecuteBash(ctx context.Context, tc provider.ToolCall) provider.ToolResult {
-	content, isErr := Bash(ctx, tc.Input)
-	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
+	return executor(bash)(ctx, tc)
 }
 
-// BashResult is the structured output returned by the bash tool.
-type BashResult struct {
+// bashResult is the structured output returned by the bash tool.
+type bashResult struct {
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
 	ExitCode int    `json:"exit_code"`
 }
 
-// Bash executes a shell command and returns the result as a JSON string.
+// bash executes a shell command and returns the result as a JSON string.
 // Returns (content, isError).
-func Bash(ctx context.Context, input map[string]any) (string, bool) {
-	command, _ := input["command"].(string)
+func bash(ctx context.Context, input map[string]any) (string, bool) {
+	command := stringInput(input, "command")
 	if command == "" {
 		return "error: 'command' is required", true
 	}
@@ -93,7 +93,7 @@ func Bash(ctx context.Context, input map[string]any) (string, bool) {
 		exitCode = exitErr.ExitCode()
 	}
 
-	result := BashResult{
+	result := bashResult{
 		Stdout:   truncateBashOutput(stdout.String()),
 		Stderr:   truncateBashOutput(stderr.String()),
 		ExitCode: exitCode,
@@ -102,10 +102,10 @@ func Bash(ctx context.Context, input map[string]any) (string, bool) {
 	return string(data), exitCode != 0
 }
 
-// FormatDisplay formats a bash tool result JSON string for human display,
+// formatDisplay formats a bash tool result JSON string for human display,
 // returning just stdout and stderr without the JSON wrapper or exit code.
-func FormatDisplay(jsonContent string) string {
-	var result BashResult
+func formatDisplay(jsonContent string) string {
+	var result bashResult
 	if err := json.Unmarshal([]byte(jsonContent), &result); err != nil {
 		return jsonContent
 	}

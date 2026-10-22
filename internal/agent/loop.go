@@ -9,7 +9,8 @@ import (
 )
 
 // NextToolStep processes pending tool calls until the next externally-visible
-// step. Auto-executed tools run immediately; gated tools (bash) pause for
+// step. Auto-executed tools run immediately; gated tools (bash) run immediately
+// too unless needsApproval rejects the command, in which case they pause for
 // approval; respond/ask tools surface intent to the caller.
 //
 // Dispatch is driven by each tool's registered Step in the tools package — this
@@ -56,28 +57,27 @@ func NextToolStep(ctx context.Context, toolCalls []provider.ToolCall, collected 
 					Collected: collected,
 				}
 			}
-			result := step.Execute(ctx, tc)
-			return ToolStep{
-				Kind:         ToolStepExecuted,
-				ToolCall:     tc,
-				Result:       result,
-				Remaining:    toolCalls[i+1:],
-				Collected:    append(collected, result),
-				AutoAccepted: true,
-			}
+			return executeStep(ctx, step, tc, toolCalls[i+1:], collected)
 
 		case tools.StepExecutor:
-			result := step.Execute(ctx, tc)
-			return ToolStep{
-				Kind:         ToolStepExecuted,
-				ToolCall:     tc,
-				Result:       result,
-				Remaining:    toolCalls[i+1:],
-				Collected:    append(collected, result),
-				AutoAccepted: true,
-			}
+			return executeStep(ctx, step, tc, toolCalls[i+1:], collected)
 		}
 	}
 
 	return ToolStep{Kind: ToolStepDone, Collected: collected}
+}
+
+// executeStep runs a step that needs no approval, either because its tool is
+// never gated or because the gate let this command through, and reports it as
+// auto-accepted.
+func executeStep(ctx context.Context, step tools.Step, tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) ToolStep {
+	result := step.Execute(ctx, tc)
+	return ToolStep{
+		Kind:         ToolStepExecuted,
+		ToolCall:     tc,
+		Result:       result,
+		Remaining:    remaining,
+		Collected:    append(collected, result),
+		AutoAccepted: true,
+	}
 }

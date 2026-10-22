@@ -630,6 +630,11 @@ func TestNeedsApprovalStructuredShellParsing(t *testing.T) {
 			if got := NeedsApproval(tc.command); got != tc.want {
 				t.Fatalf("NeedsApproval(%q) = %v, want %v", tc.command, got, tc.want)
 			}
+			// The approval prompt shows ApprovalReason, so it has to agree
+			// with the decision on every case, not just the handful below.
+			if reason := ApprovalReason(tc.command); (reason != "") != tc.want {
+				t.Fatalf("ApprovalReason(%q) = %q, but NeedsApproval wants %v", tc.command, reason, tc.want)
+			}
 		})
 	}
 }
