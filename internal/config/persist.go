@@ -52,7 +52,7 @@ func spliceConfig(old []byte, cfg FileConfig) ([]byte, error) {
 		return nil, err
 	}
 
-	s := splicer{file: file, eol: "\n"}
+	s := splicer{file: file, eol: "\n", rootInsert: -1}
 	if bytes.Contains(old, []byte("\r\n")) {
 		s.eol = "\r\n"
 	}
@@ -242,6 +242,10 @@ type splicer struct {
 	file  *tomlIndex
 	eol   string
 	edits []edit
+	// rootInsert is where new root keys go, or -1 when there are none.
+	rootInsert int
+	// droppedTail is set when a dropped section ran to the end of the file.
+	droppedTail bool
 	// newTables holds tables to append at the end of the file, in the
 	// order the canonical encoding lists them.
 	newTables []*newTable
@@ -262,21 +266,14 @@ func (s *splicer) add(start, end int, text string) {
 func (s *splicer) plan(was, want *tomlIndex) error {
 	f := s.file
 
-	// A provider removed from the map takes its whole section with it,
-	// unknown keys and all: they belonged to that provider.
+	// The dropped sections are deleted once the inserts are planned, so a
+	// deletion can be kept clear of where new root keys go.
+	drops, err := s.droppedProviders(was, want)
+	if err != nil {
+		return err
+	}
 	var dropped [][]string
-	for _, t := range was.tableOrder {
-		if _, ok := want.tables[pathKey(t.path)]; ok {
-			continue
-		}
-		if len(t.path) != 2 || t.path[0] != "providers" {
-			continue
-		}
-		ft, ok := f.tables[pathKey(t.path)]
-		if !ok || ft.array {
-			return fmt.Errorf("cannot remove [%s]: it is not a plain table", strings.Join(t.path, "."))
-		}
-		s.dropSection(ft)
+	for _, t := range drops {
 		dropped = append(dropped, t.path)
 	}
 
@@ -316,6 +313,9 @@ func (s *splicer) plan(was, want *tomlIndex) error {
 			return err
 		}
 	}
+	for _, t := range drops {
+		s.dropSection(t)
+	}
 
 	// An empty table that is new — a provider added with no settings yet —
 	// still needs its header to exist in the map.
@@ -337,6 +337,27 @@ func (s *splicer) plan(was, want *tomlIndex) error {
 	return nil
 }
 
+// droppedProviders returns the file's sections for providers removed from
+// the map. Each goes whole, unknown keys and all: they belonged to that
+// provider.
+func (s *splicer) droppedProviders(was, want *tomlIndex) ([]*tomlTable, error) {
+	var drops []*tomlTable
+	for _, t := range was.tableOrder {
+		if _, ok := want.tables[pathKey(t.path)]; ok {
+			continue
+		}
+		if len(t.path) != 2 || t.path[0] != "providers" {
+			continue
+		}
+		ft, ok := s.file.tables[pathKey(t.path)]
+		if !ok || ft.array {
+			return nil, fmt.Errorf("cannot remove [%s]: it is not a plain table", strings.Join(t.path, "."))
+		}
+		drops = append(drops, ft)
+	}
+	return drops, nil
+}
+
 // insertInto adds new key lines to table, after its last key, or as a new
 // table at the end of the file when the file does not have it yet.
 func (s *splicer) insertInto(table []string, want *tomlIndex, lines []string) error {
@@ -351,6 +372,7 @@ func (s *splicer) insertInto(table []string, want *tomlIndex, lines []string) er
 				b.WriteString(indentOf(last.line) + l + s.eol)
 			}
 			s.add(pos, pos, b.String())
+			s.rootInsert = pos
 		case f.firstHeader >= 0:
 			// Above the first table, but below a comment block that sits
 			// directly on it: that comment describes the table.
@@ -367,12 +389,14 @@ func (s *splicer) insertInto(table []string, want *tomlIndex, lines []string) er
 			}
 			b.WriteString(s.eol)
 			s.add(pos, pos, b.String())
+			s.rootInsert = pos
 		default:
 			pos := s.lineBreakAfter(len(f.data), &b)
 			for _, l := range lines {
 				b.WriteString(l + s.eol)
 			}
 			s.add(pos, pos, b.String())
+			s.rootInsert = pos
 		}
 		return nil
 	}
@@ -447,6 +471,13 @@ func (s *splicer) dropSection(t *tomlTable) {
 			}
 			start = prev
 		}
+		// New root keys can go right above the first table, which is
+		// this one when it is the only table: stop there, or the two
+		// edits overlap.
+		if start < s.rootInsert && s.rootInsert <= t.start {
+			start = s.rootInsert
+		}
+		s.droppedTail = true
 	}
 	s.add(start, end, "")
 }
@@ -454,21 +485,6 @@ func (s *splicer) dropSection(t *tomlTable) {
 // apply returns the file with every edit made and new tables appended.
 func (s *splicer) apply() ([]byte, error) {
 	data := s.file.data
-	if len(s.newTables) > 0 {
-		var b strings.Builder
-		s.lineBreakAfter(len(data), &b)
-		for i, t := range s.newTables {
-			if len(data) > 0 || i > 0 {
-				b.WriteString(s.eol)
-			}
-			b.WriteString(t.header + s.eol)
-			for _, l := range t.lines {
-				b.WriteString(l + s.eol)
-			}
-		}
-		s.add(len(data), len(data), b.String())
-	}
-
 	edits := s.edits
 	sort.SliceStable(edits, func(i, j int) bool {
 		if edits[i].start != edits[j].start {
@@ -484,16 +500,62 @@ func (s *splicer) apply() ([]byte, error) {
 	})
 	var out bytes.Buffer
 	pos := 0
+	prevDeletes := false
 	for _, e := range edits {
+		deletes := e.text == "" && e.start < e.end
 		if e.start < pos {
+			// Two dropped sections next to each other both claim the
+			// blank lines between them; deleting the union is right.
+			if deletes && prevDeletes {
+				pos = max(pos, e.end)
+				continue
+			}
 			return nil, errors.New("overlapping edits")
 		}
 		out.Write(data[pos:e.start])
 		out.WriteString(e.text)
 		pos = e.end
+		prevDeletes = deletes
 	}
 	out.Write(data[pos:])
+	if s.droppedTail {
+		// The last section was dropped, blank lines above it included,
+		// so blank lines still at the end are an inserted separator for
+		// tables that are gone.
+		b := out.Bytes()
+		for len(b) > 0 && b[len(b)-1] == '\n' && endsWithBlankLine(b) {
+			prev := bytes.LastIndexByte(b[:len(b)-1], '\n')
+			if prev < 0 {
+				break
+			}
+			b = b[:prev+1]
+		}
+		out.Truncate(len(b))
+	}
+
+	// New tables go after the edited text, each after one blank line —
+	// not a second one when the text already ends in a blank line.
+	for _, t := range s.newTables {
+		b := out.Bytes()
+		if len(b) > 0 && b[len(b)-1] != '\n' {
+			out.WriteString(s.eol)
+		}
+		if b := out.Bytes(); len(b) > 0 && !endsWithBlankLine(b) {
+			out.WriteString(s.eol)
+		}
+		out.WriteString(t.header + s.eol)
+		for _, l := range t.lines {
+			out.WriteString(l + s.eol)
+		}
+	}
 	return out.Bytes(), nil
+}
+
+// endsWithBlankLine reports whether b, which ends in a newline, ends with a
+// line holding nothing but whitespace.
+func endsWithBlankLine(b []byte) bool {
+	b = b[:len(b)-1]
+	return len(bytes.TrimSpace(b[bytes.LastIndexByte(b, '\n')+1:])) == 0
 }
 
 func (idx *tomlIndex) kvsInOrder() []*tomlKV {

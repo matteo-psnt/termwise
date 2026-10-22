@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -289,6 +290,119 @@ func TestSaveFlipsBoolInPlace(t *testing.T) {
 		c.Settings.AutoResume = &off
 	})
 	if want := "[settings]\nauto_resume = false # yes\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestSaveRenamesOnlyProviderAndSelectsIt(t *testing.T) {
+	// Dropping [providers.a] walks back over the blank line above it, to
+	// where selected_provider is inserted: the two edits used to overlap
+	// and the save fell back to a rewrite that lost the comment.
+	orig := "# termwise\n\n[providers.a]\nmodel = \"m\"\n"
+	got := saveOver(t, orig, func(c *FileConfig) {
+		pc := c.Providers["a"]
+		delete(c.Providers, "a")
+		c.Providers["b"] = pc
+		c.SelectedProvider = "b"
+	})
+	want := "# termwise\n\nselected_provider = \"b\"\n\n[providers.b]\nmodel = \"m\"\n"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestSpliceProperty saves random changes over plain hand-written files —
+// comments, blank lines, CRLF, no final newline, but no dotted keys, inline
+// tables or arrays of tables — and checks each one is edited in place and
+// decodes to the config that was saved.
+func TestSpliceProperty(t *testing.T) {
+	bases := []string{
+		"",
+		"# termwise\n",
+		"# termwise\n\n[providers.a]\nmodel = \"m\"\n",
+		"# termwise\n\n\n[providers.a]\nmodel = \"m\"\n\n",
+		"selected_provider = \"a\"\n\n[providers.a]\nmodel = \"m\"\n\n# openai\n[providers.openai]\nauth = \"env\"\nmodel = 'gpt'  # literal\n\n[settings]\ntheme = \"dark\"\n",
+		"[settings]\n  auto_resume = true\n\n[providers.ollama]\n",
+		"# top\n\n# about a\n[providers.a]\nmodel = \"m\"\nmystery = 1\n\n[providers.b]\nmodel = \"n\"",
+		userConfig,
+	}
+	for _, b := range bases[:len(bases):len(bases)] {
+		bases = append(bases, strings.ReplaceAll(b, "\n", "\r\n"))
+	}
+	names := []string{"a", "b", "openai", "anthropic", "ollama"}
+	values := []string{"", "m", "gpt-4o", `say "hi"`, `C:\path`, "it's", "naïve"}
+	rng := rand.New(rand.NewPCG(1, 2))
+	pick := func(xs []string) string { return xs[rng.IntN(len(xs))] }
+	boolp := func() *bool {
+		if rng.IntN(3) == 0 {
+			return nil
+		}
+		v := rng.IntN(2) == 0
+		return &v
+	}
+	mutate := func(c *FileConfig) {
+		if c.Providers == nil {
+			c.Providers = map[string]ProviderConfig{}
+		}
+		switch rng.IntN(9) {
+		case 0:
+			c.SelectedProvider = pick(append([]string{""}, names...))
+		case 1:
+			c.Providers[pick(names)] = ProviderConfig{Model: pick(values)}
+		case 2:
+			delete(c.Providers, pick(names))
+		case 3: // rename
+			from, to := pick(names), pick(names)
+			if pc, ok := c.Providers[from]; ok {
+				delete(c.Providers, from)
+				c.Providers[to] = pc
+				c.SelectedProvider = to
+			}
+		case 4:
+			for n, pc := range c.Providers {
+				pc.Model, pc.BaseURL, pc.Effort = pick(values), pick(values), pick(append([]string{""}, EffortLevels...))
+				c.Providers[n] = pc
+				break
+			}
+		case 5:
+			for n, pc := range c.Providers {
+				pc.Auth, pc.APIKeyCmd, pc.EnvVar = pick([]string{"", "env", "cmd", "keychain"}), pick(values), pick(values)
+				c.Providers[n] = pc
+				break
+			}
+		case 6:
+			c.Settings.Theme, c.Settings.Keybinding = pick(values), pick(values)
+		case 7:
+			c.Settings.AutoResume, c.Settings.LLMJudge = boolp(), boolp()
+		case 8:
+			c.Settings.Suggestions, c.Settings.ShellContext = boolp(), boolp()
+		}
+	}
+	for i := range 3000 {
+		base := bases[rng.IntN(len(bases))]
+		var cfg FileConfig
+		if err := toml.Unmarshal([]byte(base), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		for range 1 + rng.IntN(4) {
+			mutate(&cfg)
+		}
+		if _, err := spliceConfig([]byte(base), cfg); err != nil {
+			want, _ := toml.Marshal(cfg)
+			t.Fatalf("case %d: splice failed: %v\nfile:\n%q\nsaving:\n%s", i, err, base, want)
+		}
+	}
+}
+
+func TestSaveRemovesTwoAdjacentProviderSections(t *testing.T) {
+	// Both sections claim the blank line between them.
+	orig := "# top\n\n[providers.a]\nmodel = \"m\"\n\n[providers.b]\nmodel = \"n\"\n"
+	got := saveOver(t, orig, func(c *FileConfig) {
+		_ = RemoveProvider(c, "a")
+		_ = RemoveProvider(c, "b")
+		c.SelectedProvider = "openai"
+	})
+	if want := "# top\n\nselected_provider = \"openai\"\n"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
