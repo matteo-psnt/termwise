@@ -2,7 +2,6 @@ package allowlist
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"mvdan.cc/sh/v3/syntax"
@@ -155,8 +154,12 @@ func parsedCommandFromTokens(tokens []string) (parsedCommand, bool) {
 	if len(tokens) == 0 {
 		return parsedCommand{}, false
 	}
+	// The name is kept exactly as written. Rules are keyed by bare names that
+	// the shell looks up on PATH; a word with a slash runs that file instead,
+	// so ./ls or /tmp/x/cat is some other program that only shares a name.
+	// Leaving the slash in means no rule matches and it needs approval.
 	return parsedCommand{
-		Name: filepath.Base(tokens[0]),
+		Name: tokens[0],
 		Args: append([]string(nil), tokens[1:]...),
 	}, true
 }
