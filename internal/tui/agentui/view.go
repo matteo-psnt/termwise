@@ -59,7 +59,7 @@ func (m Model) renderedView() string {
 	bottom := m.renderStatusLine()
 	if m.state == stateIdle {
 		if matches, cursor := m.visibleDropdown(); len(matches) > 0 {
-			bottom = m.renderSlashDropdown(matches, cursor)
+			bottom = m.renderCompletionDropdown(matches, cursor)
 		}
 	}
 	return lipgloss.JoinVertical(lipgloss.Left,

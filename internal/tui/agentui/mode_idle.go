@@ -61,8 +61,8 @@ func (m Model) idleDown() (tea.Model, tea.Cmd) {
 }
 
 // inputCursorAtEnd reports whether the cursor sits at the very end of the input
-// text (last line, end of that line). Used by the slash dropdown to decide
-// whether Right accepts a completion or just moves the cursor.
+// text (last line, end of that line). Used by the completion dropdowns to
+// decide whether Right accepts a completion or just moves the cursor.
 func (m Model) inputCursorAtEnd() bool {
 	onLastLine := m.input.Line() == strings.Count(m.input.Value(), "\n")
 	li := m.input.LineInfo()
@@ -186,52 +186,4 @@ func (idleMode) helpBindings(_ Model) []binding {
 		{"/", "slash commands (/help)"},
 		{"@", "complete a file path"},
 	}
-}
-
-// renderSlashDropdown renders the slash-command match list below the input
-// row. The selected row uses the accent color; the other rows are faint to
-// keep the dropdown unobtrusive. Scrolls a windowed view when matches exceed
-// slashDropdownMaxRows.
-const slashDropdownMaxRows = 5
-
-func (m Model) renderSlashDropdown(matches []slashMatch, cursor int) string {
-	start := 0
-	end := len(matches)
-	if end > slashDropdownMaxRows {
-		if cursor >= slashDropdownMaxRows {
-			start = cursor - slashDropdownMaxRows + 1
-		}
-		end = start + slashDropdownMaxRows
-		if end > len(matches) {
-			end = len(matches)
-			start = end - slashDropdownMaxRows
-		}
-	}
-	visible := matches[start:end]
-
-	labelW := 0
-	for _, mt := range visible {
-		if w := lipgloss.Width(mt.Label); w > labelW {
-			labelW = w
-		}
-	}
-
-	var b strings.Builder
-	for i, mt := range visible {
-		var labelOut string
-		if start+i == cursor {
-			labelOut = m.renderer.styles.InputPrompt.Render(mt.Label)
-		} else {
-			labelOut = m.renderer.styles.ActionHints.Render(mt.Label)
-		}
-		b.WriteString(labelOut)
-		if mt.Description != "" {
-			pad := max(labelW-lipgloss.Width(mt.Label)+2, 1)
-			b.WriteString(strings.Repeat(" ", pad) + m.renderer.styles.ActionHints.Render(mt.Description))
-		}
-		if i < len(visible)-1 {
-			b.WriteString("\n")
-		}
-	}
-	return b.String()
 }

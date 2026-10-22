@@ -40,14 +40,14 @@ func (m Model) inputRowHeight() int {
 
 // totalViewHeight returns the total row count of the View() output for the
 // current state: header(1) + viewport + sep(1) + input + sep(1) + bottom.
-// The bottom region is the status line normally, or the slash dropdown when
-// it's visible.
+// The bottom region is the status line normally, or a completion dropdown
+// when one is visible.
 func (m Model) totalViewHeight() int {
 	_, vpH := m.viewportDims()
 	bottomH := 1 // status line
 	if m.state == stateIdle {
 		if matches, _ := m.visibleDropdown(); len(matches) > 0 {
-			bottomH = min(len(matches), slashDropdownMaxRows)
+			bottomH = min(len(matches), dropdownMaxRows)
 		}
 	}
 	return 3 + vpH + m.inputRowHeight() + bottomH

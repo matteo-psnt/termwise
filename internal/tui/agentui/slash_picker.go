@@ -145,3 +145,11 @@ func (p slashPicker) View(r Renderer) string {
 	b.WriteString(r.styles.ActionHints.Render("  ↑/↓ navigate · ↵ select · esc cancel"))
 	return b.String()
 }
+
+// openSlashPicker activates the slash-picker sub-TUI for the given command.
+func (m Model) openSlashPicker(cmd, title, subtitle string, options []slashOption, current string) (tea.Model, tea.Cmd) {
+	p := newSlashPicker(cmd, title, subtitle, options, current)
+	m.slashPicker = &p
+	m.state = stateSlashPicker
+	return m, nil
+}
