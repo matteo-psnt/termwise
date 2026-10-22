@@ -310,7 +310,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		return m.abort()
 	}
-	if m.closeKey != "" {
+	// While /config is capturing a new hotkey, the current one is a key to
+	// record (re-picking it, say), not a request to close.
+	capturing := m.state == stateConfigEditor && m.configEditor != nil && m.configEditor.phase == configPhaseCapture
+	if m.closeKey != "" && !capturing {
 		if zsh, ok := keybinding.KeyMsgToZsh(msg.Key()); ok && zsh == m.closeKey {
 			return m.abort()
 		}

@@ -155,3 +155,19 @@ func TestConfigWritesSurviveMissingProvidersTable(t *testing.T) {
 		t.Fatalf("persisted %+v selected %q", cfg.Providers, cfg.SelectedProvider)
 	}
 }
+
+// In keybinding capture the current close key is recorded, not obeyed.
+func TestKeybindingCaptureRecordsTheCloseKey(t *testing.T) {
+	m := configEditorModel(t)
+	m.closeKey = "^T"
+	m = openConfigValuePicker(m, mustSetting(t, "keybinding"))
+
+	next, _ := m.handleKey(tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl})
+	got := next.(Model)
+	if got.quitting {
+		t.Fatal("pressing the close key during capture quit the TUI")
+	}
+	if v := loadConfig(t, got.cfgPath).Settings.Keybinding; v != "^T" {
+		t.Fatalf("keybinding on disk = %q, want ^T", v)
+	}
+}
