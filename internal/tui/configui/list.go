@@ -31,3 +31,13 @@ func renderListRow(styles configStyles, focused bool, text, badge string) string
 	}
 	return styles.Normal.Render("  "+text) + badge
 }
+
+// listWindow returns the [start, end) slice of an n-item list that keeps
+// cursor visible within size rows, scrolling only once the cursor nears an edge.
+func listWindow(n, cursor, size int) (int, int) {
+	if n <= size {
+		return 0, n
+	}
+	start := min(max(cursor-size/2, 0), n-size)
+	return start, start + size
+}

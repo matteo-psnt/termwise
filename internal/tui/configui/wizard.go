@@ -437,22 +437,7 @@ func (m wizardModel) renderInner() string {
 
 	case wizPickModel:
 		b.WriteString("Choose a model:\n\n")
-		start, end := listWindow(len(m.apiModels), m.cursor, m.modelRows())
-		if start > 0 {
-			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
-		}
-		def := models.DefaultModel(m.provider)
-		for i := start; i < end; i++ {
-			id := m.apiModels[i].ID
-			badge := ""
-			if id == def {
-				badge = m.styles.Dim.Render("  (recommended)")
-			}
-			b.WriteString(renderListRow(m.styles, i == m.cursor, id, badge) + "\n")
-		}
-		if end < len(m.apiModels) {
-			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  ↓ %d more", len(m.apiModels)-end)) + "\n")
-		}
+		b.WriteString(renderModelList(m.styles, m.apiModels, m.cursor, m.height, models.DefaultModel(m.provider)))
 		b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back   q quit"))
 
 	case wizDone:
@@ -468,41 +453,4 @@ func (m wizardModel) renderInner() string {
 	}
 
 	return b.String()
-}
-
-// defaultModelIndex returns the position of the provider's recommended model
-// in list, or 0 when the provider did not return it.
-func defaultModelIndex(providerName string, list []provider.Model) int {
-	return modelIndex(list, models.DefaultModel(providerName))
-}
-
-// modelIndex returns the position of the model with the given ID in list, or
-// 0 when it isn't there.
-func modelIndex(list []provider.Model, id string) int {
-	for i, mod := range list {
-		if mod.ID == id {
-			return i
-		}
-	}
-	return 0
-}
-
-// modelRows is how many model rows fit in the box. The rest of the screen is
-// title, prompt, scroll markers, help line and the box's own border.
-func (m wizardModel) modelRows() int {
-	const chrome = 14
-	if m.height <= 0 {
-		return 15
-	}
-	return max(m.height-chrome, 5)
-}
-
-// listWindow returns the [start, end) slice of an n-item list that keeps
-// cursor visible within size rows, scrolling only once the cursor nears an edge.
-func listWindow(n, cursor, size int) (int, int) {
-	if n <= size {
-		return 0, n
-	}
-	start := min(max(cursor-size/2, 0), n-size)
-	return start, start + size
 }

@@ -203,7 +203,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 
 	case rowProvModel:
 		pc := m.cfg.Providers[row.provider]
-		mp := newModelPicker(row.provider, pc, pc.Model, m.styles)
+		mp := newModelPicker(row.provider, pc, pc.Model, m.height, m.styles)
 		m.modelPicker = &mp
 		return m, m.modelPicker.Init()
 
