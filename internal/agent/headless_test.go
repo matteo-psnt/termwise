@@ -71,3 +71,30 @@ func TestRunHeadlessRejectsEmptyCommand(t *testing.T) {
 		t.Fatalf("got %+v, want an error for an empty command", out)
 	}
 }
+
+// Once the provider reports that it dropped the replayed state, the loop must
+// stop sending it, or every later request is rejected and retried again.
+func TestRunHeadlessDropsStateTheProviderRejected(t *testing.T) {
+	state := json.RawMessage(`[{"type":"thinking","thinking":"t","signature":"s"}]`)
+	client := &scriptedClient{next: func(call int) *provider.ChatResponse {
+		switch call {
+		case 0:
+			return &provider.ChatResponse{ToolCalls: []provider.ToolCall{readCall("1")}, ProviderState: state}
+		case 1:
+			return &provider.ChatResponse{ToolCalls: []provider.ToolCall{readCall("2")}, HistoryStateDropped: true}
+		}
+		return &provider.ChatResponse{Content: "done"}
+	}}
+
+	if _, err := RunHeadless(context.Background(), HeadlessConfig{Client: client, Prompt: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.requests) != 3 {
+		t.Fatalf("got %d requests, want 3", len(client.requests))
+	}
+	for i, m := range client.requests[2].Messages {
+		if len(m.ProviderState) != 0 {
+			t.Errorf("message %d still replays state the provider rejected", i)
+		}
+	}
+}

@@ -81,6 +81,9 @@ func RunHeadless(ctx context.Context, cfg HeadlessConfig) (FinalResponse, error)
 			return output, nil
 		}
 
+		if resp.HistoryStateDropped {
+			messages = provider.WithoutState(messages)
+		}
 		messages = append(messages, provider.Message{
 			Role:          "assistant",
 			Content:       resp.Content,

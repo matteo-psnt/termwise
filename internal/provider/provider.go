@@ -88,6 +88,22 @@ type ChatResponse struct {
 	// ProviderState must be copied onto the assistant Message built from
 	// this response; see Message.ProviderState.
 	ProviderState json.RawMessage
+	// HistoryStateDropped reports that the provider rejected the
+	// ProviderState replayed in the request's history and answered without
+	// it. The caller must drop it from its own history too (WithoutState),
+	// or every later request will be rejected and retried the same way.
+	HistoryStateDropped bool
+}
+
+// WithoutState returns a copy of msgs with every ProviderState removed;
+// text, tool calls and tool results are kept.
+func WithoutState(msgs []Message) []Message {
+	out := make([]Message, len(msgs))
+	for i, m := range msgs {
+		m.ProviderState = nil
+		out[i] = m
+	}
+	return out
 }
 
 // ----------------------------------------------------------------------------

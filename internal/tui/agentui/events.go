@@ -36,6 +36,9 @@ func (m Model) handleResponseEvent(msg responseEvent) (tea.Model, tea.Cmd) {
 	resp := msg.Resp
 	m.inputTokens += resp.InputTokens
 	m.outputTokens += resp.OutputTokens
+	if resp.HistoryStateDropped {
+		m.messages = provider.WithoutState(m.messages)
+	}
 	m.messages = append(m.messages, provider.Message{
 		Role:          "assistant",
 		Content:       resp.Content,

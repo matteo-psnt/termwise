@@ -67,12 +67,20 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 		// produced them, and newer accounts reject them once earlier history
 		// was edited. The API accepts history without thinking, so retry
 		// once without it rather than fail every later turn of the session.
-		msgs, err = toMessageParams(withoutProviderState(req.Messages))
+		msgs, err = toMessageParams(provider.WithoutState(req.Messages))
 		if err != nil {
 			return nil, fmt.Errorf("building messages: %w", err)
 		}
 		params.Messages = msgs
 		msg, err = c.sdk.Messages.New(ctx, params)
+		if err != nil {
+			return nil, mapErr(err)
+		}
+		resp, err := fromChatResponse(msg)
+		if resp != nil {
+			resp.HistoryStateDropped = true
+		}
+		return resp, err
 	}
 	if err != nil {
 		return nil, mapErr(err)
@@ -89,17 +97,6 @@ func isThinkingSignatureError(err error) bool {
 	return errors.As(err, &apiErr) &&
 		apiErr.StatusCode == http.StatusBadRequest &&
 		strings.Contains(apiErr.Error(), thinkingSignatureMessage)
-}
-
-// withoutProviderState returns a copy of msgs with the thinking blocks
-// carried in ProviderState removed; text, tool calls and results are kept.
-func withoutProviderState(msgs []provider.Message) []provider.Message {
-	out := make([]provider.Message, len(msgs))
-	for i, m := range msgs {
-		m.ProviderState = nil
-		out[i] = m
-	}
-	return out
 }
 
 // mapErr converts SDK errors to our provider.Error type.

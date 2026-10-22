@@ -94,6 +94,9 @@ func TestChatRetriesWithoutThinkingOnSignatureError(t *testing.T) {
 	if resp.Content != "done" {
 		t.Fatalf("got %+v, want the retried response", resp)
 	}
+	if !resp.HistoryStateDropped {
+		t.Error("retried response does not tell the caller to drop the rejected state")
+	}
 	if len(bodies) != 2 {
 		t.Fatalf("made %d requests, want 2", len(bodies))
 	}
