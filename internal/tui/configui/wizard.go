@@ -51,7 +51,8 @@ type wizardModel struct {
 	authMethod string // "env", "cmd", "keychain"
 
 	// wizEnterValue input
-	input authInput
+	input    authInput
+	inputErr string
 
 	// wizPickModel
 	apiModels []provider.Model
@@ -257,6 +258,7 @@ func (m wizardModel) handleEnterValueKey(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 		return m, tea.Quit
 	case "esc":
 		m.input.Blur()
+		m.inputErr = ""
 		m.cursor = 0
 		if provider.HasNoAuth(m.provider) {
 			m.step = wizPickProvider
@@ -266,9 +268,11 @@ func (m wizardModel) handleEnterValueKey(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 	case "enter":
 		if m.input.missing() {
 			// Don't submit; leave cursor in the field.
+			m.inputErr = errEmptyValue
 			return m, nil
 		}
 		m.input.Blur()
+		m.inputErr = ""
 		m.step = wizWorking
 		return m, tea.Batch(m.spin.Tick, m.fetchModelsCmd())
 	default:
@@ -321,6 +325,7 @@ func (m wizardModel) handleErrKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // setupEnterValue sets the input up, empty, for the current auth method.
 func (m *wizardModel) setupEnterValue() {
 	m.input.setup(m.provider, m.authMethod, "")
+	m.inputErr = ""
 }
 
 // fetchModelsCmd builds the ProviderConfig from wizard state and calls ListModels.
@@ -402,7 +407,7 @@ func (m wizardModel) renderInner() string {
 		b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back   q quit"))
 
 	case wizEnterValue:
-		b.WriteString(m.input.view(m.styles, "", "enter confirm   esc back"))
+		b.WriteString(m.input.view(m.styles, m.inputErr, "enter confirm   esc back"))
 
 	case wizWorking:
 		b.WriteString(m.styles.Spinner.Render(m.spin.View()) + " Connecting to " + m.provider + "...")

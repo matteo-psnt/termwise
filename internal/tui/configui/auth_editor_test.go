@@ -66,8 +66,12 @@ func TestWizardBlankFallbackUsesDefault(t *testing.T) {
 	m.authMethod = "cmd"
 	m.setupEnterValue()
 	next, _ = m.handleEnterValueKey(keyEnter)
-	if got := next.(wizardModel).step; got != wizEnterValue {
-		t.Errorf("step = %v; want a blank command to be refused", got)
+	wiz := next.(wizardModel)
+	if wiz.step != wizEnterValue || wiz.inputErr != errEmptyValue {
+		t.Errorf("step = %v, inputErr = %q; want a blank command refused with an error", wiz.step, wiz.inputErr)
+	}
+	if !strings.Contains(wiz.renderInner(), "Error: "+errEmptyValue) {
+		t.Errorf("error not shown:\n%s", wiz.renderInner())
 	}
 }
 

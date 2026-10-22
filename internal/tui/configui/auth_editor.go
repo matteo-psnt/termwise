@@ -175,7 +175,7 @@ func (m authEditorModel) handleEnterValue(msg tea.KeyPressMsg) (authEditorModel,
 		}
 	case "enter":
 		if m.input.missing() {
-			m.inputErr = "value cannot be empty"
+			m.inputErr = errEmptyValue
 			return m, nil
 		}
 		m.input.Blur()
