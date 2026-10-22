@@ -1150,3 +1150,25 @@ func TestBundleScanFalsePositivesStaySafe(t *testing.T) {
 		`xxd -r -p dump.hex`,
 	)
 }
+
+// PAGER and GIT_PAGER name a program to run, so only "cat" and the empty
+// value (no pager) are harmless.
+func TestPagerVariablesAllowOnlyCat(t *testing.T) {
+	t.Parallel()
+	requireSafe(t,
+		`GIT_PAGER=cat git log`,
+		`PAGER=cat git log -5`,
+		`GIT_PAGER= git log`,
+		`GIT_PAGER='' git diff`,
+		`PAGER="cat" git show HEAD`,
+	)
+	requireApproval(t,
+		`GIT_PAGER=less git log`,
+		`PAGER=/tmp/x git log`,
+		`GIT_PAGER='cat /etc/passwd; sh' git log`,
+		`GIT_PAGER=./cat git log`,
+		`PAGER=$(echo cat) git log`,
+		`GIT_PAGER+=cat git log`,
+		`MANPAGER=cat git log`,
+	)
+}

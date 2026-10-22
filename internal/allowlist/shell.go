@@ -90,14 +90,24 @@ func validateAssignments(assigns []*syntax.Assign) error {
 		if assign == nil || assign.Append || assign.Naked || assign.Index != nil || assign.Array != nil || assign.Name == nil {
 			return fmt.Errorf("dynamic assignment requires approval")
 		}
-		if !harmlessEnvVar(assign.Name.Value) {
-			return fmt.Errorf("setting %s requires approval", assign.Name.Value)
+		name := assign.Name.Value
+		pager := isPagerVar(name)
+		if !harmlessEnvVar(name) && !pager {
+			return fmt.Errorf("setting %s requires approval", name)
 		}
-		if assign.Value == nil {
-			continue
+		value := ""
+		if assign.Value != nil {
+			lit, ok := literalWord(assign.Value)
+			if !ok {
+				return fmt.Errorf("dynamic assignment requires approval")
+			}
+			value = lit
 		}
-		if _, ok := literalWord(assign.Value); !ok {
-			return fmt.Errorf("dynamic assignment requires approval")
+		// The pager variables name a program. Only cat (found on PATH, which
+		// cannot be set here) and the empty value, which turns the pager
+		// off, are harmless; this allows the common GIT_PAGER=cat git log.
+		if pager && value != "" && value != "cat" {
+			return fmt.Errorf("setting %s to anything but cat requires approval", name)
 		}
 	}
 	return nil
@@ -114,6 +124,10 @@ func harmlessEnvVar(name string) bool {
 		return true
 	}
 	return strings.HasPrefix(name, "LC_")
+}
+
+func isPagerVar(name string) bool {
+	return name == "PAGER" || name == "GIT_PAGER"
 }
 
 func literalWord(word *syntax.Word) (string, bool) {
