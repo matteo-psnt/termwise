@@ -31,7 +31,7 @@ func resolveTUIRuntimeOrSetup() (tuiRuntime, error) {
 	if serr := configui.Open(cfgPath, config.FileConfig{}, false); serr != nil {
 		return tuiRuntime{}, serr
 	}
-	if !configExists(cfgPath) {
+	if !config.ConfigExists(cfgPath) {
 		return tuiRuntime{}, fmt.Errorf("setup was not finished — run `%s config` when you're ready", cliname.Name())
 	}
 	offerShellIntegration(os.Stdin, os.Stdout)
@@ -40,11 +40,6 @@ func resolveTUIRuntimeOrSetup() (tuiRuntime, error) {
 
 func interactive() bool {
 	return tty.IsTerminal(os.Stdin) && tty.IsTerminal(os.Stdout)
-}
-
-func configExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 // offerShellIntegration asks to add the integration to the user's rc file

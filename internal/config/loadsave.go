@@ -41,6 +41,14 @@ func LoadConfig(path string) (FileConfig, bool, error) {
 	return cfg, true, nil
 }
 
+// ConfigExists reports whether there is a config file at path. A file that
+// exists but cannot be parsed still counts: it is the user's, and setup
+// should not act as if it were absent.
+func ConfigExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // CheckConfigWarnings returns human-readable warnings about the config file
 // at path — currently, one entry per unknown key. Returns nil when the file
 // does not exist, cannot be read, or contains only known keys. Intended to be

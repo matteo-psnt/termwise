@@ -61,7 +61,7 @@ func ZeroConfigDefaults() (FileConfig, bool) {
 // there is no file at path, so the provider comes from an API key in the
 // environment. It returns "" when a config file exists or no key is set.
 func EnvOnlyNotice(path string) string {
-	if _, err := os.Stat(path); err == nil {
+	if ConfigExists(path) {
 		return ""
 	}
 	cfg, ok := ZeroConfigDefaults()
