@@ -172,7 +172,33 @@ func newModel(cfg modelConfig) Model {
 		})
 	}
 
-	return Model{sharedState: sh}
+	m := Model{sharedState: sh}
+	if cfg.initialSession != nil && len(cfg.initialSession.Messages) > 0 {
+		m.restoreSessionModel(*cfg.initialSession)
+	}
+	return m
+}
+
+// restoreSessionModel switches to the provider and model the resumed session
+// was using. The conversation was shaped by that model (and Anthropic's
+// thinking state is only valid for it), so silently continuing on whatever is
+// selected today changes who you are talking to mid-thread. When it can't be
+// restored, the current model stays and a notice says so. The switch is not
+// persisted: resuming one session shouldn't change the default for new ones.
+func (m *Model) restoreSessionModel(s history.Session) {
+	if s.ProviderName == "" || s.ModelID == "" {
+		return
+	}
+	if s.ProviderName == m.providerName && s.ModelID == m.modelID {
+		return
+	}
+	if err := m.applyModel(s.ProviderName, s.ModelID); err == nil {
+		return
+	}
+	m.thread = append(m.thread, SystemEntry{Content: fmt.Sprintf(
+		"This session used %s, which isn't available now; continuing on %s.",
+		modelOptionFor(s.ProviderName, s.ModelID), modelOptionFor(m.providerName, m.modelID),
+	)})
 }
 
 // Init implements tea.Model.
