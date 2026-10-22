@@ -33,13 +33,11 @@ type editorModel struct {
 	enumPicker  *enumPickerModel
 	addWizard   *wizardModel
 
-	// Index into config.Settings for the currently active sub-model.
-	// Mutually exclusive with activeEffortProvider.
-	activeSettingIdx int
-
-	// When the enum picker is editing a provider's Effort, this names the
-	// provider. Empty otherwise. Mutually exclusive with activeSettingIdx use.
-	activeEffortProvider string
+	// commit stores the value picked in the open keybinding, theme or enum
+	// sub-model. It is set when the sub-model opens, so the update handlers
+	// don't need to know whether they are editing a setting or a provider's
+	// effort.
+	commit func(cfg *config.FileConfig, val string)
 
 	err error
 }

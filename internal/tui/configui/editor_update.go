@@ -101,7 +101,7 @@ func (m editorModel) updateKeybinding(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if kb.done {
 		m.keybinding = nil
 		if !kb.cancelled {
-			config.Settings[m.activeSettingIdx].Set(&m.cfg, kb.result)
+			m.commit(&m.cfg, kb.result)
 		}
 	}
 	return m, cmd
@@ -114,7 +114,7 @@ func (m editorModel) updateThemePicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if tp.done {
 		m.themePicker = nil
 		if !tp.cancelled {
-			config.Settings[m.activeSettingIdx].Set(&m.cfg, tp.result)
+			m.commit(&m.cfg, tp.result)
 			m.styles = newStylesForTheme(m.hasDarkBg, tp.result)
 		} else {
 			m.styles = newStylesForTheme(m.hasDarkBg, tp.prev)
@@ -132,22 +132,8 @@ func (m editorModel) updateEnumPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	m.enumPicker = nil
-	if ep.cancelled {
-		m.activeEffortProvider = ""
-		return m, cmd
-	}
-	if m.activeEffortProvider != "" {
-		pc := m.cfg.Providers[m.activeEffortProvider]
-		// Omit when the picker chose the default — keeps TOML clean.
-		if ep.result == config.DefaultEffort {
-			pc.Effort = ""
-		} else {
-			pc.Effort = ep.result
-		}
-		config.SetProvider(&m.cfg, m.activeEffortProvider, pc)
-		m.activeEffortProvider = ""
-	} else {
-		config.Settings[m.activeSettingIdx].Set(&m.cfg, ep.result)
+	if !ep.cancelled {
+		m.commit(&m.cfg, ep.result)
 	}
 	return m, cmd
 }
@@ -228,7 +214,17 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		}
 		ep := newEnumPicker("Reasoning effort", current, config.EffortLevels, m.styles)
 		m.enumPicker = &ep
-		m.activeEffortProvider = row.provider
+		providerName := row.provider
+		m.commit = func(cfg *config.FileConfig, val string) {
+			pc := cfg.Providers[providerName]
+			// Omit when the picker chose the default — keeps TOML clean.
+			if val == config.DefaultEffort {
+				pc.Effort = ""
+			} else {
+				pc.Effort = val
+			}
+			config.SetProvider(cfg, providerName, pc)
+		}
 		return m, nil
 
 	case rowProvAuth:
@@ -272,16 +268,16 @@ func (m editorModel) activateSetting(settingIdx int) editorModel {
 	case config.KindTheme:
 		tp := newThemePicker(def.Get(m.cfg))
 		m.themePicker = &tp
-		m.activeSettingIdx = settingIdx
+		m.commit = def.Set
 	case config.KindKeybinding:
 		kb := def.Resolve(m.cfg)
 		kbm := newKeybindingCapture(kb, m.styles)
 		m.keybinding = &kbm
-		m.activeSettingIdx = settingIdx
+		m.commit = def.Set
 	case config.KindEnum:
 		ep := newEnumPicker(def.Label, def.Resolve(m.cfg), def.Options, m.styles)
 		m.enumPicker = &ep
-		m.activeSettingIdx = settingIdx
+		m.commit = def.Set
 	}
 	return m
 }
