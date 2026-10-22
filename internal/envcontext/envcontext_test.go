@@ -165,6 +165,43 @@ func TestRecentCommandsWindowsToTheTail(t *testing.T) {
 	}
 }
 
+// zsh writes each byte >= 0x83 as 0x83 followed by the byte XOR 0x20.
+func metafy(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x83 {
+			b.WriteByte(0x83)
+			b.WriteByte(s[i] ^ 0x20)
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+func TestRecentCommandsUnmetafiesZshHistory(t *testing.T) {
+	cmd := "cd ~/Documents/résumé && ls 写真"
+	hist := filepath.Join(t.TempDir(), ".zsh_history")
+	if err := os.WriteFile(hist, []byte(metafy(": 1774724113:0;"+cmd)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HISTFILE", hist)
+	if got := RecentCommands("/bin/zsh"); len(got) != 1 || got[0] != cmd {
+		t.Fatalf("RecentCommands() = %q, want [%q]", got, cmd)
+	}
+
+	// bash stores UTF-8 as is; 0x83 there is part of a character, not a marker.
+	bashCmd := "ls ă"
+	bashHist := filepath.Join(t.TempDir(), ".bash_history")
+	if err := os.WriteFile(bashHist, []byte(bashCmd+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HISTFILE", bashHist)
+	if got := RecentCommands("/bin/bash"); len(got) != 1 || got[0] != bashCmd {
+		t.Fatalf("RecentCommands() = %q, want [%q]", got, bashCmd)
+	}
+}
+
 func TestRecentCommandsAbsentFileIsSilent(t *testing.T) {
 	t.Setenv("HISTFILE", filepath.Join(t.TempDir(), "nope"))
 	if got := RecentCommands("/bin/zsh"); got != nil {

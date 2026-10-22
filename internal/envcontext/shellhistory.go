@@ -2,6 +2,7 @@ package envcontext
 
 import (
 	"bufio"
+	"bytes"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -43,11 +44,16 @@ func RecentCommands(shell string) []string {
 	}
 	defer f.Close() //nolint:errcheck // read-only
 
+	zsh := strings.Contains(shell, "zsh")
 	var kept []string
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
-		line := sc.Text()
+		raw := sc.Bytes()
+		if zsh {
+			raw = unmetafy(raw)
+		}
+		line := string(raw)
 		if m := zshExtended.FindStringSubmatch(line); m != nil {
 			line = m[1]
 		}
@@ -73,6 +79,30 @@ func RecentCommands(shell string) []string {
 		kept = kept[len(kept)-recentCommandCount:]
 	}
 	return kept
+}
+
+// zshMeta is the byte zsh writes ahead of each "metafied" byte in its
+// history file; the byte that follows is the original XOR 0x20.
+const zshMeta = 0x83
+
+// unmetafy reverses zsh's history encoding. Without it every non-ASCII
+// command (accented paths, CJK file names) comes out garbled, since UTF-8
+// multibyte sequences are exactly the bytes zsh metafies. Only zsh history is
+// encoded this way: in bash history 0x83 is just a UTF-8 continuation byte.
+func unmetafy(b []byte) []byte {
+	if bytes.IndexByte(b, zshMeta) < 0 {
+		return b
+	}
+	out := make([]byte, 0, len(b))
+	for i := 0; i < len(b); i++ {
+		if b[i] == zshMeta && i+1 < len(b) {
+			i++
+			out = append(out, b[i]^0x20)
+			continue
+		}
+		out = append(out, b[i])
+	}
+	return out
 }
 
 // historyPath resolves the shell's history file: $HISTFILE when the shell
