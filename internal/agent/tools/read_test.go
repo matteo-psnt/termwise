@@ -71,3 +71,15 @@ func TestReadCapsLongLines(t *testing.T) {
 		t.Fatalf("long line not capped cleanly: %d bytes", len(second))
 	}
 }
+
+func TestReadTruncationNamesNextOffset(t *testing.T) {
+	p := writeTemp(t, "a\nb\nc\nd\n")
+	out, _ := read(context.Background(), map[string]any{"path": p, "offset": float64(1), "limit": float64(2)})
+	if want := "b\nc\n[truncated — showing lines 2–3 of 4. Use offset=3 to read more.]"; out != want {
+		t.Fatalf("got %q, want %q", out, want)
+	}
+	next, _ := read(context.Background(), map[string]any{"path": p, "offset": float64(3)})
+	if next != "d" {
+		t.Fatalf("continuing at the named offset gave %q, want %q", next, "d")
+	}
+}

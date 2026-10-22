@@ -43,7 +43,7 @@ Prefer this over ` + "`bash cat`" + ` or ` + "`bash ls`" + `: it is not gated, t
 			},
 			"offset": map[string]any{
 				"type":        "integer",
-				"description": "Line number to start from (default: 0). File mode only.",
+				"description": "0-based index of the first line to return (default: 0). File mode only.",
 			},
 			"limit": map[string]any{
 				"type":        "integer",
@@ -122,9 +122,11 @@ func read(_ context.Context, input map[string]any) (string, bool) {
 	}
 	result := strings.Join(shown, "\n")
 	if end < total {
+		// Lines are shown 1-based but offset is 0-based, so name the exact
+		// offset to continue from rather than leave the model to convert.
 		result += fmt.Sprintf(
-			"\n[truncated — showing lines %d–%d of %d. Use offset/limit to read more.]",
-			offset+1, end, total,
+			"\n[truncated — showing lines %d–%d of %d. Use offset=%d to read more.]",
+			offset+1, end, total, end,
 		)
 	}
 	return result, false
