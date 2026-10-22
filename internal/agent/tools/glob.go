@@ -74,10 +74,12 @@ func glob(ctx context.Context, input map[string]any) (string, bool) {
 		if absPath == "" {
 			return fmt.Sprintf("error: %s", err), true
 		}
-		return fmt.Sprintf("error: path does not exist: %s", pathArg), true
+		// The resolved path, not pathArg: pathArg is empty when it defaulted
+		// to the working directory.
+		return fmt.Sprintf("error: path does not exist: %s", absPath), true
 	}
 	if !info.IsDir() {
-		return fmt.Sprintf("error: path is not a directory: %s", pathArg), true
+		return fmt.Sprintf("error: path is not a directory: %s", absPath), true
 	}
 
 	args := []string{"--files", "--hidden"}

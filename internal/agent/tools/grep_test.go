@@ -81,3 +81,18 @@ func TestGrepContentSingleFileWithoutLineNumbers(t *testing.T) {
 		t.Fatalf("got %q, want %q", out, want)
 	}
 }
+
+func TestSearchToolsNameTheMissingDefaultPath(t *testing.T) {
+	dir := grepDir(t, nil)
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	for name, fn := range map[string]func(context.Context, map[string]any) (string, bool){"grep": grep, "glob": glob} {
+		out, isErr := fn(context.Background(), map[string]any{"pattern": "x"})
+		// Getwd may or may not still report the removed directory; either
+		// way the message must say what was missing.
+		if !isErr || strings.HasSuffix(out, ": ") {
+			t.Errorf("%s: got %q", name, out)
+		}
+	}
+}

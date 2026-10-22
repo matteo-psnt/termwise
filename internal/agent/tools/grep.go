@@ -122,7 +122,12 @@ func grep(ctx context.Context, input map[string]any) (string, bool) {
 	pathArg := stringInput(input, "path")
 	absPath, _, err := resolveSearchPath(pathArg, cwd)
 	if err != nil {
-		return fmt.Sprintf("error: path does not exist: %s", pathArg), true
+		if absPath == "" {
+			return fmt.Sprintf("error: %s", err), true
+		}
+		// The resolved path, not pathArg: pathArg is empty when it defaulted
+		// to the working directory.
+		return fmt.Sprintf("error: path does not exist: %s", absPath), true
 	}
 
 	outputMode := stringInput(input, "output_mode")
