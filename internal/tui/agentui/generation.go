@@ -89,7 +89,7 @@ func (m *Model) resetGenerationContext() {
 func (m *Model) startChat() tea.Cmd {
 	return tea.Batch(
 		m.spin.Tick,
-		m.wrapActiveGeneration(ChatCmd(m.ctx, m.provider, m.chatRequest())),
+		m.wrapActiveGeneration(chatCmd(m.ctx, m.provider, m.chatRequest())),
 	)
 }
 

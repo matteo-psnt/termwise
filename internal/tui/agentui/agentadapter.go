@@ -8,24 +8,25 @@ import (
 
 	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
+	"github.com/matteo-psnt/termwise/internal/allowlist"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
-// ChatCmd sends the current conversation to the model and returns a ResponseEvent.
-func ChatCmd(ctx context.Context, client provider.AgentClient, req provider.ChatRequest) tea.Cmd {
+// chatCmd sends the current conversation to the model and returns a ResponseEvent.
+func chatCmd(ctx context.Context, client provider.AgentClient, req provider.ChatRequest) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := client.Chat(ctx, req)
 		return agent.ResponseEvent{Resp: resp, Err: err}
 	}
 }
 
-// ProcessToolsCmd processes pending tool calls in order, returning on the first
+// processToolsCmd processes pending tool calls in order, returning on the first
 // one that requires user input (approval or ask). Auto-executed tools (read)
-// return immediately so the TUI can update the display and continue.
-// needsApproval is called for bash commands to determine if approval is required.
-func ProcessToolsCmd(ctx context.Context, toolCalls []provider.ToolCall, collected []provider.ToolResult, needsApproval func(string) bool) tea.Cmd {
+// return immediately so the TUI can update the display and continue. Bash
+// commands the allowlist does not clear stop for approval.
+func processToolsCmd(ctx context.Context, toolCalls []provider.ToolCall, collected []provider.ToolResult) tea.Cmd {
 	return func() tea.Msg {
-		step := agent.NextToolStep(ctx, toolCalls, collected, needsApproval)
+		step := agent.NextToolStep(ctx, toolCalls, collected, allowlist.NeedsApproval)
 		switch step.Kind {
 		case agent.ToolStepRespond:
 			return agent.RespondEvent{
@@ -63,8 +64,8 @@ func ProcessToolsCmd(ctx context.Context, toolCalls []provider.ToolCall, collect
 	}
 }
 
-// ExecuteBashCmd executes a bash command after the user has approved it.
-func ExecuteBashCmd(ctx context.Context, tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) tea.Cmd {
+// executeBashCmd executes a bash command after the user has approved it.
+func executeBashCmd(ctx context.Context, tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) tea.Cmd {
 	return func() tea.Msg {
 		result := tools.ExecuteBash(ctx, tc)
 		return agent.ToolExecutedEvent{
