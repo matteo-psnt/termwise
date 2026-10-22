@@ -756,3 +756,18 @@ func TestEnvOnlyNoticeHonorsOverrides(t *testing.T) {
 		t.Errorf("notice = %q, want it to say the provider came from %s", got, EnvProvider)
 	}
 }
+
+func TestEnvOnlyNoticeWithoutModel(t *testing.T) {
+	for _, p := range provider.Catalog() {
+		if p.DefaultEnvVar != "" {
+			t.Setenv(p.DefaultEnvVar, "")
+		}
+	}
+	missing := filepath.Join(t.TempDir(), "config.toml")
+	t.Setenv(EnvProvider, "ollama")
+	t.Setenv(EnvModel, "")
+	got := EnvOnlyNotice(missing)
+	if strings.Contains(got, "model ,") || !strings.Contains(got, "no model set — set "+EnvModel) {
+		t.Errorf("notice = %q, want it to say no model is set", got)
+	}
+}
