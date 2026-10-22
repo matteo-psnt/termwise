@@ -85,6 +85,24 @@ func (j *keychainJournal) adopt(child *keychainJournal) {
 	clear(child.prev)
 }
 
+// restoreExcept restores the entries j recorded other than those in keep,
+// and forgets them; the kept ones stay recorded.
+func (j *keychainJournal) restoreExcept(keep map[string]bool) error {
+	if j == nil {
+		return nil
+	}
+	j.mu.Lock()
+	drop := &keychainJournal{prev: map[string]keychainPrev{}}
+	for entry, prev := range j.prev {
+		if !keep[entry] {
+			drop.prev[entry] = prev
+			delete(j.prev, entry)
+		}
+	}
+	j.mu.Unlock()
+	return drop.restore()
+}
+
 // restore puts every entry the session wrote back as it was, deleting the
 // ones that didn't exist, and forgets them.
 func (j *keychainJournal) restore() error {

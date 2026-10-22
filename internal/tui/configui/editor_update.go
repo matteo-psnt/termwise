@@ -156,6 +156,16 @@ func (m editorModel) updateAddWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 	newWiz := newModel.(wizardModel)
 	m.addWizard = &newWiz
 	if newWiz.result != nil {
+		// A key verified for a provider the user then backed out of (and
+		// added another instead) belongs to nothing that was added: restore
+		// it now, and hand only the added providers' writes to the session.
+		keep := map[string]bool{}
+		for name := range newWiz.result.Providers {
+			keep[config.DefaultKeychainEntry(name)] = true
+		}
+		if err := newWiz.keychain.restoreExcept(keep); err != nil {
+			m.err = fmt.Errorf("restoring keychain: %w", err)
+		}
 		m.keychain.adopt(newWiz.keychain)
 		for name, pc := range newWiz.result.Providers {
 			config.SetProvider(&m.cfg, name, pc)

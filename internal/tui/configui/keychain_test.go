@@ -148,3 +148,37 @@ func TestAdoptKeepsTheSessionsOlderValue(t *testing.T) {
 		t.Errorf("keychain = %q after revert, want the value from before the session", store[entry])
 	}
 }
+
+// Verifying a key for one provider, backing out and adding another must not
+// leave the first provider's keychain entry overwritten.
+func TestWizardRestoresKeysOfProvidersNotAdded(t *testing.T) {
+	p, q := config.DefaultKeychainEntry("openai"), config.DefaultKeychainEntry("anthropic")
+	store := fakeKeychain(t, map[string]string{p: "sk-old"})
+
+	m := newEditorModel("", config.FileConfig{}, true)
+	wiz := newWizardModel(true, "", nil)
+	wiz.keychain = newKeychainJournal()
+	for prov, key := range map[string]string{"openai": "sk-p", "anthropic": "sk-q"} {
+		if err := wiz.keychain.store(prov, key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wiz.result = &config.FileConfig{Providers: map[string]config.ProviderConfig{"anthropic": {Auth: "keychain"}}}
+	m.addWizard = &wiz
+
+	next, _ := m.updateAddWizard(nil)
+	em := next.(editorModel)
+	if store[p] != "sk-old" {
+		t.Errorf("openai entry = %q, want sk-old restored", store[p])
+	}
+	if store[q] != "sk-q" {
+		t.Errorf("anthropic entry = %q, want the added provider's key kept", store[q])
+	}
+	// Reverting the session still undoes the added provider's key.
+	if err := em.keychain.restore(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := store[q]; ok {
+		t.Error("reverting the session left the added provider's key")
+	}
+}
