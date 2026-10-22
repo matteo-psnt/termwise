@@ -123,16 +123,17 @@ func TestNewRuleEngineClonesRules(t *testing.T) {
 
 	rules := []Rule{{
 		Cmd:   "echo",
-		Parse: ParseRule{SubcommandValueFlags: []string{"--context"}},
+		Parse: ParseRule{SubcommandValueFlags: []string{"--context"}, BoolFlags: []string{"--debug"}},
 		Deny:  DenyRule{Flags: []string{"-f"}},
 	}}
 	engine := newRuleEngine(rules)
 	rules[0].Cmd = "rm"
 	rules[0].Deny.Flags[0] = "-x"
 	rules[0].Parse.SubcommandValueFlags[0] = "--project"
+	rules[0].Parse.BoolFlags[0] = "--verbose"
 
 	cloned := engine.ruleMetadata("echo")
-	if cloned.Cmd != "echo" || cloned.Deny.Flags[0] != "-f" || cloned.Parse.SubcommandValueFlags[0] != "--context" {
+	if cloned.Cmd != "echo" || cloned.Deny.Flags[0] != "-f" || cloned.Parse.SubcommandValueFlags[0] != "--context" || cloned.Parse.BoolFlags[0] != "--debug" {
 		t.Fatalf("expected deep-cloned rule metadata, got %#v", cloned)
 	}
 }
@@ -839,5 +840,51 @@ func TestGoFlagsMatchInEveryDashForm(t *testing.T) {
 		`go vet ./...`,
 		`go version`,
 		`go doc fmt.Println`,
+	)
+}
+
+// A global flag that takes a value, but that the rule does not know about,
+// makes its value look like the subcommand. Unknown flags before the
+// subcommand must fail closed.
+func TestUnknownGlobalFlagHidesSubcommand(t *testing.T) {
+	t.Parallel()
+	requireApproval(t,
+		`git --attr-source status reset --hard`,
+		`kubectl --as get delete pod web`,
+		`docker --tlscacert ps rm -f web`,
+		`npm --loglevel ls install evil`,
+		`helm --burst-limit list uninstall web`,
+		`cargo -Z tree install evil`,
+		`pip --cache-dir list install evil`,
+		`docker-compose --ansi ps down`,
+		`go --C list build`,
+		`git - status`,
+	)
+	requireSafe(t,
+		`git --no-pager status`,
+		`git --no-pager log --oneline -5`,
+		`git -P diff`,
+		`git --no-optional-locks status`,
+		`git --attr-source=HEAD status`,
+		`git -C /tmp status`,
+		`kubectl --context prod get pods`,
+		`kubectl --namespace=kube-system get pods`,
+		`kubectl -n kube-system get pods`,
+		`kubectl get pods --as admin`,
+		`docker --context prod ps`,
+		`docker --debug ps`,
+		`npm --prefix /tmp ls`,
+		`npm -g ls --depth=0`,
+		`npm ls --loglevel silent`,
+		`pnpm -r ls`,
+		`cargo --locked metadata`,
+		`cargo -q tree`,
+		`pip -q list`,
+		`pip --disable-pip-version-check list`,
+		`ruff -q check .`,
+		`dpkg -l`,
+		`brew --version`,
+		`rpm -qa`,
+		`pacman -Qi bash`,
 	)
 }

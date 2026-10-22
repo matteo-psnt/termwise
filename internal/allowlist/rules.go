@@ -1,6 +1,9 @@
 package allowlist
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 type Rule struct {
 	Cmd   string    `yaml:"cmd"`
@@ -11,6 +14,10 @@ type Rule struct {
 
 type ParseRule struct {
 	SubcommandValueFlags []string `yaml:"subcommand_value_flags"`
+	// BoolFlags are global flags that take no value, so they may appear
+	// before the subcommand. Any other flag there, unless written
+	// --flag=value, makes the subcommand unknown.
+	BoolFlags []string `yaml:"bool_flags"`
 }
 
 type AllowRule struct {
@@ -51,38 +58,68 @@ func subcommandCandidates(rule Rule, args []string) []string {
 }
 
 func firstPositional(rule Rule, args []string) string {
-	for i := 0; i < len(args); i++ {
-		tok := args[i]
-		if tok == "--" {
-			if i+1 < len(args) {
-				return args[i+1]
-			}
-			return ""
-		}
-		if strings.HasPrefix(tok, "-") {
-			if consumesSubcommandValue(rule.Parse.SubcommandValueFlags, tok) {
-				i++
-			}
-			continue
-		}
-		return tok
+	if i := subcommandIndex(rule, args); i >= 0 {
+		return args[i]
 	}
 	return ""
 }
 
-func consumesSubcommandValue(valueFlags []string, token string) bool {
-	if len(valueFlags) == 0 {
-		return false
+// subcommandIndex returns the index of the first positional argument, which
+// for a rule with an allowed subcommand list is its subcommand, or -1 when
+// there is none or it cannot be told.
+//
+// A global flag that takes a value but is not in subcommand_value_flags would
+// make its value look like the subcommand: in git --attr-source status reset,
+// git runs reset. So when the rule restricts subcommands, a flag before the
+// subcommand must be known: a listed value flag, a listed bool flag, or a
+// --flag=value whose value cannot be the next word. Anything else fails
+// closed.
+func subcommandIndex(rule Rule, args []string) int {
+	strict := len(rule.Allow.Subcommands) > 0
+	for i := 0; i < len(args); i++ {
+		tok := args[i]
+		if tok == "--" {
+			if i+1 < len(args) {
+				return i + 1
+			}
+			return -1
+		}
+		if !strings.HasPrefix(tok, "-") {
+			return i
+		}
+		if consumes, known := subcommandValueFlag(rule.Parse.SubcommandValueFlags, tok); known {
+			if consumes {
+				i++
+			}
+			continue
+		}
+		if !strict {
+			continue
+		}
+		if strings.HasPrefix(tok, "--") && strings.Contains(tok, "=") {
+			continue
+		}
+		if slices.Contains(rule.Parse.BoolFlags, tok) {
+			continue
+		}
+		return -1
 	}
+	return -1
+}
+
+// subcommandValueFlag reports whether token is one of the value flags, and if
+// so whether its value is the next argument (-C dir) rather than attached
+// (--git-dir=.git).
+func subcommandValueFlag(valueFlags []string, token string) (consumesNext, known bool) {
 	for _, flag := range valueFlags {
 		if token == flag {
-			return true
+			return true, true
 		}
 		if name, _, ok := strings.Cut(token, "="); ok && name == flag {
-			return true
+			return false, true
 		}
 	}
-	return false
+	return false, false
 }
 
 // tokenMatchesDeniedFlag reports whether an argument turns on a denied flag,

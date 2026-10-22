@@ -5,6 +5,9 @@
 # Format per entry:
 #   cmd: <executable basename>              (required)
 #   parse.subcommand_value_flags: [...]     (optional — flags whose value precedes the real subcommand)
+#   parse.bool_flags: [...]                 (optional — valueless global flags allowed before the subcommand;
+#                                            with allow.subcommands, any other flag there needs approval
+#                                            unless written --flag=value)
 #   allow.subcommands: [sub1, sub2, ...]    (optional — first effective subcommand must be in list)
 #   deny.flags: [-f1, --flag2, ...]         (optional — denied if any of these appear)
 
@@ -136,6 +139,7 @@ rules:
   - cmd: git
     parse:
       subcommand_value_flags: [-C, -c, --git-dir, --work-tree, --namespace, --super-prefix, --exec-path, --config-env]
+      bool_flags: [--no-pager, -P, --no-optional-locks, --literal-pathspecs, --glob-pathspecs, --noglob-pathspecs, --icase-pathspecs, --no-replace-objects, --bare]
     allow:
       subcommands:
         - status
@@ -172,6 +176,8 @@ rules:
 
   # ── Rust / Cargo ────────────────────────────────────────────────────────────
   - cmd: cargo
+    parse:
+      bool_flags: [-q, --quiet, -v, --verbose, --locked, --offline, --frozen]
     allow:
       subcommands:
         - metadata
@@ -183,11 +189,13 @@ rules:
   - cmd: npm
     parse:
       subcommand_value_flags: [-C, --prefix, --userconfig, --workspace]
+      bool_flags: [-g, --global, --json, -s, --silent, -q, --quiet]
     allow:
       subcommands: [list, ls, info, show, outdated, view]
   - cmd: pnpm
     parse:
       subcommand_value_flags: [-C, --dir, --prefix, --store-dir, --workspace-dir]
+      bool_flags: [-r, --recursive, -g, --global, -s, --silent]
     allow:
       subcommands: [list, ls, info, outdated, audit, why]
     deny:
@@ -195,27 +203,37 @@ rules:
   - cmd: yarn
     parse:
       subcommand_value_flags: [--cwd]
+      bool_flags: [-s, --silent, --json, --no-progress]
     allow:
       subcommands: [list, info, outdated, why, check, licenses]
 
   # ── Python package tools ─────────────────────────────────────────────────────
   - cmd: pip
+    parse:
+      bool_flags: [-q, --quiet, -v, --verbose, --isolated, --no-color, --disable-pip-version-check, --no-input, --require-virtualenv]
     allow:
       subcommands: [list, show, freeze, check, inspect, index]
   - cmd: pip3
+    parse:
+      bool_flags: [-q, --quiet, -v, --verbose, --isolated, --no-color, --disable-pip-version-check, --no-input, --require-virtualenv]
     allow:
       subcommands: [list, show, freeze, check, inspect, index]
   - cmd: uv
     parse:
       subcommand_value_flags: [--config-file, --directory, --project]
+      bool_flags: [-q, --quiet, -v, --verbose, --offline, --no-cache, --no-progress]
     allow:
       subcommands: [tree]
   - cmd: poetry
+    parse:
+      bool_flags: [-q, --quiet, -v, -vv, -vvv, --verbose, -n, --no-interaction, --no-ansi, --ansi]
     allow:
       subcommands: [show, check, version, export]
     deny:
       flags: [-o, --output]
   - cmd: ruff
+    parse:
+      bool_flags: [-q, --quiet, -v, --verbose, -s, --silent]
     allow:
       subcommands: [check, --version]
 
@@ -231,6 +249,7 @@ rules:
   - cmd: docker
     parse:
       subcommand_value_flags: [-H, --config, --context, --host]
+      bool_flags: [-D, --debug, --tls, --tlsverify]
     allow:
       subcommands:
         - ps
@@ -247,9 +266,12 @@ rules:
   - cmd: docker-compose
     parse:
       subcommand_value_flags: [-f, -p, --context, --env-file, --host, --project-directory, --project-name]
+      bool_flags: [--verbose, --no-ansi, --compatibility, --all-resources]
     allow:
       subcommands: [ps, logs, config, version, images, top]
   - cmd: podman
+    parse:
+      bool_flags: [-r, --remote]
     allow:
       subcommands: [ps, images, logs, inspect, stats, version, info, diff, history]
 
@@ -257,6 +279,7 @@ rules:
   - cmd: kubectl
     parse:
       subcommand_value_flags: [-n, --cluster, --context, --kubeconfig, --namespace, --server, --user]
+      bool_flags: [--insecure-skip-tls-verify, --match-server-version, --warnings-as-errors]
     allow:
       subcommands:
         - get
@@ -271,6 +294,7 @@ rules:
   - cmd: helm
     parse:
       subcommand_value_flags: [-n, --kube-context, --kubeconfig, --namespace, --registry-config, --repository-cache, --repository-config]
+      bool_flags: [--debug]
     allow:
       subcommands: [list, status, history, get, show, version, env, search]
 

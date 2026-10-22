@@ -146,6 +146,9 @@ func (e *ruleEngine) effectiveRule(rule Rule) Rule {
 	if len(rule.Parse.SubcommandValueFlags) == 0 {
 		rule.Parse.SubcommandValueFlags = append([]string(nil), meta.Parse.SubcommandValueFlags...)
 	}
+	if len(rule.Parse.BoolFlags) == 0 {
+		rule.Parse.BoolFlags = append([]string(nil), meta.Parse.BoolFlags...)
+	}
 	return rule
 }
 
@@ -156,6 +159,7 @@ func cloneRules(rules []Rule) []Rule {
 			Cmd: rule.Cmd,
 			Parse: ParseRule{
 				SubcommandValueFlags: append([]string(nil), rule.Parse.SubcommandValueFlags...),
+				BoolFlags:            append([]string(nil), rule.Parse.BoolFlags...),
 			},
 			Allow: AllowRule{
 				Subcommands: append([]string(nil), rule.Allow.Subcommands...),
