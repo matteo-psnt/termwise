@@ -32,16 +32,19 @@ func New(cfg provider.Config) (*Client, error) {
 
 // ListModels fetches available models from the Anthropic API.
 func (c *Client) ListModels(ctx context.Context) ([]provider.Model, error) {
-	page, err := c.sdk.Models.List(ctx, sdk.ModelListParams{})
-	if err != nil {
-		return nil, mapErr(err)
-	}
+	// The endpoint is paginated; the auto-pager follows has_more so models
+	// past the first page are not silently missing from the picker.
+	pager := c.sdk.Models.ListAutoPaging(ctx, sdk.ModelListParams{})
 	var out []provider.Model
-	for _, m := range page.Data {
+	for pager.Next() {
+		m := pager.Current()
 		out = append(out, provider.Model{
 			ID:          m.ID,
 			DisplayName: m.DisplayName,
 		})
+	}
+	if err := pager.Err(); err != nil {
+		return nil, mapErr(err)
 	}
 	return out, nil
 }
