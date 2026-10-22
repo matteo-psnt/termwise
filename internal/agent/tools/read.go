@@ -72,6 +72,11 @@ func read(_ context.Context, input map[string]any) (string, bool) {
 	if info.IsDir() {
 		return readDir(path)
 	}
+	// Reading a FIFO blocks until a writer appears and a device such as
+	// /dev/zero never ends, so either would hang the agent loop.
+	if !info.Mode().IsRegular() {
+		return fmt.Sprintf("error: %s is not a regular file", path), true
+	}
 
 	offset := 0
 	if v, ok := intInput(input, "offset"); ok && v >= 0 {
