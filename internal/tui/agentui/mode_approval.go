@@ -37,3 +37,9 @@ func (approvalMode) renderInputRow(m Model, vpW int) string {
 func (approvalMode) helpBindings(_ Model) []binding {
 	return approvalKeys.help()
 }
+
+func (m Model) denyPendingBash() (tea.Model, tea.Cmd) {
+	m.appendThreadEntries(ToolResultEntry{Content: "User denied this command.", IsError: true})
+	m.refreshViewport()
+	return m.resumePendingToolLoop(m.pending.result("User denied this command.", true))
+}

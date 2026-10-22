@@ -9,16 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matteo-psnt/termwise/internal/cliname"
-
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/keybinding"
-	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
@@ -324,140 +320,6 @@ var modes = map[tuiState]mode{
 
 func modeFor(s tuiState) mode { return modes[s] }
 
-// applyModel swaps the active provider client to the given provider+model
-// in memory only. Existing conversation messages are preserved. Use this for
-// live preview while a picker is open; pair with persistActiveModel to write
-// the selection to disk on commit.
-func (m *Model) applyModel(providerName, modelID string) error {
-	if m.cfgPath == "" {
-		return fmt.Errorf("no config path available to resolve auth for %q", providerName)
-	}
-	cfg, exists, err := config.LoadConfig(m.cfgPath)
-	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	}
-	if !exists {
-		return fmt.Errorf("config file not found")
-	}
-	pc, ok := cfg.Providers[providerName]
-	if !ok {
-		return fmt.Errorf("provider %q has no config block — run `%s config` to add it", providerName, cliname.Name())
-	}
-	auth, err := config.ResolveAuth(providerName, pc)
-	if err != nil {
-		return fmt.Errorf("resolving auth for %q: %w", providerName, err)
-	}
-	client, err := config.NewClientFromResolved(config.ResolvedConfig{
-		ProviderName: providerName,
-		Model:        modelID,
-		APIKey:       auth.APIKey,
-		BaseURL:      auth.BaseURL,
-	})
-	if err != nil {
-		return fmt.Errorf("building client: %w", err)
-	}
-
-	m.provider = client
-	m.providerName = providerName
-	m.modelID = modelID
-	m.effort = pc.Effort
-	m.contextWindow = contextWindowFor(providerName, modelID)
-	return nil
-}
-
-// defaultContextWindow is assumed for models the catalog does not know, or
-// lists without a context size. Erring small is the safe direction: it only
-// makes trimContext drop old tool results sooner.
-const defaultContextWindow = 32_000
-
-// contextWindowFor returns the context window, in tokens, of a provider's model.
-func contextWindowFor(providerName, modelID string) int {
-	if md := models.Find(providerName, modelID); md != nil && md.Context > 0 {
-		return md.Context
-	}
-	return defaultContextWindow
-}
-
-// persistActiveModel writes the currently active provider+model to the config
-// file as the selected provider and that provider's default model.
-func (m *Model) persistActiveModel() {
-	m.updateConfigFile(func(cfg *config.FileConfig) {
-		pc := cfg.Providers[m.providerName]
-		pc.Model = m.modelID
-		cfg.Providers[m.providerName] = pc
-		cfg.SelectedProvider = m.providerName
-	})
-}
-
-// applyTheme rebuilds the renderer with the given theme name.
-func (m *Model) applyTheme(name string) {
-	m.themeName = name
-	m.renderer = newRenderer(m.hasDarkBg, theme.Get(name), m.renderWidth())
-	m.input.SetStyles(inputStyles(m.hasDarkBg, m.renderer.styles.Suggestion))
-}
-
-// openSlashPicker activates the slash-picker sub-TUI for the given command.
-func (m Model) handleInitialPrompt(prompt string) (tea.Model, tea.Cmd) {
-	if m.state != stateIdle {
-		return m, nil
-	}
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		return m, nil
-	}
-	m.initialPrompt = ""
-	if m.promptHistory != nil {
-		m.promptHistory.Push(prompt) //nolint:errcheck // Prompt history should not block sending a message.
-	}
-	return m.submitMessage(prompt)
-}
-
-func (m Model) submitCurrentInput() (tea.Model, tea.Cmd) {
-	// Backslash-Enter is the portable newline fallback: a trailing "\" turns
-	// Enter into a line break instead of a submit, for terminals that can't
-	// report a real Shift+Enter.
-	if v := m.input.Value(); strings.HasSuffix(v, "\\") {
-		m.input.SetValue(v[:len(v)-1] + "\n")
-		m.input.MoveToEnd()
-		return m, nil
-	}
-	text := strings.TrimSpace(m.input.Value())
-	if text == "" {
-		return m, nil
-	}
-	m.input.SetValue("")
-	m.histIdx = -1
-	m.histDraft = ""
-	if m.promptHistory != nil {
-		m.promptHistory.Push(text) //nolint:errcheck // Prompt history should not block sending a message.
-	}
-	if strings.HasPrefix(text, "/") {
-		return m.dispatchSlashCommand(text)
-	}
-	return m.submitMessage(text)
-}
-
-func (m Model) denyPendingBash() (tea.Model, tea.Cmd) {
-	m.appendThreadEntries(ToolResultEntry{Content: "User denied this command.", IsError: true})
-	m.refreshViewport()
-	return m.resumePendingToolLoop(m.pending.result("User denied this command.", true))
-}
-
-func (m Model) dismissCommandProposal() (tea.Model, tea.Cmd) {
-	m.clearShellCommand()
-	m.state = stateIdle
-	m.refreshViewport()
-	return m, m.startSuggestion()
-}
-
-// editCommandProposal loads the proposed command into the input for editing.
-func (m Model) editCommandProposal() (tea.Model, tea.Cmd) {
-	m.input.SetValue(m.shellCommand)
-	m.input.CursorEnd()
-	m.state = stateCommandProposalEdit
-	return m, nil
-}
-
 // workDirFull returns the absolute working directory, or "." when it cannot be
 // determined — ReadDir(".") then still lists something sensible.
 func workDirFull() string {
@@ -474,12 +336,4 @@ func workDirBasename() string {
 		return "."
 	}
 	return filepath.Base(wd)
-}
-
-func (m Model) modelShortName() string {
-	md := models.Find(m.providerName, m.modelID)
-	if md == nil {
-		return m.modelID
-	}
-	return strings.TrimPrefix(md.Name, "Claude ")
 }
