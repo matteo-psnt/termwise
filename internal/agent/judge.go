@@ -31,5 +31,14 @@ func JudgeBashCommand(ctx context.Context, client provider.AgentClient, modelID 
 	if err != nil {
 		return false, err
 	}
-	return strings.ToLower(strings.TrimSpace(resp.Content)) == "safe", nil
+	return isSafeVerdict(resp.Content), nil
+}
+
+// isSafeVerdict reports whether the judge's reply is the single word "safe".
+// Models often add a full stop or markdown emphasis ("Safe.", "**safe**"), and
+// rejecting those would gate commands the judge approved; anything more than
+// the bare word still counts as unsafe.
+func isSafeVerdict(reply string) bool {
+	word := strings.Trim(strings.ToLower(reply), " \t\r\n.!*_`'\"")
+	return word == "safe"
 }
