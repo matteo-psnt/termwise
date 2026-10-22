@@ -49,6 +49,13 @@ func toMessageParams(msgs []provider.Message) ([]sdk.MessageParam, error) {
 		if err != nil {
 			return nil, err
 		}
+		// A model can end a turn with no content at all, and the API rejects
+		// an empty message on every later request, which would wedge the
+		// conversation. Dropping it is safe: the API merges the consecutive
+		// user turns this leaves.
+		if len(p.Content) == 0 {
+			continue
+		}
 		out = append(out, p)
 	}
 	return out, nil

@@ -143,3 +143,17 @@ func TestNoEmptyTextBlocks(t *testing.T) {
 		t.Fatalf("empty tool result should carry no text block: %+v", user.Content[0])
 	}
 }
+
+func TestEmptyAssistantTurnIsDropped(t *testing.T) {
+	msgs, err := toMessageParams([]provider.Message{
+		{Role: "user", Content: "hi"},
+		{Role: "assistant"},
+		{Role: "user", Content: "again"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 || msgs[0].Role != sdk.MessageParamRoleUser || msgs[1].Role != sdk.MessageParamRoleUser {
+		t.Fatalf("got %+v, want the two user turns only", msgs)
+	}
+}

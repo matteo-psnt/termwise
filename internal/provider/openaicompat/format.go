@@ -48,6 +48,11 @@ func toMessageParam(m provider.Message) ([]openai.ChatCompletionMessageParamUnio
 	case "user":
 		return toUserMessageParams(m), nil
 	case "assistant":
+		// An empty assistant turn (no text, no tool calls) is invalid here
+		// and would fail every later request; it carries nothing, so drop it.
+		if m.Content == "" && len(m.ToolCalls) == 0 {
+			return nil, nil
+		}
 		p, err := toAssistantMessageParam(m)
 		if err != nil {
 			return nil, err
