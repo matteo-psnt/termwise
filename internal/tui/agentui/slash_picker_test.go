@@ -118,3 +118,56 @@ func TestSlashPickerCommitRunsCommand(t *testing.T) {
 		t.Fatalf("thread[0] = %#v, want SystemEntry %q", m.thread[0], want)
 	}
 }
+
+// openModelPicker opens the /model picker on a model with no config path, so
+// applyModel always fails on commit.
+func openModelPicker(t *testing.T, providerName, modelID string) Model {
+	t.Helper()
+	m := pickerModel(theme.DefaultName)
+	m.providerName = providerName
+	m.modelID = modelID
+	m.contextWindow = contextWindowFor(providerName, modelID)
+	opts := []slashOption{
+		{Label: "haiku", Value: "anthropic/claude-haiku-4-5-20251001"},
+		{Label: "sonnet", Value: "anthropic/claude-sonnet-4-6"},
+	}
+	next, _ := m.openSlashPicker("/model", "Active model", "", opts, modelOptionFor(providerName, modelID))
+	return next.(Model)
+}
+
+// A failed /model commit must leave the model the client was built for: the
+// preview already swapped providerName/modelID, and keeping them would send
+// the new model ID to the old client.
+func TestModelPickerFailedCommitRevertsPreview(t *testing.T) {
+	m := openModelPicker(t, "anthropic", "claude-haiku-4-5-20251001")
+	wantWindow := m.contextWindow
+
+	m = pressKey(t, m, keyDown)
+	if m.modelID != "claude-sonnet-4-6" {
+		t.Fatalf("down did not preview sonnet: %q", m.modelID)
+	}
+	m = pressKey(t, m, keyEnter)
+	if m.providerName != "anthropic" || m.modelID != "claude-haiku-4-5-20251001" || m.contextWindow != wantWindow {
+		t.Fatalf("after failed commit: %s/%s window %d, want original", m.providerName, m.modelID, m.contextWindow)
+	}
+	if len(m.thread) != 1 {
+		t.Fatalf("thread = %#v, want one error entry", m.thread)
+	}
+	if _, ok := m.thread[0].(ErrorEntry); !ok {
+		t.Fatalf("thread[0] = %#v, want ErrorEntry", m.thread[0])
+	}
+}
+
+// A model the catalog doesn't list (a custom ID from the config) must still be
+// restored when the picker is cancelled or a commit fails.
+func TestModelPickerRevertsUncataloguedModel(t *testing.T) {
+	for _, key := range []tea.KeyPressMsg{keyEsc, keyEnter} {
+		m := openModelPicker(t, "openai", "my-finetune")
+		m = pressKey(t, m, keyDown)
+		m = pressKey(t, m, key)
+		if m.providerName != "openai" || m.modelID != "my-finetune" || m.contextWindow != defaultContextWindow {
+			t.Fatalf("after %s: %s/%s window %d, want openai/my-finetune restored",
+				key.String(), m.providerName, m.modelID, m.contextWindow)
+		}
+	}
+}
