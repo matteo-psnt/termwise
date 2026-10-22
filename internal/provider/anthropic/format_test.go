@@ -97,11 +97,13 @@ func TestSessionWithoutProviderStateLoads(t *testing.T) {
 }
 
 func TestMaxTokens(t *testing.T) {
-	if got := toParams("m", "", nil, nil, "").MaxTokens; got != 8192 {
-		t.Fatalf("default max_tokens = %d, want 8192", got)
+	// Current models think even without effort, so the default must leave
+	// room for thinking as well as the answer.
+	if got := toParams("m", "", nil, nil, "").MaxTokens; got != 16000 {
+		t.Fatalf("default max_tokens = %d, want 16000", got)
 	}
-	if got := toParams("m", "", nil, nil, "high").MaxTokens; got != 16000 {
-		t.Fatalf("thinking max_tokens = %d, want 16000", got)
+	if got := toParams("m", "", nil, nil, "high").MaxTokens; got != 20000 {
+		t.Fatalf("thinking max_tokens = %d, want 20000", got)
 	}
 }
 

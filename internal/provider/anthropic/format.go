@@ -12,12 +12,17 @@ import (
 )
 
 // toParams builds MessageNewParams and enables adaptive thinking when effort is set.
-// max_tokens caps the combined thinking + visible output budget, so the cap is
-// raised when thinking is enabled to leave room for the visible response.
+// max_tokens caps the combined thinking + visible output budget. Current
+// models think even when no thinking config is sent, so even the default has
+// to leave room for thinking ahead of the answer; 16000 is the documented
+// figure for non-streaming requests. With effort set the model may think
+// longer, so the cap is raised, but only as far as a non-streaming request
+// can finish within DefaultRequestTimeout by the SDK's own estimate: 32000
+// would need streaming.
 func toParams(model, system string, messages []sdk.MessageParam, tools []sdk.ToolUnionParam, effort string) sdk.MessageNewParams {
 	const (
-		maxTokensDefault  = 8192
-		maxTokensThinking = 16000
+		maxTokensDefault  = 16000
+		maxTokensThinking = 20000
 	)
 	maxTokens := int64(maxTokensDefault)
 	if effort != "" {
