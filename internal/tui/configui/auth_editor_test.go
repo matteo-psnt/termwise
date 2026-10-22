@@ -70,3 +70,29 @@ func TestWizardBlankFallbackUsesDefault(t *testing.T) {
 		t.Errorf("step = %v; want a blank command to be refused", got)
 	}
 }
+
+func TestAuthEditKeepsRestOfProviderBlock(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	cfg := config.FileConfig{
+		SelectedProvider: "openai",
+		Providers: map[string]config.ProviderConfig{
+			"openai": {Auth: "env", Model: "gpt-5", Effort: "high", BaseURL: "https://proxy.example/v1"},
+		},
+	}
+	m := newEditorModel("", cfg, true)
+	m = openRow(t, m, func(r editorRow) bool { return r.kind == rowProvAuth })
+	m = press(t, m, keyDown, keyDown, keyEnter) // cmd
+	m.authEditor.input.SetValue("pass show openai")
+	m = press(t, m, keyEnter)
+	m, _ = update(t, m, editorAuthMsg{})
+	if m.authEditor != nil {
+		t.Fatal("auth editor still open after a successful verify")
+	}
+	want := config.ProviderConfig{
+		Auth: "cmd", APIKeyCmd: "pass show openai",
+		Model: "gpt-5", Effort: "high", BaseURL: "https://proxy.example/v1",
+	}
+	if got := m.cfg.Providers["openai"]; got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}

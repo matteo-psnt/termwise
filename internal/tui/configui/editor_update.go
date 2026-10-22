@@ -96,8 +96,6 @@ func (m editorModel) updateAuthEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if ae.done {
 		m.authEditor = nil
 		if !ae.cancelled {
-			existing := m.cfg.Providers[ae.provider]
-			ae.result.Model = existing.Model
 			config.SetProvider(&m.cfg, ae.provider, ae.result)
 			m.resetConnectivity()
 			return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
