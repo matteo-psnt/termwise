@@ -40,7 +40,7 @@ func selectedProviderConfig(cfg config.FileConfig, name string) (string, config.
 // included — so commands that talk to the provider test what `tw` uses
 // rather than only what the file says.
 func effectiveProviderConfig(name string) (string, config.ProviderConfig, error) {
-	cfgPath, _, _, err := loadConfigFile()
+	cfgPath, _, err := loadConfigFile()
 	if err != nil {
 		return "", config.ProviderConfig{}, err
 	}

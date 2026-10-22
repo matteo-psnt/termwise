@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/models"
@@ -98,18 +99,28 @@ func ZeroConfigDefaults() (FileConfig, bool) {
 }
 
 // EnvOnlyNotice describes the zero-config fallback when it is in effect:
-// there is no file at path, so the provider comes from an API key in the
-// environment. It returns "" when a config file exists or no key is set.
+// there is no file at path, so the provider comes from the environment. It
+// names what the runtime would actually use, TERMWISE_PROVIDER and
+// TERMWISE_MODEL included, and returns "" when a config file exists or there
+// is nothing in the environment to run from.
 func EnvOnlyNotice(path string) string {
 	if ConfigExists(path) {
 		return ""
 	}
-	cfg, ok := ZeroConfigDefaults()
-	if !ok {
+	eff, err := LoadEffective(path)
+	if err != nil || eff.Exists {
 		return ""
 	}
-	name := cfg.SelectedProvider
-	pc := cfg.Providers[name]
-	return fmt.Sprintf("No config file — using %s via $%s (model %s). Run `%s config` to save or change this.",
-		displayName(name), pc.EnvVar, pc.Model, cliname.Name())
+	name := eff.File.SelectedProvider
+	pc := eff.File.Providers[name]
+	via := ""
+	if pc.EnvVar != "" {
+		via = " via $" + pc.EnvVar
+	}
+	set := ""
+	if len(eff.Overrides) > 0 {
+		set = ", set by " + strings.Join(eff.Overrides, " ")
+	}
+	return fmt.Sprintf("No config file — using %s%s (model %s%s). Run `%s config` to save or change this.",
+		displayName(name), via, pc.Model, set, cliname.Name())
 }

@@ -69,7 +69,7 @@ func warnIfNotOnPath() {
 // there is none — including when the config file is missing or unreadable,
 // since the shell integration should still load.
 func readKeybinding() string {
-	_, cfg, _, err := loadConfigFile()
+	_, cfg, err := loadConfigFile()
 	if err != nil || cfg.Settings.Keybinding == "" {
 		return config.DefaultKeybinding
 	}

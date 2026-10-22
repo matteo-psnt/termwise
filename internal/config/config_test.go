@@ -717,3 +717,24 @@ func TestSaveConfigWritesThroughSymlink(t *testing.T) {
 	}
 	assertEqual(t, "target SelectedProvider", "groq", cfg.SelectedProvider)
 }
+
+// The notice has to name what the runtime will use: with TERMWISE_PROVIDER
+// set, that is not the provider whose key was found first.
+func TestEnvOnlyNoticeHonorsOverrides(t *testing.T) {
+	for _, p := range provider.Catalog() {
+		if p.DefaultEnvVar != "" {
+			t.Setenv(p.DefaultEnvVar, "")
+		}
+	}
+	missing := filepath.Join(t.TempDir(), "config.toml")
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant")
+	t.Setenv(EnvProvider, "openai")
+	t.Setenv(EnvModel, "gpt-x")
+	got := EnvOnlyNotice(missing)
+	if !strings.Contains(got, "OpenAI") || !strings.Contains(got, "gpt-x") || strings.Contains(got, "Anthropic") {
+		t.Errorf("notice = %q, want OpenAI with model gpt-x", got)
+	}
+	if !strings.Contains(got, EnvProvider) {
+		t.Errorf("notice = %q, want it to say the provider came from %s", got, EnvProvider)
+	}
+}
