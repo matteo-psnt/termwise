@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/cliname"
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 // Validate checks a FileConfig for structural correctness without making any
@@ -30,7 +31,7 @@ func Validate(cfg FileConfig) []string {
 	if !isKnownProvider(cfg.SelectedProvider) {
 		errs = append(errs, fmt.Sprintf(
 			"unknown provider %q\n  Supported: %s",
-			cfg.SelectedProvider, strings.Join(ProviderNames(), ", "),
+			cfg.SelectedProvider, strings.Join(provider.Names(), ", "),
 		))
 	}
 

@@ -76,7 +76,7 @@ func runDoctor(cfgPath string, online bool) bool {
 		hint("Run `%s config use <provider>`", cliname.Name())
 		return false
 	}
-	knownNames := config.ProviderNames()
+	knownNames := provider.Names()
 	known := slices.Contains(knownNames, cfg.SelectedProvider)
 	if known {
 		pass("selected_provider: " + cfg.SelectedProvider)

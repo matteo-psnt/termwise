@@ -260,7 +260,7 @@ var configRemoveCmd = &cobra.Command{
 }
 
 func init() {
-	configUseCmd.ValidArgs = config.ProviderNames()
+	configUseCmd.ValidArgs = provider.Names()
 	configUseCmd.Flags().String("model", "", "Model to use")
 	configUseCmd.Flags().String("env-var", "", "Read the API key from this environment variable")
 	configUseCmd.Flags().String("cmd", "", "Run this command to get the API key")

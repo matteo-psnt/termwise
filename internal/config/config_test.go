@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 // ---------------------------------------------------------------------------
@@ -508,7 +510,7 @@ func assertEqual(t *testing.T, label, want, got string) {
 }
 
 func TestEnvOnlyNotice(t *testing.T) {
-	for _, p := range ProviderInfos() {
+	for _, p := range provider.Catalog() {
 		if p.DefaultEnvVar != "" {
 			t.Setenv(p.DefaultEnvVar, "")
 		}

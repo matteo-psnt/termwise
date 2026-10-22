@@ -5,6 +5,7 @@ import (
 
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/models"
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 // ---------------------------------------------------------------------------
@@ -55,7 +56,7 @@ func (m *editorModel) buildRows() {
 			editorRow{kind: rowProvAuth, provider: name, hint: "enter edit auth   " + navTail},
 		)
 	}
-	if len(m.cfg.Providers) < len(config.ProviderInfos()) {
+	if len(m.cfg.Providers) < len(provider.Catalog()) {
 		m.rows = append(m.rows, editorRow{kind: rowAddProvider, hint: "enter add provider   " + navTail})
 	}
 	m.rows = append(m.rows, editorRow{kind: rowSectionHeader, label: "Settings"})

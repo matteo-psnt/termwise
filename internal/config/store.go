@@ -6,6 +6,7 @@ import (
 
 	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/models"
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 // UseProvider sets the selected provider.
@@ -17,7 +18,7 @@ func UseProvider(cfg *FileConfig, name string) error {
 	if !isKnownProvider(name) {
 		return fmt.Errorf(
 			"unknown provider %q\n  Supported: %s",
-			name, strings.Join(ProviderNames(), ", "),
+			name, strings.Join(provider.Names(), ", "),
 		)
 	}
 	cfg.SelectedProvider = name

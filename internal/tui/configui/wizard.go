@@ -86,12 +86,12 @@ func newWizardModel(hasDarkBg bool, themeName string, exclude map[string]bool) w
 }
 
 // availableProviders returns the provider list with already-configured ones removed.
-func (m wizardModel) availableProviders() []config.ProviderInfo {
-	all := config.ProviderInfos()
+func (m wizardModel) availableProviders() []provider.Info {
+	all := provider.Catalog()
 	if len(m.exclude) == 0 {
 		return all
 	}
-	out := make([]config.ProviderInfo, 0, len(all))
+	out := make([]provider.Info, 0, len(all))
 	for _, p := range all {
 		if !m.exclude[p.Name] {
 			out = append(out, p)
@@ -112,10 +112,10 @@ func (m wizardModel) preselectDetected() wizardModel {
 	return m
 }
 
-func (m wizardModel) selectedProvider() (config.ProviderInfo, bool) {
+func (m wizardModel) selectedProvider() (provider.Info, bool) {
 	providers := m.availableProviders()
 	if len(providers) == 0 || m.cursor < 0 || m.cursor >= len(providers) {
-		return config.ProviderInfo{}, false
+		return provider.Info{}, false
 	}
 	return providers[m.cursor], true
 }
