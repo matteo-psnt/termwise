@@ -1,23 +1,14 @@
 package tools
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
-
-// vcsExcludeGlobs are directories ripgrep skips by default to keep results free
-// of version-control noise. Applied to grep and glob.
-var vcsExcludeGlobs = []string{".git", ".svn", ".hg", ".bzr", ".jj", ".sl"}
 
 const (
 	defaultGrepHeadLimit = 250
@@ -33,15 +24,6 @@ func init() {
 
 func grepDetail(tc provider.ToolCall) string {
 	return patternInPath(GrepPattern(tc), GrepPath(tc))
-}
-
-// patternInPath formats a "<pattern> in <path>" detail line, dropping the
-// suffix when path is empty. Shared by grep and glob.
-func patternInPath(pattern, path string) string {
-	if path != "" {
-		return pattern + " in " + path
-	}
-	return pattern
 }
 
 var GrepDef = provider.ToolDef{
@@ -145,8 +127,9 @@ func Grep(ctx context.Context, input map[string]any) (string, bool) {
 	}
 
 	cwd, _ := os.Getwd()
-	absPath, pathArg, ok := resolveSearchPath(input, cwd)
-	if !ok {
+	pathArg, _ := input["path"].(string)
+	absPath, _, err := resolveSearchPath(pathArg, cwd)
+	if err != nil {
 		return fmt.Sprintf("error: path does not exist: %s", pathArg), true
 	}
 
@@ -184,24 +167,6 @@ func Grep(ctx context.Context, input map[string]any) (string, bool) {
 		return formatCount(lines, cwd, headLimit, offset), false
 	}
 	return "", false
-}
-
-// resolveSearchPath returns the absolute search path and the raw user-supplied
-// path arg. ok=false when the path does not exist.
-func resolveSearchPath(input map[string]any, cwd string) (abs, raw string, ok bool) {
-	raw, _ = input["path"].(string)
-	searchPath := raw
-	if searchPath == "" {
-		searchPath = cwd
-	}
-	abs, err := filepath.Abs(searchPath)
-	if err != nil {
-		return "", raw, false
-	}
-	if _, err := os.Stat(abs); err != nil {
-		return "", raw, false
-	}
-	return abs, raw, true
 }
 
 func buildGrepArgs(input map[string]any, pattern, outputMode, absPath string) []string {
@@ -323,37 +288,6 @@ func formatCount(lines []string, cwd string, headLimit, offset int) string {
 	return body + summary
 }
 
-// runRipgrep executes `rg` with args and returns stdout lines.
-// Exit code 1 (no matches) is treated as success with no results.
-func runRipgrep(ctx context.Context, args []string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "rg", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	if err != nil {
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-			if exitErr.ExitCode() == 1 {
-				return nil, nil
-			}
-			msg := strings.TrimSpace(stderr.String())
-			if msg == "" {
-				msg = exitErr.Error()
-			}
-			return nil, fmt.Errorf("ripgrep failed: %s", msg)
-		}
-		if errors.Is(err, exec.ErrNotFound) {
-			return nil, fmt.Errorf("ripgrep (rg) not found on PATH — install it from https://github.com/BurntSushi/ripgrep")
-		}
-		return nil, err
-	}
-	out := strings.TrimRight(stdout.String(), "\n")
-	if out == "" {
-		return nil, nil
-	}
-	return strings.Split(out, "\n"), nil
-}
-
 func intInput(input map[string]any, key string) (int, bool) {
 	switch v := input[key].(type) {
 	case float64:
@@ -362,126 +296,4 @@ func intInput(input map[string]any, key string) (int, bool) {
 		return v, true
 	}
 	return 0, false
-}
-
-// splitGlobPatterns splits a user-supplied glob string on whitespace and commas
-// while preserving brace expansions like "*.{ts,tsx}".
-func splitGlobPatterns(s string) []string {
-	var out []string
-	for raw := range strings.FieldsSeq(s) {
-		if strings.ContainsAny(raw, "{}") {
-			out = append(out, raw)
-			continue
-		}
-		for p := range strings.SplitSeq(raw, ",") {
-			if p != "" {
-				out = append(out, p)
-			}
-		}
-	}
-	return out
-}
-
-// applyHeadLimit returns at most limit items starting at offset.
-// limit=0 means unlimited. The second return reports whether truncation occurred.
-func applyHeadLimit(items []string, limit, offset int) ([]string, bool) {
-	if offset > 0 {
-		if offset >= len(items) {
-			return nil, false
-		}
-		items = items[offset:]
-	}
-	if limit == 0 {
-		return items, false
-	}
-	if len(items) <= limit {
-		return items, false
-	}
-	return items[:limit], true
-}
-
-func formatLimitInfo(limit int, truncated bool, offset int) string {
-	var parts []string
-	if truncated {
-		parts = append(parts, fmt.Sprintf("limit: %d", limit))
-	}
-	if offset > 0 {
-		parts = append(parts, fmt.Sprintf("offset: %d", offset))
-	}
-	return strings.Join(parts, ", ")
-}
-
-// sortByMtimeDesc sorts files in place by modification time (newest first),
-// falling back to lexicographic order on ties or stat failures.
-func sortByMtimeDesc(files []string) {
-	type entry struct {
-		path  string
-		mtime int64
-	}
-	entries := make([]entry, len(files))
-	for i, f := range files {
-		if st, err := os.Stat(f); err == nil {
-			entries[i] = entry{f, st.ModTime().UnixNano()}
-		} else {
-			entries[i] = entry{f, 0}
-		}
-	}
-	sort.SliceStable(entries, func(i, j int) bool {
-		if entries[i].mtime != entries[j].mtime {
-			return entries[i].mtime > entries[j].mtime
-		}
-		return entries[i].path < entries[j].path
-	})
-	for i, e := range entries {
-		files[i] = e.path
-	}
-}
-
-func relativizeAll(paths []string, cwd string) []string {
-	out := make([]string, len(paths))
-	for i, p := range paths {
-		out[i] = relativizePath(p, cwd)
-	}
-	return out
-}
-
-// relativizePath returns p relative to cwd when p is under cwd, otherwise p.
-func relativizePath(p, cwd string) string {
-	if cwd == "" {
-		return p
-	}
-	rel, err := filepath.Rel(cwd, p)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return p
-	}
-	return rel
-}
-
-// relativizeContentLines rewrites the path prefix on rg's "path:line:content"
-// and "path:content" output lines so users see paths relative to cwd.
-func relativizeContentLines(lines []string, cwd string) []string {
-	out := make([]string, len(lines))
-	for i, line := range lines {
-		idx := strings.IndexByte(line, ':')
-		if idx <= 0 {
-			out[i] = line
-			continue
-		}
-		out[i] = relativizePath(line[:idx], cwd) + line[idx:]
-	}
-	return out
-}
-
-func pluralFiles(n int) string {
-	if n == 1 {
-		return "file"
-	}
-	return "files"
-}
-
-func pluralOccurrences(n int) string {
-	if n == 1 {
-		return "occurrence"
-	}
-	return "occurrences"
 }

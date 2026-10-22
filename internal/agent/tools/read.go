@@ -170,13 +170,6 @@ func readDir(path string) (string, bool) {
 	return body, false
 }
 
-func pluralEntries(n int) string {
-	if n == 1 {
-		return "entry"
-	}
-	return "entries"
-}
-
 // isBinary reports whether data appears to be binary content.
 func isBinary(data []byte) bool {
 	if len(data) == 0 {

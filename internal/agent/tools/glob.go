@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -77,16 +76,11 @@ func Glob(ctx context.Context, input map[string]any) (string, bool) {
 
 	cwd, _ := os.Getwd()
 	pathArg, _ := input["path"].(string)
-	searchPath := pathArg
-	if searchPath == "" {
-		searchPath = cwd
-	}
-	absPath, err := filepath.Abs(searchPath)
+	absPath, info, err := resolveSearchPath(pathArg, cwd)
 	if err != nil {
-		return fmt.Sprintf("error: %s", err), true
-	}
-	info, err := os.Stat(absPath)
-	if err != nil {
+		if absPath == "" {
+			return fmt.Sprintf("error: %s", err), true
+		}
 		return fmt.Sprintf("error: path does not exist: %s", pathArg), true
 	}
 	if !info.IsDir() {
