@@ -66,17 +66,26 @@ func relativizePath(p, cwd string) string {
 	return rel
 }
 
-// relativizeContentLines rewrites the path prefix on rg's "path:line:content"
-// and "path:content" output lines so users see paths relative to cwd.
-func relativizeContentLines(lines []string, cwd string) []string {
+// relativizeContentLines rewrites the path on rg's content-mode lines so users
+// see paths relative to cwd. grep runs rg with NUL-prefixed field separators,
+// so a line is "path\x00:line\x00:text" for a match and "path\x00-line\x00-text"
+// for context (without the line field when showLine is false). The NULs are
+// dropped to give rg's usual "path:line:text" / "path-line-text". Lines with no
+// NUL, such as the "--" between context groups, pass through.
+func relativizeContentLines(lines []string, cwd string, showLine bool) []string {
 	out := make([]string, len(lines))
 	for i, line := range lines {
-		idx := strings.IndexByte(line, ':')
-		if idx <= 0 {
+		path, rest, ok := strings.Cut(line, "\x00")
+		if !ok {
 			out[i] = line
 			continue
 		}
-		out[i] = relativizePath(line[:idx], cwd) + line[idx:]
+		if showLine {
+			// Only the separator after the line number; any later NUL is
+			// part of the matched text.
+			rest = strings.Replace(rest, "\x00", "", 1)
+		}
+		out[i] = relativizePath(path, cwd) + rest
 	}
 	return out
 }

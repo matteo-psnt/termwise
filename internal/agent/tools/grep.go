@@ -154,7 +154,7 @@ func grep(ctx context.Context, input map[string]any) (string, bool) {
 	case "files_with_matches":
 		return formatFilesWithMatches(lines, cwd, headLimit, offset), false
 	case "content":
-		return formatContent(lines, cwd, headLimit, offset), false
+		return formatContent(lines, cwd, headLimit, offset, grepShowLineNumbers(input)), false
 	case "count":
 		return formatCount(lines, cwd, headLimit, offset), false
 	}
@@ -202,11 +202,16 @@ func outputModeArgs(input map[string]any, outputMode string) []string {
 		// path can itself contain ':'. Force the name and end it with NUL.
 		return []string{"-c", "--with-filename", "--null"}
 	case "content":
-		args := []string{}
-		showLine := true
-		if v, ok := input["-n"].(bool); ok {
-			showLine = v
+		// Mark the end of the path with NUL so relativizeContentLines can find
+		// it: rg ends it with ':' on match lines and '-' on context lines, and
+		// either can appear inside a filename. -H keeps the path on output
+		// for a single-file search too.
+		args := []string{
+			"--with-filename",
+			"--field-match-separator", `\x00:`,
+			"--field-context-separator", `\x00-`,
 		}
+		showLine := grepShowLineNumbers(input)
 		if showLine {
 			args = append(args, "-n")
 		}
@@ -224,6 +229,15 @@ func outputModeArgs(input map[string]any, outputMode string) []string {
 	return nil
 }
 
+// grepShowLineNumbers reports whether content mode prints line numbers; the
+// -n argument defaults to true.
+func grepShowLineNumbers(input map[string]any) bool {
+	if v, ok := input["-n"].(bool); ok {
+		return v
+	}
+	return true
+}
+
 func formatFilesWithMatches(lines []string, cwd string, headLimit, offset int) string {
 	sortByMtimeDesc(lines)
 	paged, truncated := applyHeadLimit(lines, headLimit, offset)
@@ -238,9 +252,9 @@ func formatFilesWithMatches(lines []string, cwd string, headLimit, offset int) s
 	return head + "\n" + strings.Join(rel, "\n")
 }
 
-func formatContent(lines []string, cwd string, headLimit, offset int) string {
+func formatContent(lines []string, cwd string, headLimit, offset int, showLine bool) string {
 	paged, truncated := applyHeadLimit(lines, headLimit, offset)
-	rel := relativizeContentLines(paged, cwd)
+	rel := relativizeContentLines(paged, cwd, showLine)
 	body := strings.Join(rel, "\n")
 	if body == "" {
 		body = "No matches found"

@@ -52,3 +52,32 @@ func TestGrepCountPathWithColon(t *testing.T) {
 		t.Fatalf("got %q", out)
 	}
 }
+
+func TestGrepContentRelativizesContextLines(t *testing.T) {
+	// Names with '-' and ':' must not be mistaken for rg's separators.
+	for _, name := range []string{"sub/f-2.txt", "d-1:x/f-2:3.txt"} {
+		t.Run(name, func(t *testing.T) {
+			grepDir(t, map[string]string{name: "before\nfoo\nafter\n"})
+			out, isErr := grep(context.Background(), map[string]any{
+				"pattern": "foo", "output_mode": "content", "-C": float64(1),
+			})
+			if isErr {
+				t.Fatal(out)
+			}
+			want := name + "-1-before\n" + name + ":2:foo\n" + name + "-3-after"
+			if out != want {
+				t.Fatalf("got\n%s\nwant\n%s", out, want)
+			}
+		})
+	}
+}
+
+func TestGrepContentSingleFileWithoutLineNumbers(t *testing.T) {
+	grepDir(t, map[string]string{"a.txt": "x\nfoo\n"})
+	out, _ := grep(context.Background(), map[string]any{
+		"pattern": "foo", "path": "a.txt", "output_mode": "content", "-n": false, "-B": float64(1),
+	})
+	if want := "a.txt-x\na.txt:foo"; out != want {
+		t.Fatalf("got %q, want %q", out, want)
+	}
+}
