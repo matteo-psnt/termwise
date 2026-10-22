@@ -3,6 +3,7 @@ package shellrc
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -76,5 +77,52 @@ func TestPathRespectsZDOTDIR(t *testing.T) {
 	got, err := Path("zsh")
 	if err != nil || got != "/tmp/zdot/.zshrc" {
 		t.Errorf("Path(zsh) = %q, %v", got, err)
+	}
+}
+
+func TestInstallThenRemoveRestoresFileWithoutFinalNewline(t *testing.T) {
+	for _, orig := range []string{"alias ll='ls -l'", "a\r\nb", "a\n\nb"} {
+		path := filepath.Join(t.TempDir(), ".zshrc")
+		if err := os.WriteFile(path, []byte(orig), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Install(path, "zsh"); err != nil {
+			t.Fatal(err)
+		}
+		if ok, _ := Installed(path); !ok {
+			t.Fatalf("%q: Installed = false after Install", orig)
+		}
+		// Still newline-terminated, so a later `echo … >>` starts a line.
+		if got, _ := os.ReadFile(path); !strings.HasSuffix(string(got), "\n") {
+			t.Errorf("%q: installed file %q has no final newline", orig, got)
+		}
+		if _, err := Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := os.ReadFile(path); string(got) != orig {
+			t.Errorf("file after Remove = %q, want %q", got, orig)
+		}
+	}
+}
+
+func TestInstallUsesCRLFInCRLFFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".bashrc")
+	orig := "export A=1\r\n"
+	if err := os.WriteFile(path, []byte(orig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(path, "bash"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(path)
+	want := orig + "\r\n" + marker + "\r\n" + Line("bash") + "\r\n"
+	if string(got) != want {
+		t.Errorf("after Install = %q, want %q", got, want)
+	}
+	if _, err := Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != orig {
+		t.Errorf("after Remove = %q, want %q", got, orig)
 	}
 }

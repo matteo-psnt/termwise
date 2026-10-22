@@ -123,14 +123,24 @@ func Install(path, shell string) (bool, error) {
 		return false, err
 	}
 
-	var b strings.Builder
-	if len(data) > 0 {
-		if !bytes.HasSuffix(data, []byte("\n")) {
-			b.WriteString("\n")
-		}
-		b.WriteString("\n")
+	// Match the file's line endings, so a CRLF file does not end up mixed.
+	eol := "\n"
+	if bytes.Contains(data, []byte("\r\n")) {
+		eol = "\r\n"
 	}
-	b.WriteString(marker + "\n" + Line(shell) + "\n")
+	var b strings.Builder
+	switch {
+	case len(data) == 0:
+		b.WriteString(marker + eol + Line(shell) + eol)
+	case !bytes.HasSuffix(data, []byte("\n")):
+		// The file has no final newline. Leave out the blank separator line:
+		// its absence is how Remove knows to take the added newline back
+		// off. The block itself still ends in one, so a later `echo >>`
+		// does not run into the integration line.
+		b.WriteString(eol + marker + eol + Line(shell) + eol)
+	default:
+		b.WriteString(eol + marker + eol + Line(shell) + eol)
+	}
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -167,9 +177,15 @@ func Remove(path string) (bool, error) {
 		if i+1 < len(lines) && strings.Contains(lines[i+1], "termwise init") {
 			i++
 		}
-		// Drop the blank separator Install put above the marker.
-		if n := len(out); n > 0 && strings.TrimSpace(out[n-1]) == "" {
+		n := len(out)
+		switch {
+		case n > 0 && strings.TrimSpace(out[n-1]) == "":
+			// Drop the blank separator Install put above the marker.
 			out = out[:n-1]
+		case n > 0 && strings.Join(lines[i+1:], "") == "":
+			// No separator, and the block was last: Install added it to
+			// a file with no final newline, so take that newline off.
+			out[n-1] = strings.TrimSuffix(strings.TrimSuffix(out[n-1], "\n"), "\r")
 		}
 	}
 	if !removed {
