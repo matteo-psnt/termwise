@@ -119,3 +119,21 @@ effort = "hihg"
 		t.Errorf("an ignored effort failed doctor:\n%s", out)
 	}
 }
+
+func TestDoctorModelHintWithoutFile(t *testing.T) {
+	cfgPath := isolateConfigEnv(t)
+	t.Setenv(config.EnvProvider, "ollama")
+
+	out := captureStdout(t, func() { runDoctor(cfgPath, false) })
+	if !strings.Contains(out, "Model: not set") {
+		t.Fatalf("doctor output does not report the missing model:\n%s", out)
+	}
+	if strings.Contains(out, "config model set") {
+		t.Errorf("doctor suggests `config model set`, which fails with no file:\n%s", out)
+	}
+	for _, want := range []string{config.EnvModel + "=<model>", "config use ollama --model <model>"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("doctor output does not contain %q:\n%s", want, out)
+		}
+	}
+}
