@@ -51,6 +51,10 @@ func (m modelPickerModel) Init() tea.Cmd {
 
 func (m modelPickerModel) Update(msg tea.Msg) (modelPickerModel, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.height = msg.Height
+		return m, nil
+
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)

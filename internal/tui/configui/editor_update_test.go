@@ -112,3 +112,53 @@ func TestThemePickerCommitsToSetting(t *testing.T) {
 		t.Errorf("Theme = %q, want %q", got, want)
 	}
 }
+
+func modelRow(r editorRow) bool { return r.kind == rowProvModel }
+
+func update(t *testing.T, m editorModel, msg tea.Msg) (editorModel, tea.Cmd) {
+	t.Helper()
+	next, cmd := m.Update(msg)
+	return next.(editorModel), cmd
+}
+
+func TestEditorTakesConnResultWithSubModelOpen(t *testing.T) {
+	m := openRow(t, thinkingEditor(""), modelRow)
+	if m.modelPicker == nil {
+		t.Fatal("model row did not open the picker")
+	}
+	m, _ = update(t, m, editorConnMsg{})
+	if !m.connChecked || !m.connOK {
+		t.Errorf("connChecked = %v, connOK = %v; want the result recorded", m.connChecked, m.connOK)
+	}
+}
+
+func TestEditorSpinnerTicksWithSubModelOpen(t *testing.T) {
+	m := openRow(t, thinkingEditor(""), modelRow)
+	before := m.spin.View()
+	m, cmd := update(t, m, m.spin.Tick())
+	if cmd == nil || m.spin.View() == before {
+		t.Error("editor spinner did not advance while the picker was open")
+	}
+}
+
+func TestEditorResizeWithSubModelOpen(t *testing.T) {
+	m := openRow(t, thinkingEditor(""), modelRow)
+	m, _ = update(t, m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	if m.width != 120 || m.height != 40 {
+		t.Errorf("editor size = %dx%d, want 120x40", m.width, m.height)
+	}
+	if m.modelPicker.height != 40 {
+		t.Errorf("picker height = %d, want 40", m.modelPicker.height)
+	}
+}
+
+func TestAddWizardOpensWithEditorSize(t *testing.T) {
+	m, _ := update(t, thinkingEditor(""), tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = openRow(t, m, func(r editorRow) bool { return r.kind == rowAddProvider })
+	if m.addWizard == nil {
+		t.Fatal("add row did not open the wizard")
+	}
+	if m.addWizard.height != 30 {
+		t.Errorf("wizard height = %d, want 30", m.addWizard.height)
+	}
+}
