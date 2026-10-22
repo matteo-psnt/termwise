@@ -54,14 +54,19 @@ func (m Model) totalViewHeight() int {
 }
 
 // viewportDims calculates viewport dimensions from terminal size.
+//
+// The height reserves five fixed rows — header, separator, one input row,
+// separator, status — whatever the current state. The input section is often
+// taller (multi-line input, pickers, command boxes) and so can the bottom row
+// be (an open dropdown); the block then grows past the popup height rather
+// than the viewport shrinking. totalViewHeight measures the real height.
 func (m Model) viewportDims() (width, height int) {
-	// Layout: header(1) | viewport | sep(1) | input(1) | sep(1) | status(1)
 	innerW := max(m.width, 10)
 	h := popupHeight
 	if m.height > 0 && m.height < h {
 		h = m.height
 	}
-	innerH := max(h-5, 3) // header(1) + sep(1) + input(1) + sep(1) + status(1)
+	innerH := max(h-5, 3)
 	return innerW, innerH
 }
 

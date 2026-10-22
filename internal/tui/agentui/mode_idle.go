@@ -13,15 +13,15 @@ import (
 // always-on slash dropdown by leading with "/".
 type idleMode struct{}
 
-// idleKeys are the discrete command keys for idle. They carry no label: the
-// idle help overlay is hand-written (it lists informational rows like "/" that
-// aren't bindings), so these never render. Tab and plain typing are not in the
-// table because they need the raw msg; they're handled as residual cases.
 // maxInputRows caps how tall the prompt input grows before it scrolls
 // internally. Multi-line input is entered with Shift+Enter, Alt+Enter, or a
 // trailing backslash before Enter.
 const maxInputRows = 10
 
+// idleKeys are the discrete command keys for idle. They carry no label: the
+// idle help overlay is hand-written (it lists informational rows like "/" that
+// aren't bindings), so these never render. Tab and plain typing are not in the
+// table because they need the raw msg; they're handled as residual cases.
 var idleKeys = append(keymap{
 	{keys: []string{"enter"}, run: Model.submitCurrentInput},
 	{keys: []string{"shift+enter", "alt+enter"}, run: Model.insertInputNewline},

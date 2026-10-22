@@ -198,7 +198,6 @@ func openProgram(cfg openProgramConfig) (string, error) {
 	// in v2, not as a program option.
 	var programOpts []tea.ProgramOption
 	outputFile := os.Stdout
-	// Queried before NewProgram so the DSR reply doesn't end up in bubbletea's input queue.
 	inputFile := os.Stdin
 
 	if cfg.programInput != nil {
@@ -218,7 +217,8 @@ func openProgram(cfg openProgramConfig) (string, error) {
 		programOpts = append(programOpts, tea.WithInput(ttyFile))
 	}
 
-	// -1 = unknown; the model falls back to bottom-anchoring.
+	// Queried before NewProgram so the DSR reply doesn't end up in bubbletea's
+	// input queue. -1 = unknown; the model falls back to bottom-anchoring.
 	initialCursorRow := -1
 	if row, err := tty.QueryCursorRow(inputFile, outputFile); err == nil {
 		initialCursorRow = row

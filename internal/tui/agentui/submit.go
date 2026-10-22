@@ -95,6 +95,10 @@ func (m Model) effectiveEffort() string {
 }
 
 // trimContext drops oldest tool results when approaching the context window limit.
+//
+// The returned slice is a new outer slice, but the copy is shallow: each
+// message's ToolResults still shares its backing array with the input, so a
+// dropped result is overwritten in the caller's messages too.
 func trimContext(messages []provider.Message, contextWindow int) []provider.Message {
 	const (
 		fixedTokens   = 700 // system prompt + tool defs estimate
