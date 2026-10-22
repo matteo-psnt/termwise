@@ -21,9 +21,7 @@ func (m Model) handleInitialPrompt(prompt string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.initialPrompt = ""
-	if m.promptHistory != nil {
-		m.promptHistory.Push(prompt) //nolint:errcheck // Prompt history should not block sending a message.
-	}
+	m.rememberPrompt(prompt)
 	return m.submitMessage(prompt)
 }
 
@@ -43,11 +41,8 @@ func (m Model) submitCurrentInput() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.input.SetValue("")
-	m.histIdx = -1
-	m.histDraft = ""
-	if m.promptHistory != nil {
-		m.promptHistory.Push(text) //nolint:errcheck // Prompt history should not block sending a message.
-	}
+	m.cancelHistoryNav()
+	m.rememberPrompt(text)
 	if strings.HasPrefix(text, "/") {
 		return m.dispatchSlashCommand(text)
 	}

@@ -241,8 +241,7 @@ func runClear(m Model, _ []string) (tea.Model, tea.Cmd) {
 	m.stdin = ""
 	m.inputTokens = 0
 	m.outputTokens = 0
-	m.histIdx = -1
-	m.histDraft = ""
+	m.cancelHistoryNav()
 	m.clearSuggestion()
 	m.clearShellCommand()
 	if m.sessionStore != nil && m.sessionID != "" {

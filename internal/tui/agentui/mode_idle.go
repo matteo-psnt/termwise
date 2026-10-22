@@ -128,9 +128,7 @@ func (m Model) idleEsc() (tea.Model, tea.Cmd) {
 		m.input.SetValue("")
 		m.input.CursorEnd()
 		m.lastEscAt = time.Time{}
-		if m.promptHistory != nil {
-			_ = m.promptHistory.Push(text)
-		}
+		m.rememberPrompt(text)
 		return m, nil
 	}
 	m.lastEscAt = time.Now()
