@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
@@ -670,5 +671,22 @@ func TestResolveAuthCmdFailureKeepsOnlyFirstLineOfStderr(t *testing.T) {
 	}
 	if strings.Contains(msg, "secret-detail") || len([]rune(msg)) > 250 {
 		t.Errorf("err = %q, want only the first line, truncated", msg)
+	}
+}
+
+func TestResolveAuthCmdTimesOut(t *testing.T) {
+	mustUnsetenv(t, "GROQ_API_KEY")
+	orig := apiKeyCmdTimeout
+	apiKeyCmdTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { apiKeyCmdTimeout = orig })
+
+	start := time.Now()
+	// read waits on stdin; sleep stands in for a prompt that never returns.
+	_, err := ResolveAuth("groq", ProviderConfig{Auth: "cmd", APIKeyCmd: "read x; sleep 30"})
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("err = %v, want a timeout", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("ResolveAuth took %s; the timeout did not stop it", d)
 	}
 }

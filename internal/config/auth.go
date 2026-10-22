@@ -1,11 +1,13 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/zalando/go-keyring"
 
@@ -22,6 +24,10 @@ type ResolvedAuth struct {
 	// the config does not do what it says, so reports should show this.
 	FallbackErr error
 }
+
+// apiKeyCmdTimeout bounds api_key_cmd. It is long enough for a biometric or
+// master-password unlock prompt. A var so tests can shorten it.
+var apiKeyCmdTimeout = 30 * time.Second
 
 // ResolveAuth returns the resolved API key and base URL for a provider config.
 // If the configured auth method fails, it tries the provider's well-known env
@@ -63,7 +69,19 @@ func resolveKey(name string, pc ProviderConfig) (string, string, error) {
 		if pc.APIKeyCmd == "" {
 			return "", "", fmt.Errorf("auth is \"cmd\" but api_key_cmd is not set in [providers.%s]", name)
 		}
-		out, err := exec.Command("sh", "-c", pc.APIKeyCmd).Output()
+		// A password manager waiting to be unlocked, or for input it will
+		// never get, would otherwise hang every entry point. Stdin is left
+		// unset, so the command reads /dev/null rather than the terminal.
+		ctx, cancel := context.WithTimeout(context.Background(), apiKeyCmdTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "sh", "-c", pc.APIKeyCmd)
+		// Killing sh does not kill what it started, which can hold the
+		// output pipe open; stop waiting for it shortly after.
+		cmd.WaitDelay = time.Second
+		out, err := cmd.Output()
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", "", fmt.Errorf("api_key_cmd timed out after %s", apiKeyCmdTimeout)
+		}
 		if err != nil {
 			var exitErr *exec.ExitError
 			if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
