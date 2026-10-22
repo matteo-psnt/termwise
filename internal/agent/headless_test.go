@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -43,5 +45,18 @@ func TestRunHeadlessCarriesProviderState(t *testing.T) {
 	asst := client.requests[1].Messages[1]
 	if asst.Role != "assistant" || string(asst.ProviderState) != string(state) {
 		t.Fatalf("assistant turn lost its provider state: %+v", asst)
+	}
+}
+
+func TestRunHeadlessStopsALoopingModel(t *testing.T) {
+	client := &scriptedClient{next: func(call int) *provider.ChatResponse {
+		return &provider.ChatResponse{ToolCalls: []provider.ToolCall{readCall(strconv.Itoa(call))}}
+	}}
+	_, err := RunHeadless(context.Background(), HeadlessConfig{Client: client, Prompt: "hi"})
+	if err == nil || !strings.Contains(err.Error(), "no final response") {
+		t.Fatalf("got err %v, want a step-limit error", err)
+	}
+	if len(client.requests) != maxHeadlessSteps {
+		t.Fatalf("got %d requests, want %d", len(client.requests), maxHeadlessSteps)
 	}
 }
