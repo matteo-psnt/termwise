@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -79,6 +80,20 @@ func TestThinkingBlocksRoundTrip(t *testing.T) {
 	if rd := p.Content[1].OfRedactedThinking; rd == nil || rd.Data != "opaque-data" {
 		t.Fatalf("redacted thinking block not passed back unchanged: %+v", p.Content[1])
 	}
+	// The API verifies the signature against the block, so the wire form of
+	// each block must be exactly what was received.
+	for i, want := range []string{
+		`{"signature":"sig-abc","thinking":"let me look","type":"thinking"}`,
+		`{"data":"opaque-data","type":"redacted_thinking"}`,
+	} {
+		got, err := json.Marshal(p.Content[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != want {
+			t.Fatalf("block %d on the wire = %s, want %s", i, got, want)
+		}
+	}
 }
 
 func TestSessionWithoutProviderStateLoads(t *testing.T) {
@@ -97,11 +112,13 @@ func TestSessionWithoutProviderStateLoads(t *testing.T) {
 }
 
 func TestMaxTokens(t *testing.T) {
-	if got := toParams("m", "", nil, nil, "").MaxTokens; got != 8192 {
-		t.Fatalf("default max_tokens = %d, want 8192", got)
+	// Current models think even without effort, so the default must leave
+	// room for thinking as well as the answer.
+	if got := toParams("m", "", nil, nil, "").MaxTokens; got != 16000 {
+		t.Fatalf("default max_tokens = %d, want 16000", got)
 	}
-	if got := toParams("m", "", nil, nil, "high").MaxTokens; got != 16000 {
-		t.Fatalf("thinking max_tokens = %d, want 16000", got)
+	if got := toParams("m", "", nil, nil, "high").MaxTokens; got != 20000 {
+		t.Fatalf("thinking max_tokens = %d, want 20000", got)
 	}
 }
 
@@ -155,5 +172,24 @@ func TestEmptyAssistantTurnIsDropped(t *testing.T) {
 	}
 	if len(msgs) != 2 || msgs[0].Role != sdk.MessageParamRoleUser || msgs[1].Role != sdk.MessageParamRoleUser {
 		t.Fatalf("got %+v, want the two user turns only", msgs)
+	}
+}
+
+func TestRefusalIsAnError(t *testing.T) {
+	for _, tt := range []struct{ body, reason string }{
+		{`{"id":"m","type":"message","role":"assistant","model":"x","stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber","explanation":"no"},"usage":{},"content":[]}`,
+			"Anthropic declined this request (category: cyber)."},
+		{`{"id":"m","type":"message","role":"assistant","model":"x","stop_reason":"refusal","stop_details":{"type":"refusal","category":null,"explanation":null},"usage":{},"content":[]}`,
+			"Anthropic declined this request."},
+	} {
+		var msg sdk.Message
+		if err := json.Unmarshal([]byte(tt.body), &msg); err != nil {
+			t.Fatal(err)
+		}
+		resp, err := fromChatResponse(&msg)
+		var pe *provider.Error
+		if !errors.As(err, &pe) || pe.Kind != provider.ErrRefused || pe.Reason != tt.reason {
+			t.Fatalf("got (%+v, %v), want refusal %q", resp, err, tt.reason)
+		}
 	}
 }

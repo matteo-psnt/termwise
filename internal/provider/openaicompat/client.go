@@ -47,7 +47,7 @@ func (c *Client) ListModels(ctx context.Context) ([]provider.Model, error) {
 		})
 	}
 	if err := pager.Err(); err != nil {
-		return nil, mapErr(err)
+		return nil, c.mapErr(err)
 	}
 	return filterModels(c.name, models), nil
 }
@@ -63,18 +63,31 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 
 	msg, err := c.sdk.Chat.Completions.New(ctx, params)
 	if err != nil {
-		return nil, mapErr(err)
+		return nil, c.mapErr(err)
+	}
+	// A refusal arrives as a successful response with empty content, which
+	// would otherwise show as a blank answer.
+	if len(msg.Choices) > 0 && msg.Choices[0].Message.Refusal != "" {
+		return nil, provider.Refusal(c.displayName(), "", msg.Choices[0].Message.Refusal)
 	}
 	return fromChatResponse(msg)
 }
 
 // mapErr converts SDK errors to our provider.Error type.
-func mapErr(err error) error {
-	return provider.MapError(err, func(err error) (int, bool) {
+func (c *Client) mapErr(err error) error {
+	return provider.MapError(c.displayName(), err, func(err error) (int, bool) {
 		var apiErr *openai.Error
 		if errors.As(err, &apiErr) {
 			return apiErr.StatusCode, true
 		}
 		return 0, false
 	})
+}
+
+// displayName names the provider in user-facing errors.
+func (c *Client) displayName() string {
+	if info, ok := provider.Lookup(c.name); ok {
+		return info.DisplayName
+	}
+	return c.name
 }

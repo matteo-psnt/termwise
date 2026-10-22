@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRenderIncludesEverythingTheModelNeeds(t *testing.T) {
@@ -101,6 +103,27 @@ func TestDetectOutsideRepoReportsNoGit(t *testing.T) {
 	}
 }
 
+// The probe deadline must hold even when git leaves a child process holding
+// its stdout open, which would otherwise keep Output blocked until that
+// child exits.
+func TestDetectGitIsBoundedWhenChildHoldsOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a fake git")
+	}
+	bin := t.TempDir()
+	script := "#!/bin/sh\n/bin/sleep 20 &\necho true\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	start := time.Now()
+	detectGit(context.Background(), t.TempDir())
+	if d := time.Since(start); d > 3*probeTimeout {
+		t.Fatalf("detectGit took %v; the probe timeout is %v", d, probeTimeout)
+	}
+}
+
 // PATH probing must not invent tools that aren't there.
 func TestOnPathOnlyReturnsRealBinaries(t *testing.T) {
 	got := onPath([]string{"sh", "definitely-not-a-real-binary-xyz"})
@@ -162,6 +185,43 @@ func TestRecentCommandsWindowsToTheTail(t *testing.T) {
 	}
 	if got[len(got)-1] != lines[len(lines)-1] {
 		t.Errorf("last command = %q, want %q", got[len(got)-1], lines[len(lines)-1])
+	}
+}
+
+// zsh writes each byte >= 0x83 as 0x83 followed by the byte XOR 0x20.
+func metafy(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x83 {
+			b.WriteByte(0x83)
+			b.WriteByte(s[i] ^ 0x20)
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+func TestRecentCommandsUnmetafiesZshHistory(t *testing.T) {
+	cmd := "cd ~/Documents/résumé && ls 写真"
+	hist := filepath.Join(t.TempDir(), ".zsh_history")
+	if err := os.WriteFile(hist, []byte(metafy(": 1774724113:0;"+cmd)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HISTFILE", hist)
+	if got := RecentCommands("/bin/zsh"); len(got) != 1 || got[0] != cmd {
+		t.Fatalf("RecentCommands() = %q, want [%q]", got, cmd)
+	}
+
+	// bash stores UTF-8 as is; 0x83 there is part of a character, not a marker.
+	bashCmd := "ls ă"
+	bashHist := filepath.Join(t.TempDir(), ".bash_history")
+	if err := os.WriteFile(bashHist, []byte(bashCmd+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HISTFILE", bashHist)
+	if got := RecentCommands("/bin/bash"); len(got) != 1 || got[0] != bashCmd {
+		t.Fatalf("RecentCommands() = %q, want [%q]", got, bashCmd)
 	}
 }
 

@@ -91,6 +91,8 @@ func glob(ctx context.Context, input map[string]any) (string, bool) {
 		return fmt.Sprintf("error: %s", runErr), true
 	}
 
+	// Every match is stat'ed before the limit applies: the limit keeps the
+	// newest files, and which ones those are is unknown until all mtimes are.
 	sortByMtimeDesc(lines)
 	truncated := len(lines) > defaultGlobLimit
 	if truncated {

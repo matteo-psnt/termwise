@@ -72,3 +72,17 @@ func TestBashRunsInBashNotUserShell(t *testing.T) {
 		t.Errorf("command did not run in bash: %+v", res)
 	}
 }
+
+// Cancelling must stop the whole command, not just bash: a child that
+// inherits stdout (here the sleep) would otherwise keep Run waiting, and keep
+// running, after the user pressed Esc.
+func TestBashCancellationStopsChildren(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, _ = bash(ctx, map[string]any{"command": "sleep 5; echo done"})
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("cancelled command returned after %v", d)
+	}
+}
