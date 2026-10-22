@@ -35,8 +35,8 @@ func NewPromptHistory(configDir string) *PromptHistory {
 	}
 }
 
-// Load reads the history file into memory. Safe to call multiple times;
-// subsequent calls are no-ops if already loaded.
+// Load reads the history file into memory, replacing any entries already
+// held. Calling it again re-reads the file rather than doing nothing.
 func (h *PromptHistory) Load() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -91,25 +91,7 @@ func (h *PromptHistory) Push(text string) error {
 		h.entries = h.entries[:maxPromptEntries]
 	}
 
-	// Append to file.
-	if err := os.MkdirAll(filepath.Dir(h.path), 0o700); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(h.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-
-	line, err := json.Marshal(promptEntry{Text: text, Ts: time.Now()})
-	if err != nil {
-		_ = f.Close()
-		return err
-	}
-	if _, err = f.Write(append(line, '\n')); err != nil {
-		_ = f.Close()
-		return err
-	}
-	return f.Close()
+	return appendJSONL(h.path, promptEntry{Text: text, Ts: time.Now()})
 }
 
 // Entries returns all prompts in newest-first order.

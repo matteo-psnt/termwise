@@ -1,6 +1,7 @@
 package history
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -69,26 +70,13 @@ func (l *ExchangeLog) Append(e Exchange) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	if err := os.MkdirAll(filepath.Dir(l.path), 0o700); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	line, err := json.Marshal(e)
-	if err != nil {
-		_ = f.Close()
-		return err
-	}
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		_ = f.Close()
-		return err
-	}
-	return f.Close()
+	return appendJSONL(l.path, e)
 }
 
 // Load reads every logged exchange, oldest first. Malformed lines are skipped.
+//
+// Nothing in the app reads the log back: Load exists for tests and for
+// offline tooling that reviews logged exchanges.
 func (l *ExchangeLog) Load() ([]Exchange, error) {
 	data, err := os.ReadFile(l.path)
 	if os.IsNotExist(err) {
@@ -98,28 +86,14 @@ func (l *ExchangeLog) Load() ([]Exchange, error) {
 		return nil, err
 	}
 	var out []Exchange
-	for _, line := range splitLines(data) {
+	// bytes.Split rather than bufio.Scanner: a logged prompt can carry a
+	// large piped stdin, and Scanner rejects lines over 64KB. Empty lines
+	// fail to unmarshal and are skipped with the other malformed ones.
+	for _, line := range bytes.Split(data, []byte{'\n'}) {
 		var e Exchange
 		if json.Unmarshal(line, &e) == nil {
 			out = append(out, e)
 		}
 	}
 	return out, nil
-}
-
-func splitLines(b []byte) [][]byte {
-	var out [][]byte
-	start := 0
-	for i, c := range b {
-		if c == '\n' {
-			if i > start {
-				out = append(out, b[start:i])
-			}
-			start = i + 1
-		}
-	}
-	if start < len(b) {
-		out = append(out, b[start:])
-	}
-	return out
 }
