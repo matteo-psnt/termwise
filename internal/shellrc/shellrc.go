@@ -123,30 +123,23 @@ func Install(path, shell string) (bool, error) {
 		return false, err
 	}
 
-	// Match the file's line endings, so a CRLF file does not end up mixed.
-	eol := "\n"
-	if bytes.Contains(data, []byte("\r\n")) {
-		eol = "\r\n"
-	}
-	var b strings.Builder
-	switch {
-	case len(data) == 0:
-		b.WriteString(marker + eol + Line(shell) + eol)
-	case !bytes.HasSuffix(data, []byte("\n")):
-		// The file has no final newline. Leave out the blank separator line:
-		// its absence is how Remove knows to take the added newline back
-		// off. The block itself still ends in one, so a later `echo >>`
-		// does not run into the integration line.
-		b.WriteString(eol + marker + eol + Line(shell) + eol)
-	default:
-		b.WriteString(eol + marker + eol + Line(shell) + eol)
+	// Always "\n", even in a CRLF file: shells do not strip a "\r", so zsh
+	// would bind the key to "_termwise_widget\r" and bash's `bind -x` would
+	// get the same trailing "\r". Remove still restores the file exactly.
+	block := marker + "\n" + Line(shell) + "\n"
+	if len(data) > 0 {
+		// A file with no final newline gets just that newline here, not a
+		// blank separator line: its absence is how Remove knows to take
+		// the added newline back off. The block itself still ends in one,
+		// so a later `echo >>` does not run into the integration line.
+		block = "\n" + block
 	}
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return false, err
 	}
-	if _, err := f.WriteString(b.String()); err != nil {
+	if _, err := f.WriteString(block); err != nil {
 		_ = f.Close()
 		return false, err
 	}
@@ -174,18 +167,26 @@ func Remove(path string) (bool, error) {
 			continue
 		}
 		removed = true
+		markerLine := lines[i]
 		if i+1 < len(lines) && strings.Contains(lines[i+1], "termwise init") {
 			i++
 		}
 		n := len(out)
+		// Install writes "\n" after the file's content. Older releases
+		// wrote "\r\n" in a CRLF file, which shows on the marker line;
+		// take back whichever was added.
+		added := "\n"
+		if strings.HasSuffix(markerLine, "\r\n") {
+			added = "\r\n"
+		}
 		switch {
-		case n > 0 && strings.TrimSpace(out[n-1]) == "":
+		case n > 0 && out[n-1] == added:
 			// Drop the blank separator Install put above the marker.
 			out = out[:n-1]
-		case n > 0 && strings.Join(lines[i+1:], "") == "":
+		case n > 0 && strings.Join(lines[i+1:], "") == "" && strings.HasSuffix(out[n-1], added):
 			// No separator, and the block was last: Install added it to
 			// a file with no final newline, so take that newline off.
-			out[n-1] = strings.TrimSuffix(strings.TrimSuffix(out[n-1], "\n"), "\r")
+			out[n-1] = strings.TrimSuffix(out[n-1], added)
 		}
 	}
 	if !removed {
