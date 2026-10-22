@@ -78,3 +78,20 @@ func TestWrapToWidthLeavesShortLinesAlone(t *testing.T) {
 		t.Errorf("wrapToWidth() = %q", got)
 	}
 }
+
+func TestFormatTokens(t *testing.T) {
+	for n, want := range map[int]string{
+		0:          "0",
+		999:        "999",
+		1000:       "1,000",
+		1001:       "1,001",
+		999_999:    "999,999",
+		1_000_000:  "1,000,000",
+		1_234_567:  "1,234,567",
+		12_000_050: "12,000,050",
+	} {
+		if got := formatTokens(n); got != want {
+			t.Errorf("formatTokens(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
