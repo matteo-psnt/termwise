@@ -118,8 +118,13 @@ type Config struct {
 // Helpers for client packages
 // ----------------------------------------------------------------------------
 
-// DefaultRequestTimeout bounds each HTTP request a client makes.
-const DefaultRequestTimeout = 30 * time.Second
+// DefaultRequestTimeout bounds each HTTP request a client makes. Requests are
+// not streamed, so it must cover a whole response: a 16k-token thinking turn
+// at a slow ~40 tokens/s takes close to 7 minutes, and the Anthropic SDK itself
+// expects up to 7.5 minutes for that budget. Ten minutes matches the SDK's own
+// non-streaming default. The cap only catches a stalled connection: Esc and
+// ctrl+c cancel the request context, which ends it immediately.
+const DefaultRequestTimeout = 10 * time.Minute
 
 // ParseToolInput unmarshals a tool call's raw JSON arguments into a map.
 // Empty input yields an empty map, since models may omit arguments for a

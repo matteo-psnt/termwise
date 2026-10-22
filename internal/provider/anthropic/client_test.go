@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	sdk "github.com/anthropics/anthropic-sdk-go"
+
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
@@ -31,5 +33,18 @@ func TestListModelsFollowsPages(t *testing.T) {
 	}
 	if len(models) != 2 || models[0].ID != "m1" || models[1].ID != "m2" {
 		t.Fatalf("got %+v, want m1 and m2 from both pages", models)
+	}
+}
+
+func TestRequestTimeoutCoversThinkingBudget(t *testing.T) {
+	// A non-streaming request has to finish within the timeout, so it must
+	// allow at least what the SDK expects for the largest max_tokens we send.
+	p := toParams("claude-x", "", nil, nil, "high")
+	want, err := sdk.CalculateNonStreamingTimeout(int(p.MaxTokens), p.Model, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.DefaultRequestTimeout < want {
+		t.Fatalf("DefaultRequestTimeout = %v, want at least %v for max_tokens %d", provider.DefaultRequestTimeout, want, p.MaxTokens)
 	}
 }
