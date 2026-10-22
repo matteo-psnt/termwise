@@ -65,20 +65,29 @@ func (c *Client) Chat(ctx context.Context, req provider.ChatRequest) (*provider.
 	if err != nil {
 		return nil, c.mapErr(err)
 	}
+	// A refusal arrives as a successful response with empty content, which
+	// would otherwise show as a blank answer.
+	if len(msg.Choices) > 0 && msg.Choices[0].Message.Refusal != "" {
+		return nil, provider.Refusal(c.displayName(), "", msg.Choices[0].Message.Refusal)
+	}
 	return fromChatResponse(msg)
 }
 
 // mapErr converts SDK errors to our provider.Error type.
 func (c *Client) mapErr(err error) error {
-	name := c.name
-	if info, ok := provider.Lookup(c.name); ok {
-		name = info.DisplayName
-	}
-	return provider.MapError(name, err, func(err error) (int, bool) {
+	return provider.MapError(c.displayName(), err, func(err error) (int, bool) {
 		var apiErr *openai.Error
 		if errors.As(err, &apiErr) {
 			return apiErr.StatusCode, true
 		}
 		return 0, false
 	})
+}
+
+// displayName names the provider in user-facing errors.
+func (c *Client) displayName() string {
+	if info, ok := provider.Lookup(c.name); ok {
+		return info.DisplayName
+	}
+	return c.name
 }

@@ -22,6 +22,10 @@ const (
 	// ErrServer is a server-side failure (5xx, including 529 overloaded): the request
 	// itself was fine and the same one may succeed if retried later.
 	ErrServer
+	// ErrRefused means the model declined the request (Anthropic's
+	// stop_reason "refusal", OpenAI's refusal field). Retrying the same
+	// request will not help.
+	ErrRefused
 )
 
 // Error carries a user-facing reason and an underlying technical error.
@@ -37,6 +41,19 @@ func (e *Error) Unwrap() error { return e.Err }
 // NewError is a convenience constructor used by client packages.
 func NewError(kind ErrorKind, reason string, err error) *Error {
 	return &Error{Kind: kind, Reason: reason, Err: err}
+}
+
+// Refusal reports that the named provider's model declined the request.
+// category is the policy category when the provider names one; detail is the
+// provider's own explanation, kept on the wrapped error for debugging. The
+// response may carry no content at all, so returning it as an error is what
+// keeps the user from seeing a blank answer.
+func Refusal(name, category, detail string) *Error {
+	reason := name + " declined this request."
+	if category != "" {
+		reason = fmt.Sprintf("%s declined this request (category: %s).", name, category)
+	}
+	return NewError(ErrRefused, reason, fmt.Errorf("refusal: %s", detail))
 }
 
 // MapError converts an SDK error into an *Error. The SDKs differ only in the

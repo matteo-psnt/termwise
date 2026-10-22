@@ -182,6 +182,10 @@ func toToolParams(tools []provider.ToolDef) []sdk.ToolUnionParam {
 
 // fromChatResponse extracts content, tool calls, stop reason, and usage.
 func fromChatResponse(msg *sdk.Message) (*provider.ChatResponse, error) {
+	// A refusal arrives as a successful response, possibly with no content.
+	if msg.StopReason == sdk.StopReasonRefusal {
+		return nil, provider.Refusal(displayName, string(msg.StopDetails.Category), msg.StopDetails.Explanation)
+	}
 	resp := &provider.ChatResponse{
 		StopReason:   string(msg.StopReason),
 		InputTokens:  int(msg.Usage.InputTokens),

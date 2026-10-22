@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -171,5 +172,24 @@ func TestEmptyAssistantTurnIsDropped(t *testing.T) {
 	}
 	if len(msgs) != 2 || msgs[0].Role != sdk.MessageParamRoleUser || msgs[1].Role != sdk.MessageParamRoleUser {
 		t.Fatalf("got %+v, want the two user turns only", msgs)
+	}
+}
+
+func TestRefusalIsAnError(t *testing.T) {
+	for _, tt := range []struct{ body, reason string }{
+		{`{"id":"m","type":"message","role":"assistant","model":"x","stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber","explanation":"no"},"usage":{},"content":[]}`,
+			"Anthropic declined this request (category: cyber)."},
+		{`{"id":"m","type":"message","role":"assistant","model":"x","stop_reason":"refusal","stop_details":{"type":"refusal","category":null,"explanation":null},"usage":{},"content":[]}`,
+			"Anthropic declined this request."},
+	} {
+		var msg sdk.Message
+		if err := json.Unmarshal([]byte(tt.body), &msg); err != nil {
+			t.Fatal(err)
+		}
+		resp, err := fromChatResponse(&msg)
+		var pe *provider.Error
+		if !errors.As(err, &pe) || pe.Kind != provider.ErrRefused || pe.Reason != tt.reason {
+			t.Fatalf("got (%+v, %v), want refusal %q", resp, err, tt.reason)
+		}
 	}
 }
