@@ -2,7 +2,6 @@ package configui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -244,12 +243,10 @@ func (m authEditorModel) verifyCmd() tea.Cmd {
 	fallback := m.fallback
 
 	return func() tea.Msg {
-		if method == "keychain" {
-			if err := config.StoreKeychain(provider, inputVal); err != nil {
-				return editorAuthMsg{providerName: provider, ok: false, err: fmt.Errorf("keychain write: %w", err)}
-			}
+		pc, err := prepareProviderConfig(provider, method, inputVal, fallback)
+		if err != nil {
+			return editorAuthMsg{providerName: provider, ok: false, err: err}
 		}
-		pc := buildProviderConfigFromAuthInput(provider, method, inputVal, fallback)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := config.CheckProviderConnectivity(ctx, provider, pc); err != nil {

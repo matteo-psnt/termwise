@@ -1,6 +1,8 @@
 package configui
 
 import (
+	"fmt"
+
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
@@ -37,4 +39,16 @@ func buildProviderConfigFromAuthInput(providerName, method, inputVal, fallback s
 	}
 
 	return pc
+}
+
+// prepareProviderConfig is buildProviderConfigFromAuthInput for a config that
+// is about to be used: for keychain, inputVal is the raw API key and has to be
+// in the keychain before anything can authenticate with the result.
+func prepareProviderConfig(providerName, method, inputVal, fallback string) (config.ProviderConfig, error) {
+	if method == "keychain" {
+		if err := config.StoreKeychain(providerName, inputVal); err != nil {
+			return config.ProviderConfig{}, fmt.Errorf("keychain write: %w", err)
+		}
+	}
+	return buildProviderConfigFromAuthInput(providerName, method, inputVal, fallback), nil
 }

@@ -353,17 +353,9 @@ func (m wizardModel) fetchModelsCmd() tea.Cmd {
 	fallback := m.enterFallback
 
 	return func() tea.Msg {
-		val := inputVal
-		if val == "" {
-			val = fallback
-		}
-
-		pc := buildProviderConfigFromAuthInput(provider, authMethod, val, fallback)
-		if authMethod == "keychain" {
-			// val is the raw API key — store it in the keychain.
-			if err := config.StoreKeychain(provider, val); err != nil {
-				return wizModelsMsg{err: fmt.Errorf("keychain write: %w", err)}
-			}
+		pc, err := prepareProviderConfig(provider, authMethod, inputVal, fallback)
+		if err != nil {
+			return wizModelsMsg{err: err}
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -382,12 +374,7 @@ func (m wizardModel) fetchModelsCmd() tea.Cmd {
 
 // saveConfig builds the final config and stores it on m.Result.
 func (m *wizardModel) saveConfig() {
-	val := m.input.Value()
-	if val == "" {
-		val = m.enterFallback
-	}
-
-	pc := buildProviderConfigFromAuthInput(m.provider, m.authMethod, val, m.enterFallback)
+	pc := buildProviderConfigFromAuthInput(m.provider, m.authMethod, m.input.Value(), m.enterFallback)
 	pc.Model = m.modelID
 
 	cfg := config.FileConfig{
