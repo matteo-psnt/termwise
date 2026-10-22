@@ -71,29 +71,19 @@ const (
 // the chosen value when the action is pickerSubmitted.
 func (p slashPicker) Update(msg tea.KeyPressMsg) (slashPicker, slashPickerAction, string) {
 	prev := p.cursor
-	switch msg.Code {
-	case tea.KeyUp:
-		if p.cursor > 0 {
-			p.cursor--
-		}
-	case tea.KeyDown:
-		if p.cursor < len(p.options)-1 {
-			p.cursor++
-		}
-	case tea.KeyEnter:
+	switch k := msg.String(); {
+	case msg.Code == tea.KeyEnter:
 		if len(p.options) == 0 {
 			return p, pickerCancelled, ""
 		}
 		return p, pickerSubmitted, p.options[p.cursor].Value
-	case tea.KeyEscape:
+	case msg.Code == tea.KeyEscape:
 		return p, pickerCancelled, ""
-	}
-	switch msg.String() {
-	case "ctrl+p", "k":
+	case msg.Code == tea.KeyUp, k == "ctrl+p", k == "k":
 		if p.cursor > 0 {
 			p.cursor--
 		}
-	case "ctrl+n", "j":
+	case msg.Code == tea.KeyDown, k == "ctrl+n", k == "j":
 		if p.cursor < len(p.options)-1 {
 			p.cursor++
 		}
@@ -125,8 +115,9 @@ func (p slashPicker) View(r Renderer) string {
 	}
 
 	for i, opt := range p.options {
+		focused := i == p.cursor
 		cursor := "  "
-		if i == p.cursor {
+		if focused {
 			cursor = "❯ "
 		}
 
@@ -134,21 +125,16 @@ func (p slashPicker) View(r Renderer) string {
 		if opt.Value == p.current {
 			label += checkSuffix
 		}
-		labelPad := labelW - lipgloss.Width(label)
-		if labelPad < 0 {
-			labelPad = 0
-		}
+		line := cursor + label + strings.Repeat(" ", max(labelW-lipgloss.Width(label), 0))
 
-		if i == p.cursor {
+		if focused {
 			// Focused row: render the whole row in the highlight style so it reads
 			// as one selection block — keeps the eye on a single moving target.
-			line := cursor + label + strings.Repeat(" ", labelPad)
 			if opt.Detail != "" {
 				line += "   " + opt.Detail
 			}
 			b.WriteString(r.styles.InputPrompt.Render(line) + "\n")
 		} else {
-			line := cursor + label + strings.Repeat(" ", labelPad)
 			if opt.Detail != "" {
 				line += "   " + r.styles.ActionHints.Render(opt.Detail)
 			}
