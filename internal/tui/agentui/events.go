@@ -7,7 +7,6 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/history"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -22,7 +21,7 @@ func (m Model) handleSpinnerTick(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) handleResponseEvent(msg agent.ResponseEvent) (tea.Model, tea.Cmd) {
+func (m Model) handleResponseEvent(msg responseEvent) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
 		m.finishGeneration()
 		if errors.Is(msg.Err, context.Canceled) {
@@ -62,7 +61,7 @@ func (m Model) handleResponseEvent(msg agent.ResponseEvent) (tea.Model, tea.Cmd)
 	return m, m.wrapActiveGeneration(processToolsCmd(m.ctx, resp.ToolCalls, nil))
 }
 
-func (m Model) handleToolExecutedEvent(msg agent.ToolExecutedEvent) (tea.Model, tea.Cmd) {
+func (m Model) handleToolExecutedEvent(msg toolExecutedEvent) (tea.Model, tea.Cmd) {
 	display := tools.DisplayResult(msg.ToolCall.Name, msg.Result.Content)
 
 	// A gated call was already announced by handleNeedsApprovalEvent — whether
@@ -78,7 +77,7 @@ func (m Model) handleToolExecutedEvent(msg agent.ToolExecutedEvent) (tea.Model, 
 	return m, m.wrapActiveGeneration(processToolsCmd(m.ctx, msg.Remaining, msg.Collected))
 }
 
-func (m Model) handleNeedsApprovalEvent(msg agent.NeedsApprovalEvent) (tea.Model, tea.Cmd) {
+func (m Model) handleNeedsApprovalEvent(msg needsApprovalEvent) (tea.Model, tea.Cmd) {
 	m.setPendingTool(msg.ToolCall, msg.Remaining, msg.Collected)
 	m.appendThreadEntries(ToolCallEntry{Name: msg.ToolCall.Name, Detail: msg.Command})
 	m.refreshViewport()
@@ -100,7 +99,7 @@ func (m Model) handleJudgmentMsg(msg judgmentMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleAskEvent(msg agent.AskEvent) (tea.Model, tea.Cmd) {
+func (m Model) handleAskEvent(msg askEvent) (tea.Model, tea.Cmd) {
 	m.state = stateAskPicker
 	m.setPendingTool(msg.ToolCall, msg.Remaining, msg.Collected)
 	p := newPicker(msg.Question, msg.Options, msg.MultiSelect)
@@ -112,7 +111,7 @@ func (m Model) handleAskEvent(msg agent.AskEvent) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleRespondEvent(msg agent.RespondEvent) (tea.Model, tea.Cmd) {
+func (m Model) handleRespondEvent(msg respondEvent) (tea.Model, tea.Cmd) {
 	m.logExchange(history.ExchangeKindCommand, msg.Content)
 	m.setShellCommand(msg.Content)
 	m.appendThreadEntries(CommandEntry{Content: msg.Content})
@@ -124,7 +123,7 @@ func (m Model) handleRespondEvent(msg agent.RespondEvent) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleAllToolsDoneEvent(msg agent.AllToolsDoneEvent) (tea.Model, tea.Cmd) {
+func (m Model) handleAllToolsDoneEvent(msg allToolsDoneEvent) (tea.Model, tea.Cmd) {
 	m.appendToolResultsMessage(msg.Collected)
 	m.state = stateThinking
 	return m, m.startChat()

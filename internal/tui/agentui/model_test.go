@@ -9,7 +9,6 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
@@ -99,7 +98,7 @@ func TestHandleResponseEventIgnoresStaleResponse(t *testing.T) {
 
 	gotModel, _ := m.handleGenerationMsg(generationMsg{
 		generation: 1,
-		msg:        agent.ResponseEvent{Resp: &provider.ChatResponse{Content: "stale"}},
+		msg:        responseEvent{Resp: &provider.ChatResponse{Content: "stale"}},
 	})
 	got := gotModel.(Model)
 
@@ -122,7 +121,7 @@ func TestHandleResponseEventIgnoresCanceledActiveRequest(t *testing.T) {
 
 	gotModel, _ := m.handleGenerationMsg(generationMsg{
 		generation: 3,
-		msg:        agent.ResponseEvent{Err: context.Canceled},
+		msg:        responseEvent{Err: context.Canceled},
 	})
 	got := gotModel.(Model)
 
@@ -144,7 +143,7 @@ func TestHandleToolExecutedEventIgnoresStaleGeneration(t *testing.T) {
 
 	gotModel, _ := m.handleGenerationMsg(generationMsg{
 		generation: 1,
-		msg: agent.ToolExecutedEvent{
+		msg: toolExecutedEvent{
 			ToolCall: provider.ToolCall{Name: "bash", Input: map[string]any{"command": "echo stale"}},
 			Result:   provider.ToolResult{ToolCallID: "1", Content: "stale"},
 		},
@@ -257,7 +256,7 @@ func TestHandleRespondEventStoresShellCommand(t *testing.T) {
 		state: stateThinking,
 	}
 
-	gotModel, _ := m.handleRespondEvent(agent.RespondEvent{
+	gotModel, _ := m.handleRespondEvent(respondEvent{
 		Content: "go test ./...",
 	})
 	got := gotModel.(Model)
@@ -303,7 +302,7 @@ func TestHandleResponseEventWithoutToolsClearsShellCommand(t *testing.T) {
 		state: stateThinking,
 	}
 
-	gotModel, _ := m.handleResponseEvent(agent.ResponseEvent{
+	gotModel, _ := m.handleResponseEvent(responseEvent{
 		Resp: &provider.ChatResponse{Content: "plain text"},
 	})
 	got := gotModel.(Model)

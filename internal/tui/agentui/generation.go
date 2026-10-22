@@ -6,7 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
@@ -113,17 +112,17 @@ func (m Model) handleGenerationMsg(msg generationMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch inner := msg.msg.(type) {
-	case agent.ResponseEvent:
+	case responseEvent:
 		return m.handleResponseEvent(inner)
-	case agent.ToolExecutedEvent:
+	case toolExecutedEvent:
 		return m.handleToolExecutedEvent(inner)
-	case agent.NeedsApprovalEvent:
+	case needsApprovalEvent:
 		return m.handleNeedsApprovalEvent(inner)
-	case agent.AskEvent:
+	case askEvent:
 		return m.handleAskEvent(inner)
-	case agent.RespondEvent:
+	case respondEvent:
 		return m.handleRespondEvent(inner)
-	case agent.AllToolsDoneEvent:
+	case allToolsDoneEvent:
 		return m.handleAllToolsDoneEvent(inner)
 	case judgmentMsg:
 		return m.handleJudgmentMsg(inner)

@@ -12,11 +12,59 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
-// chatCmd sends the current conversation to the model and returns a ResponseEvent.
+// Events the agent commands below deliver to Update. Each carries what the
+// matching handler in events.go needs to continue the turn.
+
+// responseEvent reports a chat response from the model.
+type responseEvent struct {
+	Resp *provider.ChatResponse
+	Err  error
+}
+
+// toolExecutedEvent reports that a tool ran without needing approval.
+type toolExecutedEvent struct {
+	ToolCall     provider.ToolCall
+	Result       provider.ToolResult
+	Remaining    []provider.ToolCall
+	Collected    []provider.ToolResult
+	AutoAccepted bool
+}
+
+// needsApprovalEvent reports that a bash command requires user approval before running.
+type needsApprovalEvent struct {
+	ToolCall  provider.ToolCall
+	Command   string
+	Remaining []provider.ToolCall
+	Collected []provider.ToolResult
+}
+
+// askEvent reports that the model used the ask tool.
+type askEvent struct {
+	ToolCall    provider.ToolCall
+	Question    string
+	Options     []string
+	MultiSelect bool
+	Remaining   []provider.ToolCall
+	Collected   []provider.ToolResult
+}
+
+// respondEvent reports that the model called the command tool.
+type respondEvent struct {
+	Content   string
+	Collected []provider.ToolResult
+}
+
+// allToolsDoneEvent reports that all tool calls have been processed and results
+// should be sent back to the model.
+type allToolsDoneEvent struct {
+	Collected []provider.ToolResult
+}
+
+// chatCmd sends the current conversation to the model and returns a responseEvent.
 func chatCmd(ctx context.Context, client provider.AgentClient, req provider.ChatRequest) tea.Cmd {
 	return func() tea.Msg {
 		resp, err := client.Chat(ctx, req)
-		return agent.ResponseEvent{Resp: resp, Err: err}
+		return responseEvent{Resp: resp, Err: err}
 	}
 }
 
@@ -29,13 +77,12 @@ func processToolsCmd(ctx context.Context, toolCalls []provider.ToolCall, collect
 		step := agent.NextToolStep(ctx, toolCalls, collected, allowlist.NeedsApproval)
 		switch step.Kind {
 		case agent.ToolStepRespond:
-			return agent.RespondEvent{
-				ToolCallID: step.ToolCall.ID,
-				Content:    step.Content,
-				Collected:  step.Collected,
+			return respondEvent{
+				Content:   step.Content,
+				Collected: step.Collected,
 			}
 		case agent.ToolStepExecuted:
-			return agent.ToolExecutedEvent{
+			return toolExecutedEvent{
 				ToolCall:     step.ToolCall,
 				Result:       step.Result,
 				Remaining:    step.Remaining,
@@ -43,14 +90,14 @@ func processToolsCmd(ctx context.Context, toolCalls []provider.ToolCall, collect
 				AutoAccepted: step.AutoAccepted,
 			}
 		case agent.ToolStepNeedsApproval:
-			return agent.NeedsApprovalEvent{
+			return needsApprovalEvent{
 				ToolCall:  step.ToolCall,
 				Command:   step.Command,
 				Remaining: step.Remaining,
 				Collected: step.Collected,
 			}
 		case agent.ToolStepAsk:
-			return agent.AskEvent{
+			return askEvent{
 				ToolCall:    step.ToolCall,
 				Question:    step.Question,
 				Options:     step.Options,
@@ -59,7 +106,7 @@ func processToolsCmd(ctx context.Context, toolCalls []provider.ToolCall, collect
 				Collected:   step.Collected,
 			}
 		default:
-			return agent.AllToolsDoneEvent{Collected: step.Collected}
+			return allToolsDoneEvent{Collected: step.Collected}
 		}
 	}
 }
@@ -68,7 +115,7 @@ func processToolsCmd(ctx context.Context, toolCalls []provider.ToolCall, collect
 func executeBashCmd(ctx context.Context, tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) tea.Cmd {
 	return func() tea.Msg {
 		result := tools.ExecuteBash(ctx, tc)
-		return agent.ToolExecutedEvent{
+		return toolExecutedEvent{
 			ToolCall:     tc,
 			Result:       result,
 			Remaining:    remaining,
