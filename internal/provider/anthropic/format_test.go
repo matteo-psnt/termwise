@@ -193,3 +193,81 @@ func TestRefusalIsAnError(t *testing.T) {
 		}
 	}
 }
+
+// wireTypes returns the block types of an assistant param as sent.
+func wireTypes(t *testing.T, p sdk.MessageParam) string {
+	t.Helper()
+	wire, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(wire, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	var types []string
+	for _, b := range decoded.Content {
+		types = append(types, b.Type+":"+b.Text)
+	}
+	return strings.Join(types, ",")
+}
+
+// Thinking can be interleaved with text and tool calls in one turn. The turn
+// has to go back in the order it came, with its text blocks separate:
+// rebuilding it (thinking first, text merged) is an edit that invalidates
+// the thinking under preserved-thinking rules.
+func TestInterleavedThinkingTurnReplaysInOrder(t *testing.T) {
+	const interleaved = `{
+		"id": "msg_2", "type": "message", "role": "assistant", "model": "claude-x",
+		"stop_reason": "tool_use", "usage": {"input_tokens": 1, "output_tokens": 1},
+		"content": [
+			{"type": "thinking", "thinking": "first", "signature": "s1"},
+			{"type": "text", "text": "Looking."},
+			{"type": "tool_use", "id": "tu_1", "name": "read", "input": {"path": "a"}},
+			{"type": "thinking", "thinking": "second", "signature": "s2"},
+			{"type": "text", "text": "\n"},
+			{"type": "text", "text": "And this."},
+			{"type": "tool_use", "id": "tu_2", "name": "read", "input": {"path": "b"}}
+		]
+	}`
+	var msg sdk.Message
+	if err := json.Unmarshal([]byte(interleaved), &msg); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := fromChatResponse(&msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := toAssistantMessageParam(provider.Message{
+		Role: "assistant", Content: resp.Content, ToolCalls: resp.ToolCalls, ProviderState: resp.ProviderState,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The whitespace-only text block is the one change: the API rejects it.
+	want := "thinking:,text:Looking.,tool_use:,thinking:,text:And this.,tool_use:"
+	if got := wireTypes(t, p); got != want {
+		t.Fatalf("replayed turn = %s\nwant %s", got, want)
+	}
+}
+
+// Sessions saved before whole turns were kept hold only the thinking blocks
+// (a JSON array). They still replay, rebuilt around Content and ToolCalls.
+func TestLegacyThinkingStateStillReplays(t *testing.T) {
+	legacy := json.RawMessage(`[{"type":"thinking","thinking":"t","signature":"s"}]`)
+	p, err := toAssistantMessageParam(provider.Message{
+		Role: "assistant", Content: "Hi.", ToolCalls: []provider.ToolCall{{ID: "tu", Name: "read", Input: map[string]any{}}},
+		ProviderState: legacy,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := wireTypes(t, p), "thinking:,text:Hi.,tool_use:"; got != want {
+		t.Fatalf("legacy replay = %s, want %s", got, want)
+	}
+}

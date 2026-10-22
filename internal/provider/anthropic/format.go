@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -112,11 +113,17 @@ func toUserMessageParam(m provider.Message) (sdk.MessageParam, error) {
 }
 
 func toAssistantMessageParam(m provider.Message) (sdk.MessageParam, error) {
+	if replay, ok, err := decodeReplayState(m.ProviderState); err != nil {
+		return sdk.MessageParam{}, err
+	} else if ok {
+		return sdk.MessageParam{Role: sdk.MessageParamRoleAssistant, Content: replay}, nil
+	}
+
 	var blocks []sdk.ContentBlockParamUnion
 
-	// With thinking enabled the API requires the previous turn's thinking
-	// blocks, signatures intact, ahead of its tool_use blocks when the loop
-	// continues with tool results.
+	// Sessions saved before the whole turn was kept carry only its thinking
+	// blocks. The API needs them, signatures intact, ahead of the tool_use
+	// blocks when the loop continues with tool results.
 	if len(m.ProviderState) > 0 {
 		var thinking []sdk.ContentBlockParamUnion
 		if err := json.Unmarshal(m.ProviderState, &thinking); err != nil {
@@ -192,11 +199,13 @@ func fromChatResponse(msg *sdk.Message) (*provider.ChatResponse, error) {
 		OutputTokens: int(msg.Usage.OutputTokens),
 	}
 
-	var thinking []sdk.ContentBlockParamUnion
+	var all []sdk.ContentBlockParamUnion
+	hasThinking := false
 	for _, block := range msg.Content {
+		all = append(all, block.ToParam())
 		switch block.Type {
 		case "thinking", "redacted_thinking":
-			thinking = append(thinking, block.ToParam())
+			hasThinking = true
 		case "text":
 			resp.Content += block.Text
 		case "tool_use":
@@ -213,12 +222,47 @@ func fromChatResponse(msg *sdk.Message) (*provider.ChatResponse, error) {
 		// Other block types are silently ignored.
 	}
 
-	if len(thinking) > 0 {
-		state, err := json.Marshal(thinking)
+	if hasThinking {
+		state, err := json.Marshal(replayState{Blocks: all})
 		if err != nil {
-			return nil, fmt.Errorf("encoding thinking blocks: %w", err)
+			return nil, fmt.Errorf("encoding the turn for replay: %w", err)
 		}
 		resp.ProviderState = state
 	}
 	return resp, nil
+}
+
+// replayState is an assistant turn kept exactly as the API returned it, so
+// it can be sent back unchanged. A thinking block's signature covers the
+// conversation it was produced in, and the API treats a turn rebuilt in a
+// different order (thinking hoisted ahead of interleaved text and tool_use
+// blocks, text blocks merged) as an edit that invalidates its thinking. It is
+// only kept for turns with thinking; others rebuild identically from
+// Content and ToolCalls.
+type replayState struct {
+	Blocks []sdk.ContentBlockParamUnion `json:"blocks"`
+}
+
+// decodeReplayState returns the blocks of a turn stored whole. ok is false
+// for no state, or for the older form (a JSON array of only the thinking
+// blocks), which toAssistantMessageParam rebuilds around.
+func decodeReplayState(state json.RawMessage) ([]sdk.ContentBlockParamUnion, bool, error) {
+	trimmed := bytes.TrimSpace(state)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil, false, nil
+	}
+	var rs replayState
+	if err := json.Unmarshal(trimmed, &rs); err != nil {
+		return nil, false, fmt.Errorf("decoding the stored turn: %w", err)
+	}
+	blocks := make([]sdk.ContentBlockParamUnion, 0, len(rs.Blocks))
+	for _, b := range rs.Blocks {
+		// The API returns whitespace-only text (a "\n" before a tool call)
+		// but rejects it in requests, so that one block can't go back as is.
+		if b.OfText != nil && !hasText(b.OfText.Text) {
+			continue
+		}
+		blocks = append(blocks, b)
+	}
+	return blocks, true, nil
 }
