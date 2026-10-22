@@ -138,8 +138,6 @@ func (m Model) idleEsc() (tea.Model, tea.Cmd) {
 }
 
 func (idleMode) renderInputRow(m Model, _ int) string {
-	input := m.input
-	input.Placeholder = ""
 	prompt := m.renderer.styles.InputPrompt.Render(" › ")
 
 	// Inline ghost suggestion is hidden while the dropdown is visible — the
@@ -158,7 +156,7 @@ func (idleMode) renderInputRow(m Model, _ int) string {
 	// pushed past the edge and wrap. The prompt prefixes the first line;
 	// continuation lines align under the text.
 	indent := strings.Repeat(" ", lipgloss.Width(prompt))
-	lines := strings.Split(input.View(), "\n")
+	lines := strings.Split(m.input.View(), "\n")
 	for i, ln := range lines {
 		ln = strings.TrimRight(ln, " ")
 		if i == 0 {

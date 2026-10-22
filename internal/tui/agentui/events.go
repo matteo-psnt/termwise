@@ -104,7 +104,7 @@ func (m Model) handleAskEvent(msg agent.AskEvent) (tea.Model, tea.Cmd) {
 	m.state = stateAskPicker
 	m.setPendingTool(msg.ToolCall, msg.Remaining, msg.Collected)
 	p := newPicker(msg.Question, msg.Options, msg.MultiSelect)
-	m.pending = m.pending.withPicker(p)
+	m.pending.picker = &p
 	if msg.Question != "" {
 		m.appendThreadEntries(AssistantEntry{Content: msg.Question})
 	}

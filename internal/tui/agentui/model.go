@@ -115,7 +115,7 @@ func newModel(cfg modelConfig) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
-	ctx, cancel := newGenerationContext()
+	ctx, cancel := context.WithCancel(context.Background())
 	suggestionCtx, suggestionCancel := context.WithCancel(context.Background())
 
 	sh := sharedState{

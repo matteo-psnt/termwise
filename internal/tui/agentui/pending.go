@@ -13,19 +13,6 @@ type pendingToolState struct {
 	picker    *picker
 }
 
-func newPendingToolState(tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) pendingToolState {
-	return pendingToolState{
-		toolCall:  tc,
-		remaining: remaining,
-		collected: collected,
-	}
-}
-
-func (p pendingToolState) withPicker(picker picker) pendingToolState {
-	p.picker = &picker
-	return p
-}
-
 func (p pendingToolState) result(content string, isError bool) provider.ToolResult {
 	return provider.ToolResult{
 		ToolCallID: p.toolCall.ID,
@@ -39,7 +26,11 @@ func (m *Model) appendThreadEntries(entries ...ThreadEntry) {
 }
 
 func (m *Model) setPendingTool(tc provider.ToolCall, remaining []provider.ToolCall, collected []provider.ToolResult) {
-	m.pending = newPendingToolState(tc, remaining, collected)
+	m.pending = pendingToolState{
+		toolCall:  tc,
+		remaining: remaining,
+		collected: collected,
+	}
 }
 
 func (m *Model) clearPendingTool() {
