@@ -19,6 +19,7 @@ type modelPickerModel struct {
 	spin     spinner.Model
 	height   int // screen height, to size the scrolling list
 	provider string
+	seq      int // tags this picker's fetch; see editorModelsMsg
 	pc       config.ProviderConfig
 	current  string // pre-select this model ID after load
 	models   []provider.Model
@@ -31,7 +32,7 @@ type modelPickerModel struct {
 	cancelled bool
 }
 
-func newModelPicker(provider string, pc config.ProviderConfig, current string, height int, styles configStyles) modelPickerModel {
+func newModelPicker(provider string, pc config.ProviderConfig, current string, seq, height int, styles configStyles) modelPickerModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	return modelPickerModel{
@@ -39,6 +40,7 @@ func newModelPicker(provider string, pc config.ProviderConfig, current string, h
 		spin:     sp,
 		height:   height,
 		provider: provider,
+		seq:      seq,
 		pc:       pc,
 		current:  current,
 		loading:  true,
@@ -61,6 +63,9 @@ func (m modelPickerModel) Update(msg tea.Msg) (modelPickerModel, tea.Cmd) {
 		return m, cmd
 
 	case editorModelsMsg:
+		if msg.provider != m.provider || msg.seq != m.seq {
+			return m, nil
+		}
 		m.loading = false
 		if msg.err != nil {
 			m.err = msg.err.Error()
@@ -109,15 +114,16 @@ func (m modelPickerModel) View() string {
 
 func (m modelPickerModel) fetchCmd() tea.Cmd {
 	provider := m.provider
+	seq := m.seq
 	pc := m.pc
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		list, err := config.ListProviderModels(ctx, provider, pc)
 		if err != nil {
-			return editorModelsMsg{err: fmt.Errorf("listing models: %w", err)}
+			return editorModelsMsg{provider: provider, seq: seq, err: fmt.Errorf("listing models: %w", err)}
 		}
-		return editorModelsMsg{models: list}
+		return editorModelsMsg{provider: provider, seq: seq, models: list}
 	}
 }
 

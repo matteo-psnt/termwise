@@ -38,6 +38,9 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case editorConnMsg:
+		if msg.provider != m.cfg.SelectedProvider || msg.seq != m.connSeq {
+			return m, nil
+		}
 		m.connChecked = true
 		m.connOK = msg.err == nil
 		return m, nil
@@ -211,7 +214,8 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 
 	case rowProvModel:
 		pc := m.cfg.Providers[row.provider]
-		mp := newModelPicker(row.provider, pc, pc.Model, m.height, m.styles)
+		m.pickerSeq++
+		mp := newModelPicker(row.provider, pc, pc.Model, m.pickerSeq, m.height, m.styles)
 		m.modelPicker = &mp
 		return m, m.modelPicker.Init()
 

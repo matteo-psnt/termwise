@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 var (
@@ -126,7 +127,7 @@ func TestEditorTakesConnResultWithSubModelOpen(t *testing.T) {
 	if m.modelPicker == nil {
 		t.Fatal("model row did not open the picker")
 	}
-	m, _ = update(t, m, editorConnMsg{})
+	m, _ = update(t, m, editorConnMsg{provider: "anthropic", seq: m.connSeq})
 	if !m.connChecked || !m.connOK {
 		t.Errorf("connChecked = %v, connOK = %v; want the result recorded", m.connChecked, m.connOK)
 	}
@@ -160,5 +161,56 @@ func TestAddWizardOpensWithEditorSize(t *testing.T) {
 	}
 	if m.addWizard.height != 30 {
 		t.Errorf("wizard height = %d, want 30", m.addWizard.height)
+	}
+}
+
+func TestEditorDropsStaleConnResult(t *testing.T) {
+	m := thinkingEditor("")
+	first := m.connSeq
+	m = press(t, m, keyEsc) // revert starts a new check
+	m, _ = update(t, m, editorConnMsg{provider: "anthropic", seq: first})
+	if m.connChecked {
+		t.Error("accepted the result of a superseded check")
+	}
+	m, _ = update(t, m, editorConnMsg{provider: "openai", seq: m.connSeq})
+	if m.connChecked {
+		t.Error("accepted a result for a provider that isn't active")
+	}
+	m, _ = update(t, m, editorConnMsg{provider: "anthropic", seq: m.connSeq})
+	if !m.connChecked || !m.connOK {
+		t.Error("dropped the current result")
+	}
+}
+
+func TestModelPickerDropsCancelledPickersResult(t *testing.T) {
+	cfg := config.FileConfig{
+		SelectedProvider: "anthropic",
+		Providers: map[string]config.ProviderConfig{
+			"anthropic": {Model: "claude-sonnet-4-6"},
+			"openai":    {Model: "gpt-5"},
+		},
+	}
+	m := newEditorModel("", cfg, true)
+	m = openRow(t, m, func(r editorRow) bool { return r.kind == rowProvModel && r.provider == "anthropic" })
+	stale := editorModelsMsg{provider: "anthropic", seq: m.modelPicker.seq, models: []provider.Model{{ID: "claude-x"}}}
+	m = press(t, m, keyEsc)
+
+	m = openRow(t, m, func(r editorRow) bool { return r.kind == rowProvModel && r.provider == "openai" })
+	m, _ = update(t, m, stale)
+	if !m.modelPicker.loading || len(m.modelPicker.models) != 0 {
+		t.Errorf("openai picker took anthropic's late list: %+v", m.modelPicker.models)
+	}
+
+	// Same provider reopened: still a different request.
+	m = press(t, m, keyEsc)
+	m = openRow(t, m, func(r editorRow) bool { return r.kind == rowProvModel && r.provider == "anthropic" })
+	m, _ = update(t, m, stale)
+	if !m.modelPicker.loading {
+		t.Error("reopened picker took the cancelled picker's list")
+	}
+
+	m, _ = update(t, m, editorModelsMsg{provider: "anthropic", seq: m.modelPicker.seq, models: []provider.Model{{ID: "claude-y"}}})
+	if m.modelPicker.loading || len(m.modelPicker.models) != 1 {
+		t.Error("picker dropped its own result")
 	}
 }
