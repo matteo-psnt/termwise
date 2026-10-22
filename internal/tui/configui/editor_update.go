@@ -254,9 +254,38 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		return m, m.addWizard.Init()
 
 	case rowSetting:
-		return activateSetting(m, row.settingIdx), nil
+		return m.activateSetting(row.settingIdx), nil
 	}
 	return m, nil
+}
+
+// activateSetting handles Enter on a setting row: toggles booleans inline,
+// opens the appropriate sub-model for all other kinds.
+func (m editorModel) activateSetting(settingIdx int) editorModel {
+	def := config.Settings[settingIdx]
+	switch def.Kind {
+	case config.KindToggle:
+		current, _ := def.GetAny(m.cfg).(bool)
+		if current {
+			def.Set(&m.cfg, "Off")
+		} else {
+			def.Set(&m.cfg, "On")
+		}
+	case config.KindTheme:
+		tp := newThemePicker(def.Get(m.cfg), m.hasDarkBg, m.styles)
+		m.themePicker = &tp
+		m.activeSettingIdx = settingIdx
+	case config.KindKeybinding:
+		kb := def.Resolve(m.cfg)
+		kbm := newKeybindingCapture(kb, m.styles)
+		m.keybinding = &kbm
+		m.activeSettingIdx = settingIdx
+	case config.KindEnum:
+		ep := newEnumPicker(def.Label, def.Resolve(m.cfg), def.Options, m.styles)
+		m.enumPicker = &ep
+		m.activeSettingIdx = settingIdx
+	}
+	return m
 }
 
 func (m editorModel) saveAndQuit() (tea.Model, tea.Cmd) {
