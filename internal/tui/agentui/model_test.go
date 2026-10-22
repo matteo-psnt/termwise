@@ -325,8 +325,8 @@ func TestSanitizeSuggestionTextIsRuneSafe(t *testing.T) {
 	}
 }
 
-// trimContext returns a trimmed copy for the request; the caller's messages are
-// the session history and must keep the full tool results.
+// trimContext returns a trimmed copy and leaves its input alone; the caller
+// decides what becomes the history.
 func TestTrimContextDoesNotMutateInput(t *testing.T) {
 	large := strings.Repeat("x", 2_000)
 	messages := []provider.Message{{
@@ -509,5 +509,33 @@ func TestWheelScrollUpSurvivesRefresh(t *testing.T) {
 	m.refreshViewport()
 	if m.vp.YOffset() != offset {
 		t.Fatalf("refresh moved a wheel-scrolled view from %d to %d", offset, m.vp.YOffset())
+	}
+}
+
+// Dropping an earlier tool result edits history, which invalidates every
+// later thinking block; replaying them is a 400 on Anthropic. All provider
+// state goes once anything is trimmed, and stays when nothing is.
+func TestTrimContextClearsProviderStateOnlyWhenItTrims(t *testing.T) {
+	state := []byte(`{"thinking":"signed"}`)
+	large := strings.Repeat("x", 4_000)
+	messages := []provider.Message{
+		{Role: "assistant", ToolCalls: []provider.ToolCall{{ID: "1", Name: "read"}}, ProviderState: state},
+		{Role: "user", ToolResults: []provider.ToolResult{{ToolCallID: "1", Content: large}}},
+		{Role: "assistant", Content: "done", ProviderState: state},
+	}
+
+	trimmed := trimContext(messages, 2_000)
+	for i, msg := range trimmed {
+		if msg.ProviderState != nil {
+			t.Errorf("trimmed[%d].ProviderState = %s, want nil", i, msg.ProviderState)
+		}
+	}
+	if messages[0].ProviderState == nil {
+		t.Error("input ProviderState was cleared")
+	}
+
+	kept := trimContext(messages, 1_000_000)
+	if kept[0].ProviderState == nil || kept[2].ProviderState == nil {
+		t.Error("ProviderState cleared although nothing was trimmed")
 	}
 }
