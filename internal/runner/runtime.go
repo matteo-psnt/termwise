@@ -23,9 +23,13 @@ type runtimeContext struct {
 	providerName string
 	modelID      string
 	llmJudge     bool
-	providerCfg  config.ProviderConfig
-	isTTY        bool
-	env          envcontext.Context
+	// effort is the provider's configured effort, before model defaults are
+	// applied; see config.EffectiveEffort.
+	effort string
+	// cfgPath is the config file in use; the exchange log lives beside it.
+	cfgPath string
+	isTTY   bool
+	env     envcontext.Context
 }
 
 // appendPromptStdin appends piped stdin to the prompt. A terminal stdin or an
@@ -45,30 +49,21 @@ func appendPromptStdin(prompt string) (string, error) {
 	return prompt + "\n\n" + strings.TrimRight(string(stdin), "\n"), nil
 }
 
-func writeRenderedText(text string, isTTY bool) {
-	if isTTY {
-		rendered, err := glamour.Render(text, "auto")
-		if err == nil {
+// writeFinalOutput prints a final agent response. Commands go out raw so they
+// can be piped or pasted; text is rendered as markdown on a terminal, falling
+// back to plain text if rendering fails.
+func writeFinalOutput(output agent.FinalResponse, isTTY bool) {
+	if output.Type != "command" && isTTY {
+		if rendered, err := glamour.Render(output.Content, "auto"); err == nil {
 			fmt.Print(rendered)
 			return
 		}
 	}
-	fmt.Println(text)
+	fmt.Println(output.Content)
 }
 
-// writeFinalOutput prints a final agent response. Commands go out raw so they
-// can be piped or pasted; text is rendered as markdown on a terminal.
-func writeFinalOutput(output agent.FinalResponse, isTTY bool) error {
-	if output.Type == "command" {
-		fmt.Println(output.Content)
-		return nil
-	}
-	writeRenderedText(output.Content, isTTY)
-	return nil
-}
-
-// resolveRuntime loads config and returns the client, model, output mode, and
-// llm_judge setting for this invocation.
+// resolveRuntime loads config and returns the client, model, settings and
+// detected environment for this invocation.
 func resolveRuntime() (runtimeContext, error) {
 	cfgPath, err := config.DefaultConfigPath()
 	if err != nil {
@@ -87,7 +82,8 @@ func resolveRuntime() (runtimeContext, error) {
 		providerName: rc.ProviderName,
 		modelID:      rc.Model,
 		llmJudge:     config.ResolveBoolSetting(cfg, "llm_judge"),
-		providerCfg:  cfg.Providers[rc.ProviderName],
+		effort:       cfg.Providers[rc.ProviderName].Effort,
+		cfgPath:      cfgPath,
 		isTTY:        tty.IsTerminal(os.Stdout),
 		env:          envcontext.Detect(context.Background(), envcontext.Options{ShellHistory: config.ResolveBoolSetting(cfg, "shell_context")}),
 	}, nil

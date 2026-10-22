@@ -35,7 +35,8 @@ func Ask(ctx context.Context, prompt string) error {
 	if err != nil {
 		return err
 	}
-	return writeFinalOutput(output, rt.isTTY)
+	writeFinalOutput(output, rt.isTTY)
+	return nil
 }
 
 func newAskHeadlessConfig(rt runtimeContext, prompt string) agent.HeadlessConfig {
@@ -45,7 +46,7 @@ func newAskHeadlessConfig(rt runtimeContext, prompt string) agent.HeadlessConfig
 		System:        systemprompt.AgentHeadless(agenttools.HeadlessDefs, rt.env),
 		Prompt:        prompt,
 		Tools:         agenttools.HeadlessDefs,
-		Effort:        config.EffectiveEffort(rt.providerName, rt.modelID, rt.providerCfg.Effort),
+		Effort:        config.EffectiveEffort(rt.providerName, rt.modelID, rt.effort),
 		NeedsApproval: allowlist.NeedsApproval,
 		OnNeedsApproval: func(ctx context.Context, step agent.ToolStep) provider.ToolResult {
 			return headlessApprovalResult(ctx, rt, step)
@@ -95,8 +96,8 @@ func headlessApprovalResult(ctx context.Context, rt runtimeContext, step agent.T
 // logAskExchange records the turn so headless output can be reviewed later,
 // the same way the TUI records its own. Best-effort: never blocks the result.
 func logAskExchange(rt runtimeContext, prompt string, output agent.FinalResponse, runErr error) {
-	cfgPath, err := config.DefaultConfigPath()
-	if err != nil {
+	// resolveRuntime always sets cfgPath; only test fixtures leave it empty.
+	if rt.cfgPath == "" {
 		return
 	}
 	e := history.Exchange{
@@ -112,5 +113,5 @@ func logAskExchange(rt runtimeContext, prompt string, output agent.FinalResponse
 	} else if output.Type == "command" {
 		e.Kind = history.ExchangeKindCommand
 	}
-	_ = history.NewExchangeLog(filepath.Dir(cfgPath)).Append(e)
+	_ = history.NewExchangeLog(filepath.Dir(rt.cfgPath)).Append(e)
 }
