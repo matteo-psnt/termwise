@@ -347,3 +347,39 @@ func TestTrimContextDoesNotMutateInput(t *testing.T) {
 		}
 	}
 }
+
+// Ctrl+C and the close key abort: a proposal the user never accepted must not
+// reach the shell widget. Enter on the proposal still does.
+func TestQuitKeysDoNotAcceptPendingProposal(t *testing.T) {
+	proposal := func(state tuiState) Model {
+		ctx, cancel := context.WithCancel(context.Background())
+		sctx, scancel := context.WithCancel(context.Background())
+		m := pickerModel("")
+		m.ctx, m.cancel = ctx, cancel
+		m.suggestionCtx, m.suggestionCancel = sctx, scancel
+		m.closeKey = "^T"
+		m.shellCommand = "rm -rf build"
+		m.state = state
+		return m
+	}
+	for name, key := range map[string]tea.KeyPressMsg{
+		"ctrl+c":    {Code: 'c', Mod: tea.ModCtrl},
+		"close key": {Code: 't', Mod: tea.ModCtrl},
+	} {
+		for _, state := range []tuiState{stateCommandProposal, stateCommandProposalEdit} {
+			next, _ := proposal(state).handleKey(key)
+			got := next.(Model)
+			if !got.quitting {
+				t.Fatalf("%s in state %v did not quit", name, state)
+			}
+			if cmd := got.exitShellCommand(); cmd != "" {
+				t.Errorf("%s in state %v handed %q to the shell", name, state, cmd)
+			}
+		}
+	}
+
+	next, _ := proposal(stateCommandProposal).handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd := next.(Model).exitShellCommand(); cmd != "rm -rf build" {
+		t.Fatalf("enter handed %q to the shell, want the proposal", cmd)
+	}
+}

@@ -261,6 +261,16 @@ func (m Model) quit() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
+// abort quits without accepting a pending command proposal. The proposal
+// screen has its own accept key; Ctrl+C and the close key mean "get me out",
+// and handing the unaccepted command to the shell widget would overwrite the
+// line the user had typed with a command they never chose (or, from edit
+// mode, with the original rather than their edit).
+func (m Model) abort() (tea.Model, tea.Cmd) {
+	m.clearShellCommand()
+	return m.quit()
+}
+
 // saveSession persists the current conversation to disk if a session ID is set.
 func (m *Model) saveSession() {
 	if m.sessionStore == nil || m.sessionID == "" || len(m.messages) == 0 {
@@ -293,11 +303,11 @@ func (m Model) exitShellCommand() string {
 // handleKey handles all keyboard input based on current state.
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
-		return m.quit()
+		return m.abort()
 	}
 	if m.closeKey != "" {
 		if zsh, ok := keybinding.KeyMsgToZsh(msg.Key()); ok && zsh == m.closeKey {
-			return m.quit()
+			return m.abort()
 		}
 	}
 
