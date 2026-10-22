@@ -31,7 +31,7 @@ Usage:
 - Use glob to find files by name pattern (e.g. "**/*.go", "src/**/*.ts").
 - Supports brace expansion (e.g. "**/*.{ts,tsx}").
 - Returns matching file paths sorted by modification time (newest first), capped at ` + strconv.Itoa(defaultGlobLimit) + `.
-- Respects .gitignore and skips .git/.svn/.hg by default.
+- Respects .gitignore and skips ` + strings.Join(vcsExcludeGlobs, "/") + ` by default.
 - For open-ended searches that require multiple rounds of globbing/grepping, use grep with the glob filter directly.`,
 	InputSchema: map[string]any{
 		"type": "object",
@@ -74,19 +74,16 @@ func glob(ctx context.Context, input map[string]any) (string, bool) {
 		if absPath == "" {
 			return fmt.Sprintf("error: %s", err), true
 		}
-		return fmt.Sprintf("error: path does not exist: %s", pathArg), true
+		// The resolved path, not pathArg: pathArg is empty when it defaulted
+		// to the working directory.
+		return fmt.Sprintf("error: path does not exist: %s", absPath), true
 	}
 	if !info.IsDir() {
-		return fmt.Sprintf("error: path is not a directory: %s", pathArg), true
+		return fmt.Sprintf("error: path is not a directory: %s", absPath), true
 	}
 
 	args := []string{"--files", "--hidden"}
-	for _, dir := range vcsExcludeGlobs {
-		args = append(args, "--glob", "!"+dir)
-	}
-	for _, p := range splitGlobPatterns(pattern) {
-		args = append(args, "--glob", p)
-	}
+	args = append(args, globArgs(splitGlobPatterns(pattern))...)
 	args = append(args, absPath)
 
 	lines, runErr := runRipgrep(ctx, args)

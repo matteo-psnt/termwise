@@ -3,6 +3,7 @@ package history
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestExchangeLogRoundTrip(t *testing.T) {
@@ -66,5 +67,19 @@ func TestExchangeLogMissingFileIsNotAnError(t *testing.T) {
 	got, err := NewExchangeLog(t.TempDir()).Load()
 	if err != nil || got != nil {
 		t.Errorf("Load on missing file = (%v, %v), want (nil, nil)", got, err)
+	}
+}
+
+func TestExchangeLogTruncatesOnRuneBoundary(t *testing.T) {
+	log := NewExchangeLog(t.TempDir())
+	// "é" is two bytes; one leading "x" puts a rune across the cut.
+	resp := "x" + strings.Repeat("é", maxStoredResponse)
+	if err := log.Append(Exchange{Prompt: "p", Response: resp}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := log.Load()
+	kept := strings.TrimSuffix(got[0].Response, "…[truncated]")
+	if strings.ContainsRune(kept, utf8.RuneError) || !strings.HasPrefix(resp, kept) {
+		t.Fatalf("truncation split a rune: ends %q", kept[len(kept)-6:])
 	}
 }

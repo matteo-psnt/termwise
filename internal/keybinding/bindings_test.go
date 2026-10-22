@@ -23,3 +23,25 @@ func TestToFish(t *testing.T) {
 		}
 	}
 }
+
+func TestToBash(t *testing.T) {
+	cases := map[string]string{
+		"^T":     `\C-t`,
+		"^@":     `\C-@`,
+		"^?":     `\C-?`,
+		`^\`:     `\034`,
+		"^[":     `\e`,
+		"^]":     `\C-]`,
+		"^^":     `\C-^`,
+		"^_":     `\C-_`,
+		`\e^X`:   `\e\C-x`,
+		`\e^_`:   `\e\C-_`,
+		`\ef`:    `\ef`,
+		`\e[15~`: `\e[15~`,
+	}
+	for in, want := range cases {
+		if got := ToBash(in); got != want {
+			t.Errorf("ToBash(%q) = %q; want %q", in, got, want)
+		}
+	}
+}

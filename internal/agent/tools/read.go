@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
@@ -14,6 +15,9 @@ import (
 const (
 	maxReadLines      = 2000
 	maxDirListEntries = 500
+	// maxReadLineBytes caps each line. A minified bundle or data file can be
+	// one multi-megabyte line, which would flood the context on its own.
+	maxReadLineBytes = 2000
 )
 
 func init() {
@@ -39,7 +43,7 @@ Prefer this over ` + "`bash cat`" + ` or ` + "`bash ls`" + `: it is not gated, t
 			},
 			"offset": map[string]any{
 				"type":        "integer",
-				"description": "Line number to start from (default: 0). File mode only.",
+				"description": "0-based index of the first line to return (default: 0). File mode only.",
 			},
 			"limit": map[string]any{
 				"type":        "integer",
@@ -72,6 +76,11 @@ func read(_ context.Context, input map[string]any) (string, bool) {
 	if info.IsDir() {
 		return readDir(path)
 	}
+	// Reading a FIFO blocks until a writer appears and a device such as
+	// /dev/zero never ends, so either would hang the agent loop.
+	if !info.Mode().IsRegular() {
+		return fmt.Sprintf("error: %s is not a regular file", path), true
+	}
 
 	offset := 0
 	if v, ok := intInput(input, "offset"); ok && v >= 0 {
@@ -91,7 +100,14 @@ func read(_ context.Context, input map[string]any) (string, bool) {
 		return formatBinaryNotice(path, info.Size()), false
 	}
 
-	lines := strings.Split(string(data), "\n")
+	if len(data) == 0 {
+		// Say so explicitly: an empty result reads as a failed tool call.
+		return "[File is empty]", false
+	}
+
+	// A final newline terminates the last line rather than starting another,
+	// so a 2000-line file must not count as 2001 and be reported truncated.
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
 	total := len(lines)
 
 	if offset >= total {
@@ -100,14 +116,32 @@ func read(_ context.Context, input map[string]any) (string, bool) {
 
 	end := min(offset+limit, total)
 
-	result := strings.Join(lines[offset:end], "\n")
+	shown := lines[offset:end]
+	for i, line := range shown {
+		shown[i] = truncateLine(line)
+	}
+	result := strings.Join(shown, "\n")
 	if end < total {
+		// Lines are shown 1-based but offset is 0-based, so name the exact
+		// offset to continue from rather than leave the model to convert.
 		result += fmt.Sprintf(
-			"\n[truncated — showing lines %d–%d of %d. Use offset/limit to read more.]",
-			offset+1, end, total,
+			"\n[truncated — showing lines %d–%d of %d. Use offset=%d to read more.]",
+			offset+1, end, total, end,
 		)
 	}
 	return result, false
+}
+
+// truncateLine cuts line to maxReadLineBytes on a rune boundary.
+func truncateLine(line string) string {
+	if len(line) <= maxReadLineBytes {
+		return line
+	}
+	cut := maxReadLineBytes
+	for cut > 0 && !utf8.RuneStart(line[cut]) {
+		cut--
+	}
+	return line[:cut] + fmt.Sprintf("… [line truncated, %d bytes total]", len(line))
 }
 
 func formatBinaryNotice(path string, size int64) string {

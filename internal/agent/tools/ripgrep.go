@@ -69,6 +69,21 @@ func runRipgrep(ctx context.Context, args []string) ([]string, error) {
 	return strings.Split(out, "\n"), nil
 }
 
+// globArgs returns rg --glob flags for the user's patterns followed by the
+// VCS exclusions. The order matters: rg lets a later glob override an earlier
+// one, so a broad pattern such as "*" placed after "!.git" matched .git and
+// pulled it back in.
+func globArgs(patterns []string) []string {
+	var args []string
+	for _, p := range patterns {
+		args = append(args, "--glob", p)
+	}
+	for _, dir := range vcsExcludeGlobs {
+		args = append(args, "--glob", "!"+dir)
+	}
+	return args
+}
+
 // splitGlobPatterns splits a user-supplied glob string on whitespace and commas
 // while preserving brace expansions like "*.{ts,tsx}".
 func splitGlobPatterns(s string) []string {

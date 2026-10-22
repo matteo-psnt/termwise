@@ -37,7 +37,7 @@ Usage:
 - output_mode: "files_with_matches" (default) lists file paths, "content" shows matching lines, "count" shows match counts per file.
 - Pattern syntax is ripgrep (not POSIX grep) — literal braces need escaping (e.g. "interface\\{\\}" to match "interface{}").
 - Set multiline=true to let . match newlines and patterns span lines.
-- Respects .gitignore and skips .git/.svn/.hg by default.
+- Respects .gitignore and skips ` + strings.Join(vcsExcludeGlobs, "/") + ` by default.
 - Pagination: head_limit caps results (default 250), offset skips entries; head_limit=0 means unlimited.`,
 	InputSchema: map[string]any{
 		"type": "object",
@@ -122,7 +122,12 @@ func grep(ctx context.Context, input map[string]any) (string, bool) {
 	pathArg := stringInput(input, "path")
 	absPath, _, err := resolveSearchPath(pathArg, cwd)
 	if err != nil {
-		return fmt.Sprintf("error: path does not exist: %s", pathArg), true
+		if absPath == "" {
+			return fmt.Sprintf("error: %s", err), true
+		}
+		// The resolved path, not pathArg: pathArg is empty when it defaulted
+		// to the working directory.
+		return fmt.Sprintf("error: path does not exist: %s", absPath), true
 	}
 
 	outputMode := stringInput(input, "output_mode")
@@ -154,7 +159,7 @@ func grep(ctx context.Context, input map[string]any) (string, bool) {
 	case "files_with_matches":
 		return formatFilesWithMatches(lines, cwd, headLimit, offset), false
 	case "content":
-		return formatContent(lines, cwd, headLimit, offset), false
+		return formatContent(lines, cwd, headLimit, offset, grepShowLineNumbers(input)), false
 	case "count":
 		return formatCount(lines, cwd, headLimit, offset), false
 	}
@@ -163,9 +168,6 @@ func grep(ctx context.Context, input map[string]any) (string, bool) {
 
 func buildGrepArgs(input map[string]any, pattern, outputMode, absPath string) []string {
 	args := []string{"--hidden", "--max-columns", ripgrepMaxColumns}
-	for _, dir := range vcsExcludeGlobs {
-		args = append(args, "--glob", "!"+dir)
-	}
 	if b, _ := input["multiline"].(bool); b {
 		args = append(args, "-U", "--multiline-dotall")
 	}
@@ -176,11 +178,8 @@ func buildGrepArgs(input map[string]any, pattern, outputMode, absPath string) []
 	if t, _ := input["type"].(string); t != "" {
 		args = append(args, "--type", t)
 	}
-	if g, _ := input["glob"].(string); g != "" {
-		for _, p := range splitGlobPatterns(g) {
-			args = append(args, "--glob", p)
-		}
-	}
+	g, _ := input["glob"].(string)
+	args = append(args, globArgs(splitGlobPatterns(g))...)
 	// Use -e for dash-prefixed patterns to avoid rg flag parsing.
 	if strings.HasPrefix(pattern, "-") {
 		args = append(args, "-e", pattern)
@@ -198,13 +197,20 @@ func outputModeArgs(input map[string]any, outputMode string) []string {
 	case "files_with_matches":
 		return []string{"-l"}
 	case "count":
-		return []string{"-c"}
+		// rg drops the "path:" prefix when searching a single file, and a
+		// path can itself contain ':'. Force the name and end it with NUL.
+		return []string{"-c", "--with-filename", "--null"}
 	case "content":
-		args := []string{}
-		showLine := true
-		if v, ok := input["-n"].(bool); ok {
-			showLine = v
+		// Mark the end of the path with NUL so relativizeContentLines can find
+		// it: rg ends it with ':' on match lines and '-' on context lines, and
+		// either can appear inside a filename. -H keeps the path on output
+		// for a single-file search too.
+		args := []string{
+			"--with-filename",
+			"--field-match-separator", `\x00:`,
+			"--field-context-separator", `\x00-`,
 		}
+		showLine := grepShowLineNumbers(input)
 		if showLine {
 			args = append(args, "-n")
 		}
@@ -222,6 +228,15 @@ func outputModeArgs(input map[string]any, outputMode string) []string {
 	return nil
 }
 
+// grepShowLineNumbers reports whether content mode prints line numbers; the
+// -n argument defaults to true.
+func grepShowLineNumbers(input map[string]any) bool {
+	if v, ok := input["-n"].(bool); ok {
+		return v
+	}
+	return true
+}
+
 func formatFilesWithMatches(lines []string, cwd string, headLimit, offset int) string {
 	sortByMtimeDesc(lines)
 	paged, truncated := applyHeadLimit(lines, headLimit, offset)
@@ -236,9 +251,9 @@ func formatFilesWithMatches(lines []string, cwd string, headLimit, offset int) s
 	return head + "\n" + strings.Join(rel, "\n")
 }
 
-func formatContent(lines []string, cwd string, headLimit, offset int) string {
+func formatContent(lines []string, cwd string, headLimit, offset int, showLine bool) string {
 	paged, truncated := applyHeadLimit(lines, headLimit, offset)
-	rel := relativizeContentLines(paged, cwd)
+	rel := relativizeContentLines(paged, cwd, showLine)
 	body := strings.Join(rel, "\n")
 	if body == "" {
 		body = "No matches found"
@@ -255,17 +270,18 @@ func formatCount(lines []string, cwd string, headLimit, offset int) string {
 	totalMatches := 0
 	relLines := make([]string, 0, len(paged))
 	for _, line := range paged {
-		idx := strings.LastIndex(line, ":")
-		if idx <= 0 {
+		// Lines are "path\x00count"; see outputModeArgs.
+		path, count, ok := strings.Cut(line, "\x00")
+		if !ok {
 			continue
 		}
-		n, err := strconv.Atoi(line[idx+1:])
+		n, err := strconv.Atoi(count)
 		if err != nil {
 			continue
 		}
 		totalFiles++
 		totalMatches += n
-		relLines = append(relLines, relativizePath(line[:idx], cwd)+line[idx:])
+		relLines = append(relLines, relativizePath(path, cwd)+":"+count)
 	}
 	body := strings.Join(relLines, "\n")
 	if body == "" {
