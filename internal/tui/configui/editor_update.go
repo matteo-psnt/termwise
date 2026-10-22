@@ -48,10 +48,7 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case editorConnMsg:
 		m.connChecked = true
-		m.connOK = msg.ok
-		if msg.err != nil {
-			m.connErr = msg.err.Error()
-		}
+		m.connOK = msg.err == nil
 		return m, nil
 
 	case tea.KeyPressMsg:

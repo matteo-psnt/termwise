@@ -24,7 +24,6 @@ type editorModel struct {
 	// Connectivity check for the active provider.
 	connChecked bool
 	connOK      bool
-	connErr     string
 
 	// Sub-models — at most one non-nil at a time.
 	modelPicker *modelPickerModel

@@ -124,8 +124,8 @@ func (m modelPickerModel) fetchCmd() tea.Cmd {
 		defer cancel()
 		models, err := config.ListProviderModels(ctx, provider, pc)
 		if err != nil {
-			return editorModelsMsg{providerName: provider, err: fmt.Errorf("listing models: %w", err)}
+			return editorModelsMsg{err: fmt.Errorf("listing models: %w", err)}
 		}
-		return editorModelsMsg{providerName: provider, models: models}
+		return editorModelsMsg{models: models}
 	}
 }

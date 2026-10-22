@@ -106,7 +106,7 @@ func (m authEditorModel) Update(msg tea.Msg) (authEditorModel, tea.Cmd) {
 		if m.step != authStepVerify {
 			return m, nil
 		}
-		if !msg.ok {
+		if msg.err != nil {
 			m.inputErr = msg.err.Error()
 			m.input.Focus()
 			m.step = authStepEnterValue
@@ -245,14 +245,14 @@ func (m authEditorModel) verifyCmd() tea.Cmd {
 	return func() tea.Msg {
 		pc, err := prepareProviderConfig(provider, method, inputVal, fallback)
 		if err != nil {
-			return editorAuthMsg{providerName: provider, ok: false, err: err}
+			return editorAuthMsg{err: err}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := config.CheckProviderConnectivity(ctx, provider, pc); err != nil {
-			return editorAuthMsg{providerName: provider, ok: false, err: err}
+			return editorAuthMsg{err: err}
 		}
-		return editorAuthMsg{providerName: provider, ok: true}
+		return editorAuthMsg{}
 	}
 }
 
