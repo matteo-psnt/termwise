@@ -201,6 +201,11 @@ func detectGit(ctx context.Context, dir string) *GitInfo {
 func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	// git status refreshes the index and takes .git/index.lock to do it. A
+	// background probe holding that lock makes the user's own git commands
+	// in the same repo fail with "index.lock exists"; optional locks off
+	// makes status read-only, as git documents for exactly this case.
+	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
 	cmd.WaitDelay = probeWaitDelay
 	out, err := cmd.Output()
 	if err != nil {
