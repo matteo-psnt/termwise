@@ -37,27 +37,26 @@ type editorRow struct {
 // ---------------------------------------------------------------------------
 
 func (m *editorModel) buildRows() {
-	const navTail = "   ↑/↓ navigate   esc revert   q quit"
 	m.rows = []editorRow{{kind: rowSectionHeader, label: "Providers"}}
 	for _, name := range m.sortedProviders() {
 		m.rows = append(m.rows,
-			editorRow{kind: rowProvHeader, provider: name, hint: "enter set active" + navTail},
-			editorRow{kind: rowProvModel, provider: name, hint: "enter pick model" + navTail},
+			editorRow{kind: rowProvHeader, provider: name, hint: "enter set active   " + navTail},
+			editorRow{kind: rowProvModel, provider: name, hint: "enter pick model   " + navTail},
 		)
 		if models.SupportsThinking(name, m.cfg.Providers[name].Model) {
 			m.rows = append(m.rows, editorRow{
 				kind:     rowProvEffort,
 				provider: name,
 				desc:     "Reasoning effort level used for this model.",
-				hint:     "enter pick   ↑/↓ navigate   esc revert   q quit",
+				hint:     "enter pick   " + navTail,
 			})
 		}
 		m.rows = append(m.rows,
-			editorRow{kind: rowProvAuth, provider: name, hint: "enter edit auth" + navTail},
+			editorRow{kind: rowProvAuth, provider: name, hint: "enter edit auth   " + navTail},
 		)
 	}
 	if len(m.cfg.Providers) < len(config.ProviderInfos()) {
-		m.rows = append(m.rows, editorRow{kind: rowAddProvider, hint: "enter add provider" + navTail})
+		m.rows = append(m.rows, editorRow{kind: rowAddProvider, hint: "enter add provider   " + navTail})
 	}
 	m.rows = append(m.rows, editorRow{kind: rowSectionHeader, label: "Settings"})
 	for i, s := range config.Settings {

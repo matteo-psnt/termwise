@@ -106,7 +106,7 @@ func (m editorModel) renderNormal() string {
 // "set active" hint disappears on the already-active provider.
 func (m editorModel) effectiveHint(row editorRow) string {
 	if row.kind == rowProvHeader && row.provider == m.cfg.SelectedProvider {
-		return "↑/↓ navigate   esc revert   q quit"
+		return navTail
 	}
 	return row.hint
 }

@@ -91,16 +91,17 @@ func settingLabelWidth() int {
 	return w
 }
 
+// navTail is the part of every editor-row hint that doesn't depend on the row.
+const navTail = "↑/↓ navigate   esc revert   q quit"
+
 // hintForKind returns the keyboard hint line for a setting row.
 func hintForKind(kind config.SettingKind) string {
 	switch kind {
 	case config.KindToggle:
-		return "enter toggle   ↑/↓ navigate   esc revert   q quit"
+		return "enter toggle   " + navTail
 	case config.KindEnum, config.KindTheme:
-		return "enter pick   ↑/↓ navigate   esc revert   q quit"
-	case config.KindKeybinding:
-		return "enter edit   ↑/↓ navigate   esc revert   q quit"
+		return "enter pick   " + navTail
 	default:
-		return "enter edit   ↑/↓ navigate   esc revert   q quit"
+		return "enter edit   " + navTail
 	}
 }
