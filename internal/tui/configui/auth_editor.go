@@ -234,12 +234,6 @@ func (m *authEditorModel) setupInput() {
 
 // buildResult constructs the ProviderConfig from the current input state.
 func (m authEditorModel) buildResult() config.ProviderConfig {
-	if m.method == "keychain" {
-		return config.ProviderConfig{
-			Auth:          "keychain",
-			KeychainEntry: config.DefaultKeychainEntry(m.provider),
-		}
-	}
 	return buildProviderConfigFromAuthInput(m.provider, m.method, m.input.Value(), m.fallback)
 }
 
@@ -250,18 +244,12 @@ func (m authEditorModel) verifyCmd() tea.Cmd {
 	fallback := m.fallback
 
 	return func() tea.Msg {
-		var pc config.ProviderConfig
 		if method == "keychain" {
 			if err := config.StoreKeychain(provider, inputVal); err != nil {
 				return editorAuthMsg{providerName: provider, ok: false, err: fmt.Errorf("keychain write: %w", err)}
 			}
-			pc = config.ProviderConfig{
-				Auth:          "keychain",
-				KeychainEntry: config.DefaultKeychainEntry(provider),
-			}
-		} else {
-			pc = buildProviderConfigFromAuthInput(provider, method, inputVal, fallback)
 		}
+		pc := buildProviderConfigFromAuthInput(provider, method, inputVal, fallback)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := config.CheckProviderConnectivity(ctx, provider, pc); err != nil {

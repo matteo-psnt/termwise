@@ -11,6 +11,10 @@ func serverURL(providerName string) string {
 	return info.ServerURL
 }
 
+// buildProviderConfigFromAuthInput turns what the user typed for method into
+// the ProviderConfig to save. For keychain the input is the raw API key, which
+// must never reach the config file: the entry name is always the provider's
+// default, the one StoreKeychain writes to.
 func buildProviderConfigFromAuthInput(providerName, method, inputVal, fallback string) config.ProviderConfig {
 	val := inputVal
 	if val == "" {
@@ -29,7 +33,7 @@ func buildProviderConfigFromAuthInput(providerName, method, inputVal, fallback s
 	case method == "cmd":
 		pc.APIKeyCmd = val
 	case method == "keychain":
-		pc.KeychainEntry = val
+		pc.KeychainEntry = config.DefaultKeychainEntry(providerName)
 	}
 
 	return pc

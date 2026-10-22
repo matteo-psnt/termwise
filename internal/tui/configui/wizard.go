@@ -364,10 +364,6 @@ func (m wizardModel) fetchModelsCmd() tea.Cmd {
 			if err := config.StoreKeychain(provider, val); err != nil {
 				return wizModelsMsg{err: fmt.Errorf("keychain write: %w", err)}
 			}
-			pc = config.ProviderConfig{
-				Auth:          "keychain",
-				KeychainEntry: config.DefaultKeychainEntry(provider),
-			}
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -393,13 +389,6 @@ func (m *wizardModel) saveConfig() {
 
 	pc := buildProviderConfigFromAuthInput(m.provider, m.authMethod, val, m.enterFallback)
 	pc.Model = m.modelID
-	if m.authMethod == "keychain" {
-		pc = config.ProviderConfig{
-			Auth:          "keychain",
-			KeychainEntry: config.DefaultKeychainEntry(m.provider),
-			Model:         m.modelID,
-		}
-	}
 
 	cfg := config.FileConfig{
 		SelectedProvider: m.provider,
