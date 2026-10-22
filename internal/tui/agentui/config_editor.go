@@ -32,6 +32,10 @@ type configEditor struct {
 	setting     config.SettingDef
 	valuePicker *slashPicker
 	original    string
+
+	// captureNotice says why the last key pressed during a keybinding capture
+	// was refused; empty until one is.
+	captureNotice string
 }
 
 // configChooserOptions builds the chooser rows from the canonical config.Settings

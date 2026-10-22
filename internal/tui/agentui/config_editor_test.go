@@ -2,6 +2,7 @@ package agentui
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -169,5 +170,27 @@ func TestKeybindingCaptureRecordsTheCloseKey(t *testing.T) {
 	}
 	if v := loadConfig(t, got.cfgPath).Settings.Keybinding; v != "^T" {
 		t.Fatalf("keybinding on disk = %q, want ^T", v)
+	}
+}
+
+// Keys the shell needs for basic editing are refused, with a reason, and the
+// capture stays open for another key, as in `termwise config`.
+func TestConfigEditorCaptureRefusesReservedKeys(t *testing.T) {
+	m := configEditorModel(t)
+	before := loadConfig(t, m.cfgPath).Settings.Keybinding
+	m = openConfigValuePicker(m, mustSetting(t, "keybinding"))
+
+	m = pressKey(t, m, tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
+	if m.configEditor.phase != configPhaseCapture {
+		t.Fatalf("Ctrl+D ended the capture: phase %v", m.configEditor.phase)
+	}
+	if got := loadConfig(t, m.cfgPath).Settings.Keybinding; got != before {
+		t.Fatalf("Ctrl+D was saved as the keybinding: %q", got)
+	}
+	if !strings.Contains(m.configEditor.captureNotice, "Ctrl+D") {
+		t.Errorf("notice %q does not say why Ctrl+D was refused", m.configEditor.captureNotice)
+	}
+	if !strings.Contains(renderCaptureView(m), m.configEditor.captureNotice) {
+		t.Error("the refusal is not shown in the capture view")
 	}
 }
