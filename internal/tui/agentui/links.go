@@ -16,9 +16,6 @@ var urlRegex = regexp.MustCompile(`https?://[^\s\x1b"'<>()\[\]]+`)
 // urlTrailingPunct is trimmed from the end of a matched URL.
 const urlTrailingPunct = ".,;:!?"
 
-// ansiEscape matches ANSI CSI sequences for stripping styling before column math.
-var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-
 // linkPosition describes one URL occurrence within rendered viewport content.
 type linkPosition struct {
 	URL    string

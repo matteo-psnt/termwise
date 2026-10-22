@@ -4,9 +4,9 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // selectionState tracks an in-progress or completed mouse text selection.
@@ -69,28 +69,27 @@ func applySelectionToView(view string, sel selectionState) string {
 // applyInverse wraps visible columns [colStart, colEnd) of `line` with
 // inverse-video, re-arming \x1b[7m after every escape so resets like \x1b[0m
 // don't silently drop the attribute mid-selection.
+//
+// Escapes are decoded with x/ansi rather than by scanning to the next letter:
+// that only understood CSI, so an OSC 8 hyperlink (ESC ] 8 ;; url ESC \) from
+// glamour ended at the first letter of the URL and the rest counted as
+// visible columns, shifting the highlight off the selected text.
 func applyInverse(line string, colStart, colEnd int) string {
 	var b strings.Builder
 	col := 0
 	inverted := false
-	for i := 0; i < len(line); {
-		if line[i] == '\x1b' {
-			end := i + 1
-			for end < len(line) && !isANSITerminator(line[end]) {
-				end++
-			}
-			if end < len(line) {
-				end++
-			}
-			b.WriteString(line[i:end])
+	var state byte
+	for rest := line; rest != ""; {
+		seq, w, n, newState := ansi.DecodeSequence(rest, state, nil)
+		state = newState
+		rest = rest[n:]
+		if isEscapeSequence(seq) {
+			b.WriteString(seq)
 			if inverted {
 				b.WriteString("\x1b[7m")
 			}
-			i = end
 			continue
 		}
-		r, size := utf8.DecodeRuneInString(line[i:])
-		w := lipgloss.Width(string(r))
 		if !inverted && col >= colStart && col < colEnd {
 			b.WriteString("\x1b[7m")
 			inverted = true
@@ -99,9 +98,8 @@ func applyInverse(line string, colStart, colEnd int) string {
 			b.WriteString("\x1b[27m")
 			inverted = false
 		}
-		b.WriteString(line[i : i+size])
+		b.WriteString(seq)
 		col += w
-		i += size
 	}
 	if inverted {
 		b.WriteString("\x1b[27m")
@@ -109,12 +107,16 @@ func applyInverse(line string, colStart, colEnd int) string {
 	return b.String()
 }
 
-func isANSITerminator(b byte) bool {
-	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+// isEscapeSequence reports whether a DecodeSequence result is an escape
+// sequence (CSI, OSC, DCS, …) rather than text.
+func isEscapeSequence(seq string) bool {
+	return seq != "" && (seq[0] == ansi.ESC || seq[0] >= 0x80 && seq[0] <= 0x9f)
 }
 
+// stripANSI removes every escape sequence, OSC included, so what remains can
+// be measured in columns.
 func stripANSI(s string) string {
-	return ansiEscape.ReplaceAllString(s, "")
+	return ansi.Strip(s)
 }
 
 // extractSelection returns the plain (de-styled) text of the selection
@@ -147,19 +149,19 @@ func sliceByCol(plain string, colStart, colEnd int) string {
 	if colStart >= colEnd {
 		return ""
 	}
+	// Step by grapheme, not rune, so the columns agree with lipgloss.Width:
+	// an emoji built from several runes is one two-cell character.
 	var b strings.Builder
 	col := 0
-	for i := 0; i < len(plain); {
-		r, size := utf8.DecodeRuneInString(plain[i:])
-		w := lipgloss.Width(string(r))
-		if col >= colStart && col < colEnd {
-			b.WriteString(plain[i : i+size])
+	var state byte
+	for rest := plain; rest != "" && col < colEnd; {
+		seq, w, n, newState := ansi.DecodeSequence(rest, state, nil)
+		state = newState
+		rest = rest[n:]
+		if col >= colStart {
+			b.WriteString(seq)
 		}
 		col += w
-		i += size
-		if col >= colEnd {
-			break
-		}
 	}
 	return b.String()
 }

@@ -23,3 +23,21 @@ func TestFindLinksTrimsTrailingPunctuation(t *testing.T) {
 		}
 	}
 }
+
+// glamour can wrap links in OSC 8 hyperlinks, terminated by BEL or ST. Their
+// bytes are not visible, so neither the URL nor its columns may include them.
+func TestFindLinksSkipsOSCHyperlinks(t *testing.T) {
+	for _, content := range []string{
+		"see \x1b]8;;https://a.dev\x07https://a.dev\x1b]8;;\x07 now",
+		"see \x1b]8;;https://a.dev\x1b\\https://a.dev\x1b]8;;\x1b\\ now",
+		"see \x1b]8;;https://a.dev\x1b\\\x1b[4mhttps://a.dev\x1b[0m\x1b]8;;\x1b\\ now",
+	} {
+		links := findLinks(content)
+		if len(links) != 1 {
+			t.Fatalf("%q: got %d links (%+v), want 1", content, len(links), links)
+		}
+		if l := links[0]; l.URL != "https://a.dev" || l.StartX != 4 || l.EndX != 17 {
+			t.Errorf("%q: got %+v, want https://a.dev at 4..17", content, l)
+		}
+	}
+}
