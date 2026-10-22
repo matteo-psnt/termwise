@@ -234,6 +234,11 @@ func (m Model) forwardToComponents(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var vpCmd tea.Cmd
 	m.vp, vpCmd = m.vp.Update(msg)
+	// Track wheel scrolling like PgUp/PgDn: without it, the next refresh
+	// snapped a reader scrolled up by wheel back to the bottom.
+	if _, ok := msg.(tea.MouseWheelMsg); ok {
+		m.userScrolled = !m.vp.AtBottom()
+	}
 	return m, tea.Batch(vpCmd, inputCmd)
 }
 

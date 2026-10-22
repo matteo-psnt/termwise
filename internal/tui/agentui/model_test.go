@@ -487,3 +487,27 @@ func TestCloseDanglingToolCallsCompletesPartialResults(t *testing.T) {
 		t.Fatalf("a complete history changed: %#v", complete)
 	}
 }
+
+// Scrolling up with the wheel must hold the position when the thread refreshes
+// (a tool result arriving), the same as PgUp does.
+func TestWheelScrollUpSurvivesRefresh(t *testing.T) {
+	m := pickerModel("")
+	for i := range 40 {
+		m.thread = append(m.thread, SystemEntry{Content: strings.Repeat("line ", 3) + string(rune('a'+i%26))})
+	}
+	m.refreshViewport()
+	if !m.vp.AtBottom() {
+		t.Fatal("setup: viewport should start at the bottom")
+	}
+
+	next, _ := m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	m = next.(Model)
+	if m.vp.AtBottom() {
+		t.Fatal("wheel up did not scroll")
+	}
+	offset := m.vp.YOffset()
+	m.refreshViewport()
+	if m.vp.YOffset() != offset {
+		t.Fatalf("refresh moved a wheel-scrolled view from %d to %d", offset, m.vp.YOffset())
+	}
+}
