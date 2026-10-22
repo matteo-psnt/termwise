@@ -1,6 +1,8 @@
 package configui
 
 import (
+	"charm.land/lipgloss/v2"
+
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/keybinding"
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -81,7 +83,7 @@ func settingLabelWidth() int {
 	const minWidth = 13
 	w := minWidth
 	for _, s := range config.Settings {
-		if n := len(s.Label) + 1; n > w {
+		if n := lipgloss.Width(s.Label) + 1; n > w {
 			w = n
 		}
 	}
