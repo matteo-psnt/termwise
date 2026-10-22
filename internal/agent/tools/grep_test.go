@@ -117,3 +117,18 @@ func TestBroadGlobStillSkipsVCSDirs(t *testing.T) {
 		}
 	}
 }
+
+// An rg older than 13 rejects the field separators grep passes; say so,
+// rather than relaying rg's usage error.
+func TestOldRipgrepGetsAnUpgradeMessage(t *testing.T) {
+	bin := t.TempDir()
+	fake := "#!/bin/sh\necho 'error: Found argument --field-match-separator which was not expected' >&2\nexit 2\n"
+	if err := os.WriteFile(filepath.Join(bin, "rg"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	_, err := runRipgrep(context.Background(), []string{"--field-match-separator", "x", "pat"})
+	if err == nil || !strings.Contains(err.Error(), "ripgrep 13") {
+		t.Fatalf("err = %v, want an upgrade message", err)
+	}
+}

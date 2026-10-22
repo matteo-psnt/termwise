@@ -55,6 +55,11 @@ func runRipgrep(ctx context.Context, args []string) ([]string, error) {
 			if msg == "" {
 				msg = exitErr.Error()
 			}
+			// The field separators grep relies on to split paths from
+			// matches arrived in ripgrep 13; older ones reject them.
+			if strings.Contains(msg, "field-match-separator") || strings.Contains(msg, "field-context-separator") {
+				return nil, fmt.Errorf("this search needs ripgrep 13 or newer; upgrade rg (https://github.com/BurntSushi/ripgrep)")
+			}
 			return nil, fmt.Errorf("ripgrep failed: %s", msg)
 		}
 		if errors.Is(err, exec.ErrNotFound) {
