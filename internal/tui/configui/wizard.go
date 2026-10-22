@@ -62,7 +62,7 @@ type wizardModel struct {
 	modelID   string
 
 	// final result — set when saved
-	Result *config.FileConfig
+	result *config.FileConfig
 
 	// done is set when the wizard exits (quit or completed) so that an
 	// embedding editor model can detect the exit without inspecting tea.Cmd.
@@ -376,7 +376,7 @@ func (m wizardModel) fetchModelsCmd() tea.Cmd {
 	}
 }
 
-// saveConfig builds the final config and stores it on m.Result.
+// saveConfig builds the final config and stores it on m.result.
 func (m *wizardModel) saveConfig() {
 	pc := buildProviderConfigFromAuthInput(m.provider, m.authMethod, m.input.Value(), m.enterFallback)
 	pc.Model = m.modelID
@@ -385,7 +385,7 @@ func (m *wizardModel) saveConfig() {
 		SelectedProvider: m.provider,
 		Providers:        map[string]config.ProviderConfig{m.provider: pc},
 	}
-	m.Result = &cfg
+	m.result = &cfg
 }
 
 // ---------------------------------------------------------------------------

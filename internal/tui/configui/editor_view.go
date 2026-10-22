@@ -142,7 +142,8 @@ func (m editorModel) rowPrefix(focused bool) string {
 }
 
 // renderRow renders a labeled value row. label should already be padded/formatted
-// for display (e.g. "     Model   " for sub-rows, fmt.Sprintf("%-13s", ...) for settings).
+// for display (e.g. "     Model   " for sub-rows, or padded to settingLabelWidth
+// for settings).
 func (m editorModel) renderRow(b *strings.Builder, focused bool, label, value string) {
 	prefix := m.rowPrefix(focused)
 	if focused {

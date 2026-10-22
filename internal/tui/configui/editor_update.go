@@ -156,8 +156,8 @@ func (m editorModel) updateAddWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 	newModel, cmd := m.addWizard.Update(msg)
 	newWiz := newModel.(wizardModel)
 	m.addWizard = &newWiz
-	if newWiz.Result != nil {
-		for name, pc := range newWiz.Result.Providers {
+	if newWiz.result != nil {
+		for name, pc := range newWiz.result.Providers {
 			config.SetProvider(&m.cfg, name, pc)
 		}
 		m.addWizard = nil

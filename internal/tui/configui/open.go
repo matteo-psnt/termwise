@@ -31,11 +31,11 @@ func runWizard(cfgPath string, hasDarkBg bool) error {
 		return fmt.Errorf("config wizard: %w", err)
 	}
 	wm, ok := final.(wizardModel)
-	if !ok || wm.Result == nil {
+	if !ok || wm.result == nil {
 		// User quit without completing.
 		return nil
 	}
-	if err := config.SaveConfig(cfgPath, *wm.Result); err != nil {
+	if err := config.SaveConfig(cfgPath, *wm.result); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 	return nil
@@ -52,8 +52,5 @@ func runEditor(cfgPath string, cfg config.FileConfig, hasDarkBg bool) error {
 	if !ok {
 		return nil
 	}
-	if em.err != nil {
-		return em.err
-	}
-	return nil
+	return em.err
 }

@@ -66,7 +66,7 @@ func (m themePickerModel) Update(msg tea.Msg) (themePickerModel, tea.Cmd) {
 
 func (m themePickerModel) View(styles configStyles, hasDarkBg bool) string {
 	palettes := theme.All()
-	selected := theme.Normalize(m.prev) // show badge on original selection
+	selected := m.prev // show badge on original selection
 
 	var b strings.Builder
 	b.WriteString("Theme palette:\n\n")
