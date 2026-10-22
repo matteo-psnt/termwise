@@ -86,6 +86,10 @@ type slashMatch struct {
 	// Completion is the suffix to append to the current input value to fill
 	// in the highlighted match (used for inline ghost text).
 	Completion string
+	// Replace is how many bytes at the end of the input Completion replaces
+	// rather than follows. Zero for everything but an @ path that has to be
+	// rewritten into its quoted form.
+	Replace int
 }
 
 // computeSlashMatches returns the dropdown matches for the given input value.
