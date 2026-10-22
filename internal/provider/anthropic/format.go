@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"encoding/json"
 	"fmt"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
@@ -97,6 +98,17 @@ func toUserMessageParam(m provider.Message) (sdk.MessageParam, error) {
 func toAssistantMessageParam(m provider.Message) (sdk.MessageParam, error) {
 	var blocks []sdk.ContentBlockParamUnion
 
+	// With thinking enabled the API requires the previous turn's thinking
+	// blocks, signatures intact, ahead of its tool_use blocks when the loop
+	// continues with tool results.
+	if len(m.ProviderState) > 0 {
+		var thinking []sdk.ContentBlockParamUnion
+		if err := json.Unmarshal(m.ProviderState, &thinking); err != nil {
+			return sdk.MessageParam{}, fmt.Errorf("decoding thinking blocks: %w", err)
+		}
+		blocks = append(blocks, thinking...)
+	}
+
 	if m.Content != "" {
 		blocks = append(blocks, sdk.ContentBlockParamUnion{
 			OfText: &sdk.TextBlockParam{Text: m.Content},
@@ -153,8 +165,11 @@ func fromChatResponse(msg *sdk.Message) (*provider.ChatResponse, error) {
 		OutputTokens: int(msg.Usage.OutputTokens),
 	}
 
+	var thinking []sdk.ContentBlockParamUnion
 	for _, block := range msg.Content {
 		switch block.Type {
+		case "thinking", "redacted_thinking":
+			thinking = append(thinking, block.ToParam())
 		case "text":
 			resp.Content += block.Text
 		case "tool_use":
@@ -168,8 +183,15 @@ func fromChatResponse(msg *sdk.Message) (*provider.ChatResponse, error) {
 				Input: input,
 			})
 		}
-		// Other block types (thinking, etc.) are silently ignored.
+		// Other block types are silently ignored.
 	}
 
+	if len(thinking) > 0 {
+		state, err := json.Marshal(thinking)
+		if err != nil {
+			return nil, fmt.Errorf("encoding thinking blocks: %w", err)
+		}
+		resp.ProviderState = state
+	}
 	return resp, nil
 }

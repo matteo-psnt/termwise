@@ -37,9 +37,10 @@ func (m Model) handleResponseEvent(msg responseEvent) (tea.Model, tea.Cmd) {
 	m.inputTokens += resp.InputTokens
 	m.outputTokens += resp.OutputTokens
 	m.messages = append(m.messages, provider.Message{
-		Role:      "assistant",
-		Content:   resp.Content,
-		ToolCalls: resp.ToolCalls,
+		Role:          "assistant",
+		Content:       resp.Content,
+		ToolCalls:     resp.ToolCalls,
+		ProviderState: resp.ProviderState,
 	})
 
 	if resp.Content != "" {

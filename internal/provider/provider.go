@@ -26,6 +26,12 @@ type Message struct {
 	Content     string       // text content (for user messages or bare assistant text)
 	ToolCalls   []ToolCall   // tool calls made by the assistant in this turn
 	ToolResults []ToolResult // tool results sent by the user in this turn
+	// ProviderState is opaque provider-specific data copied from the
+	// ChatResponse that produced this assistant turn, which the same provider
+	// needs back verbatim when the conversation continues (Anthropic's signed
+	// thinking blocks). Other providers ignore it. omitempty keeps saved
+	// sessions without it loading unchanged.
+	ProviderState json.RawMessage `json:",omitempty"`
 }
 
 // ToolCall is a single tool invocation requested by the model.
@@ -79,6 +85,9 @@ type ChatResponse struct {
 	StopReason   string
 	InputTokens  int
 	OutputTokens int
+	// ProviderState must be copied onto the assistant Message built from
+	// this response; see Message.ProviderState.
+	ProviderState json.RawMessage
 }
 
 // ----------------------------------------------------------------------------

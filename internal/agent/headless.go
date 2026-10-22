@@ -77,9 +77,10 @@ func RunHeadless(ctx context.Context, cfg HeadlessConfig) (FinalResponse, error)
 		}
 
 		messages = append(messages, provider.Message{
-			Role:      "assistant",
-			Content:   resp.Content,
-			ToolCalls: resp.ToolCalls,
+			Role:          "assistant",
+			Content:       resp.Content,
+			ToolCalls:     resp.ToolCalls,
+			ProviderState: resp.ProviderState,
 		})
 
 		final, toolResults, err := runToolLoop(ctx, resp.ToolCalls, needsApproval, onNeedsApproval, onAsk)
