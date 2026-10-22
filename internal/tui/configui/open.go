@@ -24,7 +24,7 @@ func Open(cfgPath string, cfg config.FileConfig, exists bool) error {
 }
 
 func runWizard(cfgPath string, hasDarkBg bool) error {
-	m := newWizardModel(hasDarkBg, theme.DefaultName).preselectDetected()
+	m := newWizardModel(hasDarkBg, theme.DefaultName, nil)
 	p := tea.NewProgram(m)
 	final, err := p.Run()
 	if err != nil {

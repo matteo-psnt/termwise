@@ -247,9 +247,7 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		for name := range m.cfg.Providers {
 			exclude[name] = true
 		}
-		wiz := newWizardModel(m.hasDarkBg, theme.Normalize(m.cfg.Settings.Theme))
-		wiz.exclude = exclude
-		wiz = wiz.preselectDetected()
+		wiz := newWizardModel(m.hasDarkBg, theme.Normalize(m.cfg.Settings.Theme), exclude)
 		m.addWizard = &wiz
 		return m, m.addWizard.Init()
 

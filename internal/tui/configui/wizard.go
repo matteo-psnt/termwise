@@ -73,19 +73,23 @@ type wizardModel struct {
 	errBack wizardStep
 }
 
-func newWizardModel(hasDarkBg bool, themeName string) wizardModel {
+// newWizardModel starts the wizard at the provider list, hiding the providers
+// in exclude and with the cursor on the first one whose key is already set.
+func newWizardModel(hasDarkBg bool, themeName string, exclude map[string]bool) wizardModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
 	ti := textinput.New()
 	ti.CharLimit = 256
 
-	return wizardModel{
-		styles: newStylesForTheme(hasDarkBg, themeName),
-		spin:   sp,
-		input:  ti,
-		step:   wizPickProvider,
+	m := wizardModel{
+		styles:  newStylesForTheme(hasDarkBg, themeName),
+		spin:    sp,
+		exclude: exclude,
+		input:   ti,
+		step:    wizPickProvider,
 	}
+	return m.preselectDetected()
 }
 
 // availableProviders returns the provider list with already-configured ones removed.
