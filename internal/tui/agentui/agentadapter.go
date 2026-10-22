@@ -2,6 +2,7 @@ package agentui
 
 import (
 	"context"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -73,5 +74,24 @@ func ExecuteBashCmd(ctx context.Context, tc provider.ToolCall, remaining []provi
 			Collected:    append(collected, result),
 			AutoAccepted: false,
 		}
+	}
+}
+
+type judgmentMsg struct {
+	safe bool
+}
+
+func (m Model) judgeCmd(tc provider.ToolCall) tea.Cmd {
+	cmd := tools.BashCommand(tc)
+	client := m.provider
+	modelID := m.modelID
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(m.ctx, 10*time.Second)
+		defer cancel()
+		safe, err := agent.JudgeBashCommand(ctx, client, modelID, cmd)
+		if err != nil {
+			return judgmentMsg{safe: false}
+		}
+		return judgmentMsg{safe: safe}
 	}
 }
