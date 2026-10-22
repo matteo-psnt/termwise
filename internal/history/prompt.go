@@ -84,6 +84,12 @@ func (h *PromptHistory) Load() error {
 // rewriteLines atomically replaces path with lines, one per line, via a temp
 // file and rename, so a crash mid-write cannot truncate the history.
 func rewriteLines(path string, lines [][]byte) error {
+	// Rename replaces whatever is at path, so write through a symlink (a
+	// history file kept in a dotfiles repo) to its target rather than swap
+	// the link for a plain file.
+	if target, err := filepath.EvalSymlinks(path); err == nil {
+		path = target
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err

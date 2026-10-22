@@ -89,3 +89,25 @@ func TestPromptHistoryLoadKeepsFileBelowCompactionThreshold(t *testing.T) {
 		t.Fatalf("file rewritten below threshold: %d lines", n)
 	}
 }
+
+// Compaction must keep a symlinked history file a symlink.
+func TestRewriteLinesKeepsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real.jsonl")
+	link := filepath.Join(dir, "prompt-history.jsonl")
+	if err := os.WriteFile(target, []byte("old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := rewriteLines(link, [][]byte{[]byte("new")}); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("history file is no longer a symlink (%v)", err)
+	}
+	if got, _ := os.ReadFile(target); string(got) != "new\n" {
+		t.Errorf("target = %q, want the compacted content", got)
+	}
+}
