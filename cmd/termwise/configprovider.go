@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -240,14 +241,26 @@ var configTestCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
 		defer cancel()
 
-		err = config.CheckProviderConnectivity(ctx, name, pc)
+		auth, err := config.ProbeProvider(ctx, name, pc)
 		done()
 		if err != nil {
 			return fmt.Errorf("connection failed: %w", err)
 		}
 		fmt.Printf("✓ %s is reachable\n", name)
+		reportAuthFallback(os.Stderr, auth)
 		return nil
 	},
+}
+
+// reportAuthFallback warns when the key that worked came from the provider's
+// default env var because the configured method failed: the connection is
+// fine today, but the config does not do what it says.
+func reportAuthFallback(w io.Writer, auth config.ResolvedAuth) {
+	if auth.FallbackErr == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "! The configured auth failed, so this used %s instead:\n  %s\n",
+		auth.Source, strings.ReplaceAll(auth.FallbackErr.Error(), "\n", "\n  "))
 }
 
 // ---------------------------------------------------------------------------

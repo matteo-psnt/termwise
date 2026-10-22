@@ -31,13 +31,19 @@ func isolateConfigEnv(t *testing.T) string {
 // captureStdout returns what fn printed to os.Stdout.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
+	return captureFile(t, &os.Stdout, fn)
+}
+
+// captureFile returns what fn wrote to *f, which it swaps for a pipe.
+func captureFile(t *testing.T, f **os.File, fn func()) string {
+	t.Helper()
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	orig := os.Stdout
-	os.Stdout = w
-	defer func() { os.Stdout = orig }()
+	orig := *f
+	*f = w
+	defer func() { *f = orig }()
 
 	done := make(chan string)
 	go func() {
