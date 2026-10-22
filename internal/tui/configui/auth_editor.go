@@ -47,10 +47,7 @@ func newAuthEditor(provider string, pc config.ProviderConfig, isActive bool, con
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
-	cur := pc.Auth
-	if cur == "" {
-		cur = "env"
-	}
+	cur := pc.AuthMethod()
 	methodCursor := 0
 	for i, am := range authMethods {
 		if am.id == cur {
@@ -138,10 +135,7 @@ func (m authEditorModel) handlePickMethod(msg tea.KeyPressMsg) (authEditorModel,
 		m.done = true
 	case "enter", " ":
 		selected := authMethods[m.methodCursor].id
-		existingAuth := m.existing.Auth
-		if existingAuth == "" {
-			existingAuth = "env"
-		}
+		existingAuth := m.existing.AuthMethod()
 		// Already on this method and provider is connected — nothing to do.
 		if selected == existingAuth && m.isActive && m.connOK {
 			m.cancelled = true
@@ -252,10 +246,7 @@ func (m authEditorModel) View() string {
 func (m authEditorModel) viewPickMethod() string {
 	var b strings.Builder
 	b.WriteString("Auth method for " + m.styles.Title.Render(m.provider) + ":\n\n")
-	cur := m.existing.Auth
-	if cur == "" {
-		cur = "env"
-	}
+	cur := m.existing.AuthMethod()
 	b.WriteString(renderAuthMethodRows(m.provider, m.methodCursor, cur, false, m.styles))
 	b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back"))
 	return b.String()

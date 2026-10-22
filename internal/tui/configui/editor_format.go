@@ -47,11 +47,7 @@ func describeAuth(providerName string, pc config.ProviderConfig) string {
 		}
 		return "base URL · " + pc.BaseURL
 	}
-	method := pc.Auth
-	if method == "" {
-		method = "env"
-	}
-	switch method {
+	switch method := pc.AuthMethod(); method {
 	case "env":
 		v := pc.EnvVar
 		if v == "" {

@@ -2,12 +2,8 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/config"
@@ -74,7 +70,7 @@ when stdin is a terminal, so it never lands in your shell history. With
 				entry = args[0]
 			}
 			if store {
-				key, err := readSecret(fmt.Sprintf("%s API key: ", name))
+				key, err := tty.ReadSecret(fmt.Sprintf("%s API key: ", name))
 				if err != nil {
 					return err
 				}
@@ -85,28 +81,6 @@ when stdin is a terminal, so it never lands in your shell history. With
 			return config.SetAuthKeychain(cfg, name, entry)
 		})
 	},
-}
-
-// readSecret reads one secret: from a piped stdin as-is, or from a terminal
-// without echoing it.
-func readSecret(prompt string) (string, error) {
-	var raw []byte
-	var err error
-	if tty.IsTerminal(os.Stdin) {
-		fmt.Fprint(os.Stderr, prompt)
-		raw, err = term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(os.Stderr)
-	} else {
-		raw, err = io.ReadAll(os.Stdin)
-	}
-	if err != nil {
-		return "", fmt.Errorf("reading key: %w", err)
-	}
-	key := strings.TrimSpace(string(raw))
-	if key == "" {
-		return "", fmt.Errorf("no key given")
-	}
-	return key, nil
 }
 
 func init() {

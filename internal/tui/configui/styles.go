@@ -23,9 +23,8 @@ type configStyles struct {
 // resolver returns a function that picks a theme color's light or dark
 // variant for the terminal's background.
 func resolver(hasDarkBg bool) func(theme.Color) color.Color {
-	ld := lipgloss.LightDark(hasDarkBg)
 	return func(c theme.Color) color.Color {
-		return ld(lipgloss.Color(c.Light), lipgloss.Color(c.Dark))
+		return lipgloss.Color(c.Pick(hasDarkBg))
 	}
 }
 
