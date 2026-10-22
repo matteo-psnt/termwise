@@ -105,14 +105,46 @@ func TestEditorRevertDeletesNewKeychainEntry(t *testing.T) {
 	}
 }
 
-// keychainService duplicates config's unexported one; reading back what
-// config wrote catches the two drifting apart.
-func TestKeychainServiceMatchesConfig(t *testing.T) {
-	keyring.MockInit()
-	if err := config.StoreKeychain("openai", "sk-x"); err != nil {
+// A key the add-provider wizard verified and stored belongs to a provider
+// that is never added if the wizard is abandoned, so its entry is put back.
+func TestAbandonedWizardRestoresKeychain(t *testing.T) {
+	entry := config.DefaultKeychainEntry("anthropic")
+	store := fakeKeychain(t, map[string]string{entry: "sk-old"})
+
+	m := newEditorModel("", config.FileConfig{}, true)
+	wiz := newWizardModel(true, "", nil)
+	wiz.keychain = newKeychainJournal()
+	if err := wiz.keychain.store("anthropic", "sk-new"); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := keychainGet(config.DefaultKeychainEntry("openai")); got != "sk-x" {
-		t.Errorf("keychainGet = %q, %v; want what config stored", got, err)
+	m.addWizard = &wiz
+
+	next, _ := m.updateAddWizard(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	if next.(editorModel).addWizard != nil {
+		t.Fatal("q did not close the wizard")
+	}
+	if store[entry] != "sk-old" {
+		t.Errorf("keychain = %q after abandoning the wizard, want sk-old", store[entry])
+	}
+}
+
+// Finishing the wizard hands its writes to the session, so reverting the
+// session still undoes them.
+func TestAdoptKeepsTheSessionsOlderValue(t *testing.T) {
+	entry := config.DefaultKeychainEntry("openai")
+	store := fakeKeychain(t, map[string]string{entry: "sk-1"})
+	session, child := newKeychainJournal(), newKeychainJournal()
+	if err := session.store("openai", "sk-2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := child.store("openai", "sk-3"); err != nil {
+		t.Fatal(err)
+	}
+	session.adopt(child)
+	if err := session.restore(); err != nil {
+		t.Fatal(err)
+	}
+	if store[entry] != "sk-1" {
+		t.Errorf("keychain = %q after revert, want the value from before the session", store[entry])
 	}
 }

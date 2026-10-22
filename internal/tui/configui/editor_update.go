@@ -156,6 +156,7 @@ func (m editorModel) updateAddWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 	newWiz := newModel.(wizardModel)
 	m.addWizard = &newWiz
 	if newWiz.result != nil {
+		m.keychain.adopt(newWiz.keychain)
 		for name, pc := range newWiz.result.Providers {
 			config.SetProvider(&m.cfg, name, pc)
 		}
@@ -165,6 +166,11 @@ func (m editorModel) updateAddWizard(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spin.Tick, m.checkConnectivityCmd())
 	}
 	if newWiz.done {
+		// Abandoned: a key it verified and stored belongs to a provider that
+		// was never added, so put the entry back as it was.
+		if err := newWiz.keychain.restore(); err != nil {
+			m.err = fmt.Errorf("restoring keychain: %w", err)
+		}
 		m.addWizard = nil
 		return m, nil
 	}
@@ -267,7 +273,9 @@ func (m editorModel) activateRow() (tea.Model, tea.Cmd) {
 		// The window size arrived before the wizard existed; it sizes its
 		// model list from it.
 		wiz.width, wiz.height = m.width, m.height
-		wiz.keychain = m.keychain
+		// The wizard keeps its own journal: abandoning it undoes just its
+		// writes, and finishing hands them to the session's journal.
+		wiz.keychain = newKeychainJournal()
 		m.addWizard = &wiz
 		return m, m.addWizard.Init()
 

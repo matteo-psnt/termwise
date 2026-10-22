@@ -10,16 +10,12 @@ import (
 	"github.com/matteo-psnt/termwise/internal/config"
 )
 
-// keychainService must match the service config stores keys under; config
-// exports a setter but no getter or delete, which reverting needs.
-const keychainService = "termwise"
-
 // The keychain operations, as variables so tests can swap in fakes rather
 // than touch the real keychain.
 var (
-	keychainGet    = func(entry string) (string, error) { return keyring.Get(keychainService, entry) }
+	keychainGet    = config.KeychainEntry
 	keychainSet    = config.StoreKeychainEntry
-	keychainDelete = func(entry string) error { return keyring.Delete(keychainService, entry) }
+	keychainDelete = config.DeleteKeychainEntry
 )
 
 // keychainPrev is what a keychain entry held before the session first wrote
@@ -68,6 +64,25 @@ func (j *keychainJournal) store(providerName, apiKey string) error {
 		}
 	}
 	return keychainSet(entry, apiKey)
+}
+
+// adopt moves child's records into j, so reverting j also undoes what child
+// wrote. An entry j already recorded keeps j's older value: that is the one
+// from before the session.
+func (j *keychainJournal) adopt(child *keychainJournal) {
+	if j == nil || child == nil {
+		return
+	}
+	child.mu.Lock()
+	defer child.mu.Unlock()
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	for entry, prev := range child.prev {
+		if _, seen := j.prev[entry]; !seen {
+			j.prev[entry] = prev
+		}
+	}
+	clear(child.prev)
 }
 
 // restore puts every entry the session wrote back as it was, deleting the

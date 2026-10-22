@@ -22,3 +22,15 @@ func StoreKeychain(providerName, apiKey string) error {
 func StoreKeychainEntry(entry, apiKey string) error {
 	return keyring.Set(keychainService, entry, apiKey)
 }
+
+// KeychainEntry reads an API key from the system keychain under the termwise
+// service. A missing entry is reported as keyring.ErrNotFound.
+func KeychainEntry(entry string) (string, error) {
+	return keyring.Get(keychainService, entry)
+}
+
+// DeleteKeychainEntry removes an entry from the system keychain under the
+// termwise service. A missing entry is reported as keyring.ErrNotFound.
+func DeleteKeychainEntry(entry string) error {
+	return keyring.Delete(keychainService, entry)
+}
