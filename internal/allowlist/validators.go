@@ -82,7 +82,8 @@ func validateSysctlCommand(_ *ruleEngine, cmd parsedCommand) bool {
 }
 
 // validateXargsCommand approves xargs only when the nested command it would
-// run is itself approved by the builtin allowlist.
+// run is itself approved by the builtin allowlist and is argument-proof (see
+// argumentProof).
 //
 // The validator parses xargs's own flags to locate the nested command start
 // index. Any flag not in the known set causes an immediate rejection — this
@@ -187,7 +188,24 @@ func validateXargsCommand(e *ruleEngine, cmd parsedCommand) bool {
 	if !ok {
 		return false
 	}
-	return e.matchesBuiltin(nested)
+	return e.argumentProof(nested.Name) && e.matchesBuiltin(nested)
+}
+
+// argumentProof reports whether a command is safe whatever arguments it is
+// given: its rule has no denied flags, no validator and no subcommand list.
+//
+// xargs appends words read from stdin at run time (or splices them in with
+// -I), so echo -delete | xargs find . runs find . -delete. The words a command
+// line shows are not the words the nested command gets, so only a command no
+// argument can make unsafe may run under xargs.
+func (e *ruleEngine) argumentProof(name string) bool {
+	for _, rule := range e.builtinRules {
+		if rule.Cmd != name {
+			continue
+		}
+		return len(rule.Deny.Flags) == 0 && len(rule.Allow.Subcommands) == 0 && e.validators[name] == nil
+	}
+	return false
 }
 
 // isXargsShortValueFlag reports whether the two-byte string (e.g. "-n") is a

@@ -888,3 +888,29 @@ func TestUnknownGlobalFlagHidesSubcommand(t *testing.T) {
 		`pacman -Qi bash`,
 	)
 }
+
+// xargs appends words read at run time, so a denied flag can arrive on stdin.
+// Only commands that are safe whatever their arguments may run under it.
+func TestXargsOnlyRunsArgumentProofCommands(t *testing.T) {
+	t.Parallel()
+	requireApproval(t,
+		`echo -delete | xargs find .`,
+		`echo --output=/tmp/x | xargs git diff`,
+		`echo --pre=/tmp/x | xargs rg needle`,
+		`echo -o /tmp/x | xargs sort`,
+		`echo -w kern.x=1 | xargs sysctl`,
+		`echo GOFLAGS=x | xargs go env -w`,
+		`echo x | xargs git status`,
+		`echo x | xargs xargs cat`,
+		`ls | xargs -I{} find {} -delete`,
+	)
+	requireSafe(t,
+		`find . -name "*.go" | xargs grep -l pattern`,
+		`find . -type f | xargs wc -l`,
+		`find . -type f | xargs cat`,
+		`find . -type f | xargs ls -la`,
+		`find . -type f | xargs head -5`,
+		`find . -type f -print0 | xargs -0 stat`,
+		`printf 'a\nb\n' | xargs echo`,
+	)
+}
