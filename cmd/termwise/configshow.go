@@ -24,13 +24,9 @@ var configShowCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		asJSON, _ := cmd.Flags().GetBool("json")
-		cfgPath, err := config.DefaultConfigPath()
+		cfgPath, cfg, exists, err := loadConfigFile()
 		if err != nil {
 			return err
-		}
-		cfg, exists, err := config.LoadConfig(cfgPath)
-		if err != nil {
-			return fmt.Errorf("%w\n  Run `%s config --edit` to repair the file", err, cliname.Name())
 		}
 		if !exists {
 			if notice := config.EnvOnlyNotice(cfgPath); notice != "" {

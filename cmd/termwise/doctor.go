@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -58,7 +57,7 @@ func runDoctor(cfgPath string, online bool) bool {
 	cfg, exists, parseErr := config.LoadConfig(cfgPath)
 	if parseErr != nil {
 		fail("File: " + parseErr.Error())
-		hint("Run `%s config --edit` to repair", cliname.Name())
+		hint("%s", repairHint())
 		return false
 	}
 	if exists {
@@ -127,7 +126,7 @@ func runDoctor(cfgPath string, online bool) bool {
 	case !known || !authOk:
 		warn("Connection: skipped until the problems above are fixed")
 	default:
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
 		err := config.CheckProviderConnectivity(ctx, cfg.SelectedProvider, pc)
 		cancel()
 		if err == nil {

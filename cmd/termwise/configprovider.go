@@ -14,6 +14,34 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
+// providerTimeout bounds every request these commands make to a provider, so
+// an unreachable server fails the command instead of hanging it.
+const providerTimeout = 15 * time.Second
+
+// selectedProviderConfig returns the config block for name, or for the
+// selected provider when name is empty.
+func selectedProviderConfig(cfg config.FileConfig, name string) (string, config.ProviderConfig, error) {
+	if name == "" {
+		name = cfg.SelectedProvider
+	}
+	if name == "" {
+		return "", config.ProviderConfig{}, fmt.Errorf("no provider selected — run `%s config use <provider>`", cliname.Name())
+	}
+	pc, ok := cfg.Providers[name]
+	if !ok {
+		return "", config.ProviderConfig{}, fmt.Errorf("provider %q is not configured — run `%s config` to set it up", name, cliname.Name())
+	}
+	return name, pc, nil
+}
+
+// showStatus prints msg on stderr as a transient status line and returns a
+// func that erases it, so the wait is visible but leaves nothing behind in
+// the output.
+func showStatus(msg string) func() {
+	fmt.Fprint(os.Stderr, msg)
+	return func() { fmt.Fprint(os.Stderr, "\r\033[K") }
+}
+
 // ---------------------------------------------------------------------------
 // tw config use <provider>
 // ---------------------------------------------------------------------------
@@ -118,34 +146,25 @@ var configModelListCmd = &cobra.Command{
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
-		cfgPath, err := config.DefaultConfigPath()
+		_, cfg, _, err := loadConfigFile()
 		if err != nil {
 			return err
 		}
-		cfg, _, err := config.LoadConfig(cfgPath)
-		if err != nil {
-			return err
-		}
-
-		name := cfg.SelectedProvider
+		var name string
 		if len(args) == 1 {
 			name = args[0]
 		}
-		if name == "" {
-			return fmt.Errorf("no provider selected — pass a provider name or run `%s config use <provider>`", cliname.Name())
+		name, pc, err := selectedProviderConfig(cfg, name)
+		if err != nil {
+			return err
 		}
 
-		pc, ok := cfg.Providers[name]
-		if !ok {
-			return fmt.Errorf("provider %q is not configured — run `%s config` to set it up", name, cliname.Name())
-		}
-
-		fmt.Fprintf(os.Stderr, "Fetching models for %s...", name)
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		done := showStatus(fmt.Sprintf("Fetching models for %s...", name))
+		ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
 		defer cancel()
 
 		models, err := config.ListProviderModels(ctx, name, pc)
-		fmt.Fprintf(os.Stderr, "\r\033[K")
+		done()
 		if err != nil {
 			return fmt.Errorf("listing models: %w", err)
 		}
@@ -170,12 +189,12 @@ var configModelSetCmd = &cobra.Command{
 			}
 			// Validate the model against the API, but don't fail the save on error.
 			pc := cfg.Providers[name]
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
 			defer cancel()
 
-			fmt.Fprintf(os.Stderr, "Validating model...")
+			done := showStatus("Validating model...")
 			models, err := config.ListProviderModels(ctx, name, pc)
-			fmt.Fprintf(os.Stderr, "\r\033[K")
+			done()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not check the model against %s — saved anyway\n  %s\n",
 					name, strings.ReplaceAll(err.Error(), "\n", "\n  "))
@@ -200,32 +219,24 @@ var configTestCmd = &cobra.Command{
 	Short:        "Test connectivity for the selected provider",
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		cfgPath, err := config.DefaultConfigPath()
+		_, cfg, _, err := loadConfigFile()
 		if err != nil {
 			return err
 		}
-		cfg, _, err := config.LoadConfig(cfgPath)
+		name, pc, err := selectedProviderConfig(cfg, "")
 		if err != nil {
 			return err
-		}
-		name := cfg.SelectedProvider
-		if name == "" {
-			return fmt.Errorf("no provider selected — run `%s config use <provider>`", cliname.Name())
-		}
-		pc, ok := cfg.Providers[name]
-		if !ok {
-			return fmt.Errorf("provider %q has no config block — run `%s config` to set it up", name, cliname.Name())
 		}
 
-		fmt.Fprintf(os.Stderr, "Testing %s...", name)
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		done := showStatus(fmt.Sprintf("Testing %s...", name))
+		ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
 		defer cancel()
 
-		if err := config.CheckProviderConnectivity(ctx, name, pc); err != nil {
-			fmt.Fprintf(os.Stderr, "\r\033[K")
+		err = config.CheckProviderConnectivity(ctx, name, pc)
+		done()
+		if err != nil {
 			return fmt.Errorf("connection failed: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "\r\033[K")
 		fmt.Printf("✓ %s is reachable\n", name)
 		return nil
 	},

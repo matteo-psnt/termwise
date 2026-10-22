@@ -60,17 +60,33 @@ var configCmd = &cobra.Command{
 // Helpers
 // ---------------------------------------------------------------------------
 
+// loadConfigFile loads the config file at the default path. exists is false
+// when there is no file. A file that cannot be loaded comes back as an error
+// with the recovery hint attached, so the user knows how to fix it before
+// retrying.
+func loadConfigFile() (cfgPath string, cfg config.FileConfig, exists bool, err error) {
+	cfgPath, err = config.DefaultConfigPath()
+	if err != nil {
+		return "", config.FileConfig{}, false, err
+	}
+	cfg, exists, err = config.LoadConfig(cfgPath)
+	if err != nil {
+		return cfgPath, config.FileConfig{}, exists, fmt.Errorf("%w\n  %s", err, repairHint())
+	}
+	return cfgPath, cfg, exists, nil
+}
+
+// repairHint is the next step for a config file that does not load.
+// LoadConfig's error already says the file is invalid and where it is.
+func repairHint() string {
+	return fmt.Sprintf("Run `%s config --edit` to repair it", cliname.Name())
+}
+
 // mutateConfig loads the config, applies fn, and saves atomically.
-// A parse error is wrapped with a recovery hint so the user knows how to fix
-// the file before retrying.
 func mutateConfig(fn func(*config.FileConfig) error) error {
-	cfgPath, err := config.DefaultConfigPath()
+	cfgPath, cfg, _, err := loadConfigFile()
 	if err != nil {
 		return err
-	}
-	cfg, _, err := config.LoadConfig(cfgPath)
-	if err != nil {
-		return fmt.Errorf("%w\n  Config file is invalid — run `%s config --edit` to repair it", err, cliname.Name())
 	}
 	if err := fn(&cfg); err != nil {
 		return err
