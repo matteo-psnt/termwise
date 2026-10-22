@@ -108,12 +108,21 @@ func mutateConfig(fn func(*config.FileConfig) error) error {
 // mutateActiveProvider is mutateConfig scoped to the currently selected provider.
 func mutateActiveProvider(fn func(*config.FileConfig, string) error) error {
 	return mutateConfig(func(cfg *config.FileConfig) error {
-		name := cfg.SelectedProvider
-		if name == "" {
-			return fmt.Errorf("no provider selected — run `%s config use <provider>` first", cliname.Name())
+		name, err := activeProvider(*cfg)
+		if err != nil {
+			return err
 		}
 		return fn(cfg, name)
 	})
+}
+
+// activeProvider returns the selected provider, or an error saying how to
+// select one.
+func activeProvider(cfg config.FileConfig) (string, error) {
+	if cfg.SelectedProvider == "" {
+		return "", fmt.Errorf("no provider selected — run `%s config use <provider>` first", cliname.Name())
+	}
+	return cfg.SelectedProvider, nil
 }
 
 // editConfig opens the config file in $EDITOR.

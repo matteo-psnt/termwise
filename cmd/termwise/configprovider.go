@@ -205,31 +205,50 @@ var configModelSetCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, args []string) error {
 		modelID := args[0]
-		return mutateActiveProvider(func(cfg *config.FileConfig, name string) error {
-			if err := config.SetModel(cfg, name, modelID); err != nil {
-				return err
-			}
-			// Validate the model against the API, but don't fail the save on error.
-			pc := cfg.Providers[name]
-			ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
-			defer cancel()
-
-			done := showStatus("Validating model...")
-			models, err := config.FetchProviderModels(ctx, name, pc)
-			done()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not check the model against %s — saved anyway\n  %s\n",
-					name, strings.ReplaceAll(err.Error(), "\n", "\n  "))
-				return nil
-			}
-			for _, m := range models {
-				if m.ID == modelID {
-					return nil
-				}
-			}
-			return fmt.Errorf("model %q not found for provider %q", modelID, name)
+		// Check the model before taking the config lock: the check is a
+		// network call (and maybe an api_key_cmd prompt) that can outlast
+		// the lock timeout and would block the setup screen from saving.
+		_, cfg, err := loadConfigFile()
+		if err != nil {
+			return err
+		}
+		name, err := activeProvider(cfg)
+		if err != nil {
+			return err
+		}
+		if err := config.SetModel(&cfg, name, modelID); err != nil {
+			return err
+		}
+		if err := checkModelExists(name, cfg.Providers[name], modelID); err != nil {
+			return err
+		}
+		return mutateConfig(func(cfg *config.FileConfig) error {
+			return config.SetModel(cfg, name, modelID)
 		})
 	},
+}
+
+// checkModelExists asks the provider whether it serves modelID. Only an
+// answer of "no" is an error: when the provider cannot be asked, the model
+// is saved anyway with a warning.
+func checkModelExists(name string, pc config.ProviderConfig, modelID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), providerTimeout)
+	defer cancel()
+
+	done := showStatus("Validating model...")
+	models, err := config.FetchProviderModels(ctx, name, pc)
+	done()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not check the model against %s — saved anyway\n  %s\n",
+			name, strings.ReplaceAll(err.Error(), "\n", "\n  "))
+		return nil
+	}
+	for _, m := range models {
+		if m.ID == modelID {
+			return nil
+		}
+	}
+	return fmt.Errorf("model %q not found for provider %q", modelID, name)
 }
 
 // ---------------------------------------------------------------------------
