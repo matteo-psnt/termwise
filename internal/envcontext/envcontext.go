@@ -14,6 +14,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -103,7 +105,9 @@ func Detect(ctx context.Context, opts Options) Context {
 
 	for _, m := range projectMarkers {
 		if _, err := os.Stat(filepath.Join(cwd, m.path)); err == nil {
-			c.Project = appendUnique(c.Project, m.label)
+			if !slices.Contains(c.Project, m.label) {
+				c.Project = append(c.Project, m.label)
+			}
 		}
 	}
 	c.PkgMgrs = onPath(pkgManagers)
@@ -198,32 +202,11 @@ func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func appendUnique(s []string, v string) []string {
-	for _, existing := range s {
-		if existing == v {
-			return s
-		}
-	}
-	return append(s, v)
-}
-
 func plural(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun
 	}
-	return itoa(n) + " " + noun + "s"
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var digits []byte
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	return string(digits)
+	return strconv.Itoa(n) + " " + noun + "s"
 }
 
 func osName() string {
