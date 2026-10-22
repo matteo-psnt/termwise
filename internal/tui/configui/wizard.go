@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
-	"charm.land/bubbles/v2/textinput"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -52,17 +51,14 @@ type wizardModel struct {
 	authMethod string // "env", "cmd", "keychain"
 
 	// wizEnterValue input
-	enterLabel    string
-	enterHint     string
-	enterFallback string // used as placeholder when input is empty
-	input         textinput.Model
+	input authInput
 
 	// wizPickModel
 	apiModels []provider.Model
 	modelID   string
 
 	// final result — set when saved
-	Result *config.FileConfig
+	result *config.FileConfig
 
 	// done is set when the wizard exits (quit or completed) so that an
 	// embedding editor model can detect the exit without inspecting tea.Cmd.
@@ -73,19 +69,20 @@ type wizardModel struct {
 	errBack wizardStep
 }
 
-func newWizardModel(hasDarkBg bool, themeName string) wizardModel {
+// newWizardModel starts the wizard at the provider list, hiding the providers
+// in exclude and with the cursor on the first one whose key is already set.
+func newWizardModel(hasDarkBg bool, themeName string, exclude map[string]bool) wizardModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
-	ti := textinput.New()
-	ti.CharLimit = 256
-
-	return wizardModel{
-		styles: newStylesForTheme(hasDarkBg, themeName),
-		spin:   sp,
-		input:  ti,
-		step:   wizPickProvider,
+	m := wizardModel{
+		styles:  newStylesForTheme(hasDarkBg, themeName),
+		spin:    sp,
+		exclude: exclude,
+		input:   newAuthInput(),
+		step:    wizPickProvider,
 	}
+	return m.preselectDetected()
 }
 
 // availableProviders returns the provider list with already-configured ones removed.
@@ -167,7 +164,7 @@ func (m wizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Forward to textinput when in enter step.
 	if m.step == wizEnterValue {
 		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
+		m.input.Model, cmd = m.input.Update(msg)
 		return m, cmd
 	}
 
@@ -197,18 +194,14 @@ func (m wizardModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m wizardModel) handlePickProviderKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	providers := m.availableProviders()
 
+	if c, ok := moveListCursor(msg.String(), m.cursor, len(providers)); ok {
+		m.cursor = c
+		return m, nil
+	}
 	switch msg.String() {
 	case "q", "ctrl+c", "esc":
 		m.done = true
 		return m, tea.Quit
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case "down", "j":
-		if m.cursor < len(providers)-1 {
-			m.cursor++
-		}
 	case "enter", " ":
 		selected, ok := m.selectedProvider()
 		if !ok {
@@ -231,6 +224,10 @@ func (m wizardModel) handlePickProviderKey(msg tea.KeyPressMsg) (tea.Model, tea.
 }
 
 func (m wizardModel) handlePickAuthKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if c, ok := moveListCursor(msg.String(), m.cursor, len(authMethods)); ok {
+		m.cursor = c
+		return m, nil
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.done = true
@@ -238,14 +235,6 @@ func (m wizardModel) handlePickAuthKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 	case "b", "esc":
 		m.cursor = 0
 		m.step = wizPickProvider
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case "down", "j":
-		if m.cursor < len(authMethods)-1 {
-			m.cursor++
-		}
 	case "enter", " ":
 		m.authMethod = authMethods[m.cursor].id
 		m.cursor = 0
@@ -275,7 +264,7 @@ func (m wizardModel) handleEnterValueKey(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 			m.step = wizPickAuth
 		}
 	case "enter":
-		if strings.TrimSpace(m.input.Value()) == "" && m.enterFallback == "" {
+		if m.input.missing() {
 			// Don't submit; leave cursor in the field.
 			return m, nil
 		}
@@ -284,7 +273,7 @@ func (m wizardModel) handleEnterValueKey(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 		return m, tea.Batch(m.spin.Tick, m.fetchModelsCmd())
 	default:
 		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
+		m.input.Model, cmd = m.input.Update(msg)
 		return m, cmd
 	}
 
@@ -292,6 +281,10 @@ func (m wizardModel) handleEnterValueKey(msg tea.KeyPressMsg) (tea.Model, tea.Cm
 }
 
 func (m wizardModel) handlePickModelKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if c, ok := moveListCursor(msg.String(), m.cursor, len(m.apiModels)); ok {
+		m.cursor = c
+		return m, nil
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.done = true
@@ -300,14 +293,6 @@ func (m wizardModel) handlePickModelKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 		m.cursor = 0
 		m.step = wizEnterValue
 		m.input.Focus()
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case "down", "j":
-		if m.cursor < len(m.apiModels)-1 {
-			m.cursor++
-		}
 	case "enter", " ":
 		m.modelID = m.apiModels[m.cursor].ID
 		m.saveConfig()
@@ -333,16 +318,9 @@ func (m wizardModel) handleErrKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// setupEnterValue configures the textinput for the current auth method.
+// setupEnterValue sets the input up, empty, for the current auth method.
 func (m *wizardModel) setupEnterValue() {
-	cfg := buildAuthInputConfig(m.provider, m.authMethod)
-	m.enterLabel = cfg.Label
-	m.enterHint = cfg.Hint
-	m.enterFallback = cfg.Fallback
-	m.input.Placeholder = cfg.Placeholder
-	m.input.EchoMode = cfg.EchoMode
-	m.input.SetValue("")
-	m.input.Focus()
+	m.input.setup(m.provider, m.authMethod, "")
 }
 
 // fetchModelsCmd builds the ProviderConfig from wizard state and calls ListModels.
@@ -350,24 +328,12 @@ func (m wizardModel) fetchModelsCmd() tea.Cmd {
 	provider := m.provider
 	authMethod := m.authMethod
 	inputVal := m.input.Value()
-	fallback := m.enterFallback
+	fallback := m.input.fallback
 
 	return func() tea.Msg {
-		val := inputVal
-		if val == "" {
-			val = fallback
-		}
-
-		pc := buildProviderConfigFromAuthInput(provider, authMethod, val, fallback)
-		if authMethod == "keychain" {
-			// val is the raw API key — store it in the keychain.
-			if err := config.StoreKeychain(provider, val); err != nil {
-				return wizModelsMsg{err: fmt.Errorf("keychain write: %w", err)}
-			}
-			pc = config.ProviderConfig{
-				Auth:          "keychain",
-				KeychainEntry: config.DefaultKeychainEntry(provider),
-			}
+		pc, err := prepareProviderConfig(provider, authMethod, inputVal, fallback)
+		if err != nil {
+			return wizModelsMsg{err: err}
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -384,28 +350,16 @@ func (m wizardModel) fetchModelsCmd() tea.Cmd {
 	}
 }
 
-// saveConfig builds the final config and stores it on m.Result.
+// saveConfig builds the final config and stores it on m.result.
 func (m *wizardModel) saveConfig() {
-	val := m.input.Value()
-	if val == "" {
-		val = m.enterFallback
-	}
-
-	pc := buildProviderConfigFromAuthInput(m.provider, m.authMethod, val, m.enterFallback)
+	pc := buildProviderConfigFromAuthInput(m.provider, m.authMethod, m.input.Value(), m.input.fallback)
 	pc.Model = m.modelID
-	if m.authMethod == "keychain" {
-		pc = config.ProviderConfig{
-			Auth:          "keychain",
-			KeychainEntry: config.DefaultKeychainEntry(m.provider),
-			Model:         m.modelID,
-		}
-	}
 
 	cfg := config.FileConfig{
 		SelectedProvider: m.provider,
 		Providers:        map[string]config.ProviderConfig{m.provider: pc},
 	}
-	m.Result = &cfg
+	m.result = &cfg
 }
 
 // ---------------------------------------------------------------------------
@@ -444,11 +398,7 @@ func (m wizardModel) renderInner() string {
 				badge = "  " + m.styles.Success.Render("●")
 				detected = true
 			}
-			if i == m.cursor {
-				b.WriteString(m.styles.Selected.Render("▶ "+p.DisplayName) + badge + "\n")
-			} else {
-				b.WriteString(m.styles.Normal.Render("  "+p.DisplayName) + badge + "\n")
-			}
+			b.WriteString(renderListRow(m.styles, i == m.cursor, p.DisplayName, badge) + "\n")
 		}
 		if detected {
 			b.WriteString("\n" + m.styles.Hint.Render("● API key found in your environment"))
@@ -461,38 +411,14 @@ func (m wizardModel) renderInner() string {
 		b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back   q quit"))
 
 	case wizEnterValue:
-		b.WriteString(m.enterLabel + ":\n\n")
-		b.WriteString(m.input.View() + "\n")
-		if m.enterHint != "" {
-			b.WriteString("\n" + m.styles.Hint.Render(m.enterHint))
-		}
-		b.WriteString("\n\n" + m.styles.Dim.Render("enter confirm   esc back"))
+		b.WriteString(m.input.view(m.styles, "", "enter confirm   esc back"))
 
 	case wizWorking:
 		b.WriteString(m.styles.Spinner.Render(m.spin.View()) + " Connecting to " + m.provider + "...")
 
 	case wizPickModel:
 		b.WriteString("Choose a model:\n\n")
-		start, end := listWindow(len(m.apiModels), m.cursor, m.modelRows())
-		if start > 0 {
-			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
-		}
-		def := models.DefaultModel(m.provider)
-		for i := start; i < end; i++ {
-			id := m.apiModels[i].ID
-			badge := ""
-			if id == def {
-				badge = m.styles.Dim.Render("  (recommended)")
-			}
-			if i == m.cursor {
-				b.WriteString(m.styles.Selected.Render("▶ "+id) + badge + "\n")
-			} else {
-				b.WriteString(m.styles.Normal.Render("  "+id) + badge + "\n")
-			}
-		}
-		if end < len(m.apiModels) {
-			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  ↓ %d more", len(m.apiModels)-end)) + "\n")
-		}
+		b.WriteString(renderModelList(m.styles, m.apiModels, m.cursor, m.height, models.DefaultModel(m.provider)))
 		b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back   q quit"))
 
 	case wizDone:
@@ -508,36 +434,4 @@ func (m wizardModel) renderInner() string {
 	}
 
 	return b.String()
-}
-
-// defaultModelIndex returns the position of the provider's recommended model
-// in list, or 0 when the provider did not return it.
-func defaultModelIndex(providerName string, list []provider.Model) int {
-	def := models.DefaultModel(providerName)
-	for i, mod := range list {
-		if mod.ID == def {
-			return i
-		}
-	}
-	return 0
-}
-
-// modelRows is how many model rows fit in the box. The rest of the screen is
-// title, prompt, scroll markers, help line and the box's own border.
-func (m wizardModel) modelRows() int {
-	const chrome = 14
-	if m.height <= 0 {
-		return 15
-	}
-	return max(m.height-chrome, 5)
-}
-
-// listWindow returns the [start, end) slice of an n-item list that keeps
-// cursor visible within size rows, scrolling only once the cursor nears an edge.
-func listWindow(n, cursor, size int) (int, int) {
-	if n <= size {
-		return 0, n
-	}
-	start := min(max(cursor-size/2, 0), n-size)
-	return start, start + size
 }

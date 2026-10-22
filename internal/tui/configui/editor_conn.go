@@ -13,7 +13,6 @@ import (
 func (m *editorModel) resetConnectivity() {
 	m.connChecked = false
 	m.connOK = false
-	m.connErr = ""
 }
 
 func (m editorModel) checkConnectivityCmd() tea.Cmd {
@@ -21,16 +20,16 @@ func (m editorModel) checkConnectivityCmd() tea.Cmd {
 	pc, ok := m.cfg.Providers[providerName]
 	if !ok {
 		return func() tea.Msg {
-			return editorConnMsg{ok: false, err: fmt.Errorf("provider not configured")}
+			return editorConnMsg{err: fmt.Errorf("provider not configured")}
 		}
 	}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := config.CheckProviderConnectivity(ctx, providerName, pc); err != nil {
-			return editorConnMsg{ok: false, err: err}
+			return editorConnMsg{err: err}
 		}
-		return editorConnMsg{ok: true}
+		return editorConnMsg{}
 	}
 }
 

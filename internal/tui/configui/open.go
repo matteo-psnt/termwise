@@ -24,18 +24,18 @@ func Open(cfgPath string, cfg config.FileConfig, exists bool) error {
 }
 
 func runWizard(cfgPath string, hasDarkBg bool) error {
-	m := newWizardModel(hasDarkBg, theme.DefaultName).preselectDetected()
+	m := newWizardModel(hasDarkBg, theme.DefaultName, nil)
 	p := tea.NewProgram(m)
 	final, err := p.Run()
 	if err != nil {
 		return fmt.Errorf("config wizard: %w", err)
 	}
 	wm, ok := final.(wizardModel)
-	if !ok || wm.Result == nil {
+	if !ok || wm.result == nil {
 		// User quit without completing.
 		return nil
 	}
-	if err := config.SaveConfig(cfgPath, *wm.Result); err != nil {
+	if err := config.SaveConfig(cfgPath, *wm.result); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 	return nil
@@ -52,8 +52,5 @@ func runEditor(cfgPath string, cfg config.FileConfig, hasDarkBg bool) error {
 	if !ok {
 		return nil
 	}
-	if em.err != nil {
-		return em.err
-	}
-	return nil
+	return em.err
 }
