@@ -1,27 +1,67 @@
 providers:
   anthropic:
-    default_model: claude-haiku-4-5-20251001
+    # Haiku is the default: termwise's turns are short command lookups, where
+    # latency and cost matter more than depth. Every current model thinks
+    # adaptively and takes effort low/medium/high/xhigh/max.
+    default_model: claude-haiku-5-5
     models:
-      - id: claude-haiku-4-5-20251001
-        name: Claude Haiku 4.5
-        context: 128000
-        input_price: 0.80
-        output_price: 4.00
+      - id: claude-haiku-5-5
+        name: Claude Haiku 5.5
+        context: 1000000
+        input_price: 0.10
+        output_price: 0.50
         supports_tools: true
+        supports_thinking: true
+      - id: claude-sonnet-5-5
+        name: Claude Sonnet 5.5
+        context: 1000000
+        input_price: 2.00
+        output_price: 10.00
+        supports_tools: true
+        supports_thinking: true
+      - id: claude-opus-5-5
+        name: Claude Opus 5.5
+        context: 1000000
+        input_price: 4.00
+        output_price: 20.00
+        supports_tools: true
+        supports_thinking: true
+      - id: claude-fable-5-1
+        name: Claude Fable 5.1
+        context: 1000000
+        input_price: 10.00
+        output_price: 50.00
+        supports_tools: true
+        supports_thinking: true
       - id: claude-sonnet-4-6
         name: Claude Sonnet 4.6
-        context: 200000
+        context: 1000000
         input_price: 3.00
         output_price: 15.00
         supports_tools: true
         supports_thinking: true
       - id: claude-opus-4-6
         name: Claude Opus 4.6
-        context: 200000
-        input_price: 15.00
-        output_price: 75.00
+        context: 1000000
+        input_price: 5.00
+        output_price: 25.00
         supports_tools: true
         supports_thinking: true
+      # Haiku 4.5 rejects the effort parameter, so no supports_thinking. Both
+      # spellings are listed because earlier termwise defaults wrote the
+      # dated ID into configs.
+      - id: claude-haiku-4-5
+        name: Claude Haiku 4.5
+        context: 200000
+        input_price: 1.00
+        output_price: 5.00
+        supports_tools: true
+      - id: claude-haiku-4-5-20251001
+        name: Claude Haiku 4.5
+        context: 200000
+        input_price: 1.00
+        output_price: 5.00
+        supports_tools: true
 
   openai:
     default_model: gpt-4o-mini
@@ -89,20 +129,22 @@ providers:
         supports_tools: true
 
   deepseek:
-    default_model: deepseek-chat
+    # deepseek-chat and deepseek-reasoner are gone from DeepSeek's model list;
+    # deepseek-flash is the V4.1 Flash alias. Prices are DeepSeek's peak rates.
+    default_model: deepseek-flash
     models:
-      - id: deepseek-chat
-        name: DeepSeek V3
-        context: 64000
-        input_price: 0.27
-        output_price: 1.10
+      - id: deepseek-flash
+        name: DeepSeek V4.1 Flash
+        context: 1000000
+        input_price: 0.30
+        output_price: 1.20
         supports_tools: true
-      - id: deepseek-reasoner
-        name: DeepSeek R1
-        context: 64000
-        input_price: 0.55
-        output_price: 2.19
-        supports_tools: false
+      - id: deepseek-v4-pro
+        name: DeepSeek V4 Pro
+        context: 1000000
+        input_price: 1.32
+        output_price: 3.96
+        supports_tools: true
 
   mistral:
     default_model: mistral-small-latest
