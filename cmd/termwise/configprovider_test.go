@@ -66,3 +66,17 @@ base_url    = "`+srv.URL+`"
 		t.Errorf("stderr = %q, want a warning that $OPENAI_API_KEY was used instead", stderr)
 	}
 }
+
+// A status line is erased with an escape code, which only a terminal
+// understands; in a log it would leave the message and the raw code behind.
+func TestStatusLineSilentWithoutTerminal(t *testing.T) {
+	var b strings.Builder
+	statusLine(&b, false, "Validating model...")()
+	if b.Len() != 0 {
+		t.Errorf("status line wrote %q to a non-terminal", b.String())
+	}
+	statusLine(&b, true, "x")()
+	if b.String() != "x\r\033[K" {
+		t.Errorf("status line on a terminal = %q", b.String())
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/matteo-psnt/termwise/internal/cliname"
 	"github.com/matteo-psnt/termwise/internal/config"
 	"github.com/matteo-psnt/termwise/internal/provider"
+	"github.com/matteo-psnt/termwise/internal/tty"
 )
 
 // providerTimeout bounds every request these commands make to a provider, so
@@ -53,10 +54,18 @@ func effectiveProviderConfig(name string) (string, config.ProviderConfig, error)
 
 // showStatus prints msg on stderr as a transient status line and returns a
 // func that erases it, so the wait is visible but leaves nothing behind in
-// the output.
+// the output. When stderr is not a terminal the erase cannot work — it would
+// leave the message and a raw escape code in a log — so nothing is shown.
 func showStatus(msg string) func() {
-	fmt.Fprint(os.Stderr, msg)
-	return func() { fmt.Fprint(os.Stderr, "\r\033[K") }
+	return statusLine(os.Stderr, tty.IsTerminal(os.Stderr), msg)
+}
+
+func statusLine(w io.Writer, isTerminal bool, msg string) func() {
+	if !isTerminal {
+		return func() {}
+	}
+	_, _ = fmt.Fprint(w, msg)
+	return func() { _, _ = fmt.Fprint(w, "\r\033[K") }
 }
 
 // ---------------------------------------------------------------------------
