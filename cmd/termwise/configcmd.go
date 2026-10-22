@@ -49,7 +49,7 @@ var configCmd = &cobra.Command{
 		if err := configui.Open(cfgPath, cfg, exists); err != nil {
 			return err
 		}
-		if !exists && config.ConfigExists(cfgPath) && interactive() {
+		if !exists && config.ConfigExists(cfgPath) {
 			offerShellIntegration(os.Stdin, os.Stdout)
 		}
 		return nil
