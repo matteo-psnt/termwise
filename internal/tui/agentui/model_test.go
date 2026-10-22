@@ -324,3 +324,26 @@ func TestSanitizeSuggestionTextIsRuneSafe(t *testing.T) {
 		t.Fatalf("text within the limit was truncated: %q", got)
 	}
 }
+
+// trimContext returns a trimmed copy for the request; the caller's messages are
+// the session history and must keep the full tool results.
+func TestTrimContextDoesNotMutateInput(t *testing.T) {
+	large := strings.Repeat("x", 2_000)
+	messages := []provider.Message{{
+		Role: "user",
+		ToolResults: []provider.ToolResult{
+			{ToolCallID: "1", Content: large},
+			{ToolCallID: "2", Content: large},
+		},
+	}}
+
+	trimmed := trimContext(messages, 2_000)
+	if !strings.Contains(trimmed[0].ToolResults[0].Content, "result dropped") {
+		t.Fatalf("expected the trimmed copy to drop a result")
+	}
+	for i, tr := range messages[0].ToolResults {
+		if tr.Content != large {
+			t.Fatalf("input ToolResults[%d] was rewritten to %q", i, tr.Content)
+		}
+	}
+}

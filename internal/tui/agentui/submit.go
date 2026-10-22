@@ -2,6 +2,7 @@ package agentui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -129,6 +130,12 @@ func trimContext(messages []provider.Message, contextWindow int) []provider.Mess
 	copy(out, messages)
 
 	for i := range out {
+		if len(out[i].ToolResults) > 0 {
+			// copy(out, messages) shares each ToolResults backing array with
+			// the caller; clone before rewriting so the session's own history
+			// (what gets saved and resumed) keeps the full results.
+			out[i].ToolResults = slices.Clone(out[i].ToolResults)
+		}
 		for j := range out[i].ToolResults {
 			if out[i].ToolResults[j].Content != dropped {
 				out[i].ToolResults[j].Content = dropped
