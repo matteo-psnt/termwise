@@ -11,14 +11,6 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
-// ExecuteRead runs the read tool for a tool call and packages the result.
-// The ctx argument is unused; it's present to give read the same signature as
-// other executors so they can plug into Step.Execute uniformly.
-func ExecuteRead(_ context.Context, tc provider.ToolCall) provider.ToolResult {
-	content, isErr := Read(tc.Input)
-	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
-}
-
 const (
 	maxReadLines      = 2000
 	maxDirListEntries = 500
@@ -26,9 +18,9 @@ const (
 
 func init() {
 	stepFns[ReadDef.Name] = func(_ provider.ToolCall) Step {
-		return Step{Kind: StepExecutor, Execute: ExecuteRead}
+		return Step{Kind: StepExecutor, Execute: executor(read)}
 	}
-	detailFns[ReadDef.Name] = ReadPath
+	detailFns[ReadDef.Name] = readPath
 }
 
 var ReadDef = provider.ToolDef{
@@ -58,17 +50,17 @@ Prefer this over ` + "`bash cat`" + ` or ` + "`bash ls`" + `: it is not gated, t
 	},
 }
 
-// ReadPath returns the path argument for a read tool call.
-func ReadPath(tc provider.ToolCall) string {
-	p, _ := tc.Input["path"].(string)
-	return p
+// readPath returns the path argument for a read tool call.
+func readPath(tc provider.ToolCall) string {
+	return stringInput(tc.Input, "path")
 }
 
-// Read executes the read tool. When path points at a directory, it returns a
+// read executes the read tool. When path points at a directory, it returns a
 // listing of immediate children; otherwise it returns file contents.
-// Returns (content, isError).
-func Read(input map[string]any) (string, bool) {
-	path, _ := input["path"].(string)
+// Returns (content, isError). The ctx argument is unused; it's present to give
+// read the same signature as the other tools so it can go through executor.
+func read(_ context.Context, input map[string]any) (string, bool) {
+	path := stringInput(input, "path")
 	if path == "" {
 		return "error: 'path' is required", true
 	}
@@ -82,12 +74,12 @@ func Read(input map[string]any) (string, bool) {
 	}
 
 	offset := 0
-	if v, ok := input["offset"].(float64); ok && v >= 0 {
-		offset = int(v)
+	if v, ok := intInput(input, "offset"); ok && v >= 0 {
+		offset = v
 	}
 	limit := maxReadLines
-	if v, ok := input["limit"].(float64); ok && v > 0 && int(v) < maxReadLines {
-		limit = int(v)
+	if v, ok := intInput(input, "limit"); ok && v > 0 && v < maxReadLines {
+		limit = v
 	}
 
 	data, err := os.ReadFile(path)
@@ -170,13 +162,6 @@ func readDir(path string) (string, bool) {
 	return body, false
 }
 
-func pluralEntries(n int) string {
-	if n == 1 {
-		return "entry"
-	}
-	return "entries"
-}
-
 // isBinary reports whether data appears to be binary content.
 func isBinary(data []byte) bool {
 	if len(data) == 0 {
@@ -186,13 +171,11 @@ func isBinary(data []byte) bool {
 	if len(sample) > 8192 {
 		sample = sample[:8192]
 	}
+	nonPrintable := 0
 	for _, b := range sample {
 		if b == 0 {
 			return true
 		}
-	}
-	nonPrintable := 0
-	for _, b := range sample {
 		if b < 8 || (b > 13 && b < 32) {
 			nonPrintable++
 		}

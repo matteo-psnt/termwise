@@ -1,6 +1,11 @@
 package agentui
 
-import tea "charm.land/bubbletea/v2"
+import (
+	"strings"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+)
 
 // The prompt has two completion dropdowns — slash commands and @ paths. They
 // differ in what they list and in what Enter means, but the highlight moves,
@@ -101,4 +106,68 @@ func (m Model) visibleDropdown() (matches []slashMatch, cursor int) {
 		return slash, m.slashSel.cursor
 	}
 	return m.visibleAtMatches(), m.atSel.cursor
+}
+
+// dropdownMaxRows is how many rows a completion dropdown shows at once; longer
+// match lists scroll.
+const dropdownMaxRows = 5
+
+// renderCompletionDropdown renders a completion dropdown's match list (slash
+// commands or @ paths) below the input row. The selected row uses the accent
+// color; the other rows are faint to keep the dropdown unobtrusive. Scrolls a
+// windowed view when matches exceed dropdownMaxRows.
+func (m Model) renderCompletionDropdown(matches []slashMatch, cursor int) string {
+	start := 0
+	end := len(matches)
+	if end > dropdownMaxRows {
+		if cursor >= dropdownMaxRows {
+			start = cursor - dropdownMaxRows + 1
+		}
+		end = start + dropdownMaxRows
+		if end > len(matches) {
+			end = len(matches)
+			start = end - dropdownMaxRows
+		}
+	}
+	visible := matches[start:end]
+
+	labelW := 0
+	for _, mt := range visible {
+		if w := lipgloss.Width(mt.Label); w > labelW {
+			labelW = w
+		}
+	}
+
+	var b strings.Builder
+	for i, mt := range visible {
+		var labelOut string
+		if start+i == cursor {
+			labelOut = m.renderer.styles.InputPrompt.Render(mt.Label)
+		} else {
+			labelOut = m.renderer.styles.ActionHints.Render(mt.Label)
+		}
+		b.WriteString(labelOut)
+		if mt.Description != "" {
+			pad := max(labelW-lipgloss.Width(mt.Label)+2, 1)
+			b.WriteString(strings.Repeat(" ", pad) + m.renderer.styles.ActionHints.Render(mt.Description))
+		}
+		if i < len(visible)-1 {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+// updateInputAndResetCompletions forwards the key to the textinput, and clears
+// the transient state of both completion dropdowns (cursor + dismissed flag)
+// whenever the input value changes.
+func (m Model) updateInputAndResetCompletions(msg tea.Msg) (tea.Model, tea.Cmd) {
+	prev := m.input.Value()
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	if m.input.Value() != prev {
+		m.slashSel.reset()
+		m.atSel.reset()
+	}
+	return m, cmd
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/provider"
@@ -14,13 +14,13 @@ const defaultGlobLimit = 100
 
 func init() {
 	stepFns[GlobDef.Name] = func(_ provider.ToolCall) Step {
-		return Step{Kind: StepExecutor, Execute: ExecuteGlob}
+		return Step{Kind: StepExecutor, Execute: executor(glob)}
 	}
 	detailFns[GlobDef.Name] = globDetail
 }
 
 func globDetail(tc provider.ToolCall) string {
-	return patternInPath(GlobPattern(tc), GlobPath(tc))
+	return patternInPath(globPattern(tc), globPath(tc))
 }
 
 var GlobDef = provider.ToolDef{
@@ -30,7 +30,7 @@ var GlobDef = provider.ToolDef{
 Usage:
 - Use glob to find files by name pattern (e.g. "**/*.go", "src/**/*.ts").
 - Supports brace expansion (e.g. "**/*.{ts,tsx}").
-- Returns matching file paths sorted by modification time (newest first), capped at 100.
+- Returns matching file paths sorted by modification time (newest first), capped at ` + strconv.Itoa(defaultGlobLimit) + `.
 - Respects .gitignore and skips .git/.svn/.hg by default.
 - For open-ended searches that require multiple rounds of globbing/grepping, use grep with the glob filter directly.`,
 	InputSchema: map[string]any{
@@ -49,44 +49,31 @@ Usage:
 	},
 }
 
-// GlobPattern returns the pattern argument for a glob tool call.
-func GlobPattern(tc provider.ToolCall) string {
-	p, _ := tc.Input["pattern"].(string)
-	return p
+// globPattern returns the pattern argument for a glob tool call.
+func globPattern(tc provider.ToolCall) string {
+	return stringInput(tc.Input, "pattern")
 }
 
-// GlobPath returns the path argument for a glob tool call (empty if unset).
-func GlobPath(tc provider.ToolCall) string {
-	p, _ := tc.Input["path"].(string)
-	return p
+// globPath returns the path argument for a glob tool call (empty if unset).
+func globPath(tc provider.ToolCall) string {
+	return stringInput(tc.Input, "path")
 }
 
-// ExecuteGlob runs the glob tool for a tool call and packages the result.
-func ExecuteGlob(ctx context.Context, tc provider.ToolCall) provider.ToolResult {
-	content, isErr := Glob(ctx, tc.Input)
-	return provider.ToolResult{ToolCallID: tc.ID, Content: content, IsError: isErr}
-}
-
-// Glob lists files matching a glob pattern, sorted by modification time.
+// glob lists files matching a glob pattern, sorted by modification time.
 // Returns (content, isError).
-func Glob(ctx context.Context, input map[string]any) (string, bool) {
-	pattern, _ := input["pattern"].(string)
+func glob(ctx context.Context, input map[string]any) (string, bool) {
+	pattern := stringInput(input, "pattern")
 	if pattern == "" {
 		return "error: 'pattern' is required", true
 	}
 
 	cwd, _ := os.Getwd()
-	pathArg, _ := input["path"].(string)
-	searchPath := pathArg
-	if searchPath == "" {
-		searchPath = cwd
-	}
-	absPath, err := filepath.Abs(searchPath)
+	pathArg := stringInput(input, "path")
+	absPath, info, err := resolveSearchPath(pathArg, cwd)
 	if err != nil {
-		return fmt.Sprintf("error: %s", err), true
-	}
-	info, err := os.Stat(absPath)
-	if err != nil {
+		if absPath == "" {
+			return fmt.Sprintf("error: %s", err), true
+		}
 		return fmt.Sprintf("error: path does not exist: %s", pathArg), true
 	}
 	if !info.IsDir() {
@@ -121,7 +108,7 @@ func Glob(ctx context.Context, input map[string]any) (string, bool) {
 	head := fmt.Sprintf("Found %d %s", len(rel), pluralFiles(len(rel)))
 	body := head + "\n" + strings.Join(rel, "\n")
 	if truncated {
-		body += "\n(Results truncated at 100. Use a more specific pattern or path.)"
+		body += fmt.Sprintf("\n(Results truncated at %d. Use a more specific pattern or path.)", defaultGlobLimit)
 	}
 	return body, false
 }

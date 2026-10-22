@@ -3,7 +3,6 @@ package agentui
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,24 +63,11 @@ func Open(
 	sessionID string,
 	forceResume bool,
 ) error {
-	stdin, stdinPiped, err := readProgramStdin()
-	if err != nil {
-		return err
-	}
-	_, err = openProgram(openProgramConfig{
-		providerName: providerName,
-		provider:     provider,
-		modelID:      modelID,
-		cfgPath:      cfgPath,
-		stdin:        stdin,
-		stdinPiped:   stdinPiped,
-		sessionID:    sessionID,
-		forceResume:  forceResume,
-	})
-	return err
+	return OpenWithPrompt(providerName, provider, modelID, cfgPath, "", sessionID, forceResume)
 }
 
-// OpenWithPrompt launches the agent TUI and submits an initial prompt.
+// OpenWithPrompt launches the agent TUI and submits an initial prompt. An empty
+// prompt just opens the TUI.
 func OpenWithPrompt(
 	providerName string,
 	provider provider.AgentClient,
@@ -179,26 +165,20 @@ func OpenShellWidget(
 }
 
 func readProgramStdin() (string, bool, error) {
-	stdinPiped := !tty.IsTerminal(os.Stdin)
-	if stdinPiped {
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return "", false, fmt.Errorf("reading stdin: %w", err)
-		}
-		return strings.TrimRight(string(data), "\n"), true, nil
+	text, piped, err := tty.ReadPiped(os.Stdin)
+	if err != nil {
+		return "", false, fmt.Errorf("reading stdin: %w", err)
 	}
-	return "", false, nil
+	return text, piped, nil
 }
 
 func openProgram(cfg openProgramConfig) (string, error) {
-
 	// Determine program input. When stdin is piped we need to reopen the TTY
 	// so bubbletea can receive keyboard events. Mouse capture (for viewport
 	// wheel scrolling and selection) is requested per-frame via View.MouseMode
 	// in v2, not as a program option.
 	var programOpts []tea.ProgramOption
 	outputFile := os.Stdout
-	// Queried before NewProgram so the DSR reply doesn't end up in bubbletea's input queue.
 	inputFile := os.Stdin
 
 	if cfg.programInput != nil {
@@ -218,7 +198,8 @@ func openProgram(cfg openProgramConfig) (string, error) {
 		programOpts = append(programOpts, tea.WithInput(ttyFile))
 	}
 
-	// -1 = unknown; the model falls back to bottom-anchoring.
+	// Queried before NewProgram so the DSR reply doesn't end up in bubbletea's
+	// input queue. -1 = unknown; the model falls back to bottom-anchoring.
 	initialCursorRow := -1
 	if row, err := tty.QueryCursorRow(inputFile, outputFile); err == nil {
 		initialCursorRow = row
@@ -230,51 +211,18 @@ func openProgram(cfg openProgramConfig) (string, error) {
 	// bubbletea's input queue.
 	hasDarkBg := lipgloss.HasDarkBackground(inputFile, outputFile)
 
-	themeName := theme.DefaultName
-	var llmJudge bool
-	var shellContext bool
-	var closeKey string
-	var autoResume bool
-	suggestions := true
-	var effort string
-	var configDir string
-	if cfg.cfgPath != "" {
-		cfgFile, exists, err := config.LoadConfig(cfg.cfgPath)
-		if err == nil && exists {
-			themeName = theme.Normalize(cfgFile.Settings.Theme)
-			llmJudge = config.ResolveBoolSetting(cfgFile, "llm_judge")
-			closeKey = cfgFile.Settings.Keybinding
-			autoResume = config.ResolveBoolSetting(cfgFile, "auto_resume")
-			suggestions = config.ResolveBoolSetting(cfgFile, "suggestions")
-			shellContext = config.ResolveBoolSetting(cfgFile, "shell_context")
-			effort = cfgFile.Providers[cfg.providerName].Effort
-		}
-		configDir = filepath.Dir(cfg.cfgPath)
-	}
-
-	// Set up persistent history and session stores.
-	var promptHistory *history.PromptHistory
-	var sessionStore *history.SessionStore
-	var exchangeLog *history.ExchangeLog
-	if configDir != "" {
-		promptHistory = history.NewPromptHistory(configDir)
-		promptHistory.Load() //nolint:errcheck // Empty or unreadable history should not block the TUI.
-
-		sessionStore = history.NewSessionStore(configDir)
-		sessionStore.PruneOld()
-
-		exchangeLog = history.NewExchangeLog(configDir)
-	}
+	settings := loadTUISettings(cfg.cfgPath, cfg.providerName)
+	stores := openStores(cfg.cfgPath)
 
 	// Load prior session if requested.
 	var initialSession *history.Session
-	if cfg.sessionID != "" && sessionStore != nil && (autoResume || cfg.forceResume) {
-		if s, ok, err := sessionStore.Load(cfg.sessionID); err == nil && ok {
+	if cfg.sessionID != "" && stores.sessions != nil && (settings.autoResume || cfg.forceResume) {
+		if s, ok, err := stores.sessions.Load(cfg.sessionID); err == nil && ok {
 			initialSession = &s
 		}
 	}
 
-	env := envcontext.Detect(context.Background(), envcontext.Options{ShellHistory: shellContext})
+	env := envcontext.Detect(context.Background(), envcontext.Options{ShellHistory: settings.shellContext})
 	system, toolDefs := cfg.mode.systemAndTools(env)
 	m := newModel(modelConfig{
 		providerName:     cfg.providerName,
@@ -283,11 +231,11 @@ func openProgram(cfg openProgramConfig) (string, error) {
 		mode:             cfg.mode,
 		system:           system,
 		toolDefs:         toolDefs,
-		llmJudge:         llmJudge,
-		suggestions:      suggestions,
-		effort:           effort,
-		themeName:        themeName,
-		closeKey:         closeKey,
+		llmJudge:         settings.llmJudge,
+		suggestions:      settings.suggestions,
+		effort:           settings.effort,
+		themeName:        settings.themeName,
+		closeKey:         settings.closeKey,
 		hasDarkBg:        hasDarkBg,
 		stdin:            cfg.stdin,
 		initialDraft:     cfg.initialDraft,
@@ -295,9 +243,9 @@ func openProgram(cfg openProgramConfig) (string, error) {
 		initialSession:   initialSession,
 		cfgPath:          cfg.cfgPath,
 		sessionID:        cfg.sessionID,
-		promptHistory:    promptHistory,
-		sessionStore:     sessionStore,
-		exchanges:        exchangeLog,
+		promptHistory:    stores.prompts,
+		sessionStore:     stores.sessions,
+		exchanges:        stores.exchanges,
 		initialCursorRow: initialCursorRow,
 	})
 
@@ -305,12 +253,12 @@ func openProgram(cfg openProgramConfig) (string, error) {
 	// terminal-selectable) inside the TUI — stderr text is wiped by the alt-screen.
 	if cfg.cfgPath != "" {
 		if warnings := config.CheckConfigWarnings(cfg.cfgPath); len(warnings) > 0 {
-			m.thread = append(m.thread, SystemEntry{
+			m.appendThreadEntries(SystemEntry{
 				Content: "Config warnings:\n" + strings.Join(warnings, "\n"),
 			})
 		}
 		if notice := config.EnvOnlyNotice(cfg.cfgPath); notice != "" {
-			m.thread = append(m.thread, SystemEntry{Content: notice})
+			m.appendThreadEntries(SystemEntry{Content: notice})
 		}
 	}
 
@@ -323,4 +271,66 @@ func openProgram(cfg openProgramConfig) (string, error) {
 		return model.exitShellCommand(), nil
 	}
 	return "", nil
+}
+
+// tuiSettings are the config-file settings the TUI reads at startup.
+type tuiSettings struct {
+	themeName    string
+	llmJudge     bool
+	shellContext bool
+	closeKey     string
+	autoResume   bool
+	suggestions  bool
+	effort       string
+}
+
+// loadTUISettings reads the startup settings from the config file. With no
+// config path, or a config file that is missing or unreadable, the defaults
+// stand: the default theme and suggestions on, everything else off or empty.
+func loadTUISettings(cfgPath, providerName string) tuiSettings {
+	s := tuiSettings{themeName: theme.DefaultName, suggestions: true}
+	if cfgPath == "" {
+		return s
+	}
+	cfgFile, exists, err := config.LoadConfig(cfgPath)
+	if err != nil || !exists {
+		return s
+	}
+	s.themeName = theme.Normalize(cfgFile.Settings.Theme)
+	s.llmJudge = config.ResolveBoolSetting(cfgFile, "llm_judge")
+	s.closeKey = cfgFile.Settings.Keybinding
+	s.autoResume = config.ResolveBoolSetting(cfgFile, "auto_resume")
+	s.suggestions = config.ResolveBoolSetting(cfgFile, "suggestions")
+	s.shellContext = config.ResolveBoolSetting(cfgFile, "shell_context")
+	s.effort = cfgFile.Providers[providerName].Effort
+	return s
+}
+
+// tuiStores are the persistent prompt history, session store and exchange log,
+// kept beside the config file. All nil when there is no config path.
+type tuiStores struct {
+	prompts   *history.PromptHistory
+	sessions  *history.SessionStore
+	exchanges *history.ExchangeLog
+}
+
+// openStores opens the persistent stores in the config file's directory,
+// loading prompt history and pruning old sessions as it goes.
+func openStores(cfgPath string) tuiStores {
+	if cfgPath == "" {
+		return tuiStores{}
+	}
+	configDir := filepath.Dir(cfgPath)
+
+	prompts := history.NewPromptHistory(configDir)
+	prompts.Load() //nolint:errcheck // Empty or unreadable history should not block the TUI.
+
+	sessions := history.NewSessionStore(configDir)
+	sessions.PruneOld()
+
+	return tuiStores{
+		prompts:   prompts,
+		sessions:  sessions,
+		exchanges: history.NewExchangeLog(configDir),
+	}
 }

@@ -9,7 +9,6 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
@@ -56,7 +55,7 @@ func TestTrimContextLeavesMessagesWithinLimitUntouched(t *testing.T) {
 func TestHandleThinkingKeyEscInterruptsRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			ctx:              ctx,
 			cancel:           cancel,
 			activeGeneration: 7,
@@ -90,7 +89,7 @@ func TestHandleThinkingKeyEscInterruptsRequest(t *testing.T) {
 
 func TestHandleResponseEventIgnoresStaleResponse(t *testing.T) {
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			activeGeneration: 2,
 			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
@@ -99,7 +98,7 @@ func TestHandleResponseEventIgnoresStaleResponse(t *testing.T) {
 
 	gotModel, _ := m.handleGenerationMsg(generationMsg{
 		generation: 1,
-		msg:        agent.ResponseEvent{Resp: &provider.ChatResponse{Content: "stale"}},
+		msg:        responseEvent{Resp: &provider.ChatResponse{Content: "stale"}},
 	})
 	got := gotModel.(Model)
 
@@ -113,7 +112,7 @@ func TestHandleResponseEventIgnoresStaleResponse(t *testing.T) {
 
 func TestHandleResponseEventIgnoresCanceledActiveRequest(t *testing.T) {
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			activeGeneration: 3,
 			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
@@ -122,7 +121,7 @@ func TestHandleResponseEventIgnoresCanceledActiveRequest(t *testing.T) {
 
 	gotModel, _ := m.handleGenerationMsg(generationMsg{
 		generation: 3,
-		msg:        agent.ResponseEvent{Err: context.Canceled},
+		msg:        responseEvent{Err: context.Canceled},
 	})
 	got := gotModel.(Model)
 
@@ -136,7 +135,7 @@ func TestHandleResponseEventIgnoresCanceledActiveRequest(t *testing.T) {
 
 func TestHandleToolExecutedEventIgnoresStaleGeneration(t *testing.T) {
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			activeGeneration: 2,
 			vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
@@ -144,7 +143,7 @@ func TestHandleToolExecutedEventIgnoresStaleGeneration(t *testing.T) {
 
 	gotModel, _ := m.handleGenerationMsg(generationMsg{
 		generation: 1,
-		msg: agent.ToolExecutedEvent{
+		msg: toolExecutedEvent{
 			ToolCall: provider.ToolCall{Name: "bash", Input: map[string]any{"command": "echo stale"}},
 			Result:   provider.ToolResult{ToolCallID: "1", Content: "stale"},
 		},
@@ -163,7 +162,7 @@ func TestHandleInitialPromptSubmitsPrompt(t *testing.T) {
 	defer suggestionCancel()
 
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			ctx:              ctx,
 			cancel:           cancel,
 			suggestionCtx:    suggestionCtx,
@@ -197,7 +196,7 @@ func TestHandleInitialPromptSubmitsPrompt(t *testing.T) {
 
 func TestHandleIdleKeyTabAcceptsSuggestion(t *testing.T) {
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			suggestion: "run the tests",
 			input:      textarea.New(),
 			vp:         viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
@@ -251,13 +250,13 @@ func TestShouldFilterSuggestion(t *testing.T) {
 
 func TestHandleRespondEventStoresShellCommand(t *testing.T) {
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			vp: viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 		},
 		state: stateThinking,
 	}
 
-	gotModel, _ := m.handleRespondEvent(agent.RespondEvent{
+	gotModel, _ := m.handleRespondEvent(respondEvent{
 		Content: "go test ./...",
 	})
 	got := gotModel.(Model)
@@ -274,7 +273,7 @@ func TestSubmitMessageClearsPendingShellCommand(t *testing.T) {
 	defer suggestionCancel()
 
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			ctx:              ctx,
 			cancel:           cancel,
 			suggestionCtx:    suggestionCtx,
@@ -296,14 +295,14 @@ func TestSubmitMessageClearsPendingShellCommand(t *testing.T) {
 
 func TestHandleResponseEventWithoutToolsClearsShellCommand(t *testing.T) {
 	m := Model{
-		shell: shell{
+		sharedState: sharedState{
 			vp:           viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
 			shellCommand: "go test ./...",
 		},
 		state: stateThinking,
 	}
 
-	gotModel, _ := m.handleResponseEvent(agent.ResponseEvent{
+	gotModel, _ := m.handleResponseEvent(responseEvent{
 		Resp: &provider.ChatResponse{Content: "plain text"},
 	})
 	got := gotModel.(Model)

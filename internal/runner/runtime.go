@@ -3,9 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
-	"strings"
 
 	"charm.land/glamour/v2"
 
@@ -23,71 +21,56 @@ type runtimeContext struct {
 	providerName string
 	modelID      string
 	llmJudge     bool
-	providerCfg  config.ProviderConfig
-	isTTY        bool
-	env          envcontext.Context
+	// effort is the provider's configured effort, before model defaults are
+	// applied; see config.EffectiveEffort.
+	effort string
+	// cfgPath is the config file in use; the exchange log lives beside it.
+	cfgPath string
+	isTTY   bool
+	env     envcontext.Context
 }
 
 // appendPromptStdin appends piped stdin to the prompt. A terminal stdin or an
 // empty pipe leaves the prompt untouched.
 func appendPromptStdin(prompt string) (string, error) {
-	if tty.IsTerminal(os.Stdin) {
-		return prompt, nil
-	}
-
-	stdin, err := io.ReadAll(os.Stdin)
+	stdin, piped, err := tty.ReadPiped(os.Stdin)
 	if err != nil {
 		return "", fmt.Errorf("reading stdin: %w", err)
 	}
-	if len(stdin) == 0 {
+	if !piped || stdin == "" {
 		return prompt, nil
 	}
-	return prompt + "\n\n" + strings.TrimRight(string(stdin), "\n"), nil
+	return prompt + "\n\n" + stdin, nil
 }
 
-func writeRenderedText(text string, isTTY bool) {
-	if isTTY {
-		rendered, err := glamour.Render(text, "auto")
-		if err == nil {
+// writeFinalOutput prints a final agent response. Commands go out raw so they
+// can be piped or pasted; text is rendered as markdown on a terminal, falling
+// back to plain text if rendering fails.
+func writeFinalOutput(output agent.FinalResponse, isTTY bool) {
+	if output.Type != "command" && isTTY {
+		if rendered, err := glamour.Render(output.Content, "auto"); err == nil {
 			fmt.Print(rendered)
 			return
 		}
 	}
-	fmt.Println(text)
+	fmt.Println(output.Content)
 }
 
-// writeFinalOutput prints a final agent response. Commands go out raw so they
-// can be piped or pasted; text is rendered as markdown on a terminal.
-func writeFinalOutput(output agent.FinalResponse, isTTY bool) error {
-	if output.Type == "command" {
-		fmt.Println(output.Content)
-		return nil
-	}
-	writeRenderedText(output.Content, isTTY)
-	return nil
-}
-
-// resolveRuntime loads config and returns the client, model, output mode, and
-// llm_judge setting for this invocation.
+// resolveRuntime loads config and returns the client, model, settings and
+// detected environment for this invocation.
 func resolveRuntime() (runtimeContext, error) {
-	cfgPath, err := config.DefaultConfigPath()
+	rt, err := config.LoadRuntime()
 	if err != nil {
 		return runtimeContext{}, err
 	}
-	cfg, rc, err := config.LoadAndResolve(cfgPath)
-	if err != nil {
-		return runtimeContext{}, err
-	}
-	client, err := config.NewClientFromResolved(rc)
-	if err != nil {
-		return runtimeContext{}, err
-	}
+	cfg, rc := rt.File, rt.Resolved
 	return runtimeContext{
-		client:       client,
+		client:       rt.Client,
 		providerName: rc.ProviderName,
 		modelID:      rc.Model,
 		llmJudge:     config.ResolveBoolSetting(cfg, "llm_judge"),
-		providerCfg:  cfg.Providers[rc.ProviderName],
+		effort:       cfg.Providers[rc.ProviderName].Effort,
+		cfgPath:      rt.Path,
 		isTTY:        tty.IsTerminal(os.Stdout),
 		env:          envcontext.Detect(context.Background(), envcontext.Options{ShellHistory: config.ResolveBoolSetting(cfg, "shell_context")}),
 	}, nil

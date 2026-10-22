@@ -1,6 +1,13 @@
 package agentui
 
-import "strings"
+import (
+	"strings"
+
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/matteo-psnt/termwise/internal/theme"
+)
 
 // popupHeight is the maximum number of terminal lines the TUI occupies.
 // Inline mode (no alt screen) renders in place, so we cap the height to
@@ -40,28 +47,33 @@ func (m Model) inputRowHeight() int {
 
 // totalViewHeight returns the total row count of the View() output for the
 // current state: header(1) + viewport + sep(1) + input + sep(1) + bottom.
-// The bottom region is the status line normally, or the slash dropdown when
-// it's visible.
+// The bottom region is the status line normally, or a completion dropdown
+// when one is visible.
 func (m Model) totalViewHeight() int {
 	_, vpH := m.viewportDims()
 	bottomH := 1 // status line
 	if m.state == stateIdle {
 		if matches, _ := m.visibleDropdown(); len(matches) > 0 {
-			bottomH = min(len(matches), slashDropdownMaxRows)
+			bottomH = min(len(matches), dropdownMaxRows)
 		}
 	}
 	return 3 + vpH + m.inputRowHeight() + bottomH
 }
 
 // viewportDims calculates viewport dimensions from terminal size.
+//
+// The height reserves five fixed rows — header, separator, one input row,
+// separator, status — whatever the current state. The input section is often
+// taller (multi-line input, pickers, command boxes) and so can the bottom row
+// be (an open dropdown); the block then grows past the popup height rather
+// than the viewport shrinking. totalViewHeight measures the real height.
 func (m Model) viewportDims() (width, height int) {
-	// Layout: header(1) | viewport | sep(1) | input(1) | sep(1) | status(1)
 	innerW := max(m.width, 10)
 	h := popupHeight
 	if m.height > 0 && m.height < h {
 		h = m.height
 	}
-	innerH := max(h-5, 3) // header(1) + sep(1) + input(1) + sep(1) + status(1)
+	innerH := max(h-5, 3)
 	return innerW, innerH
 }
 
@@ -83,10 +95,40 @@ func (m *Model) refreshViewport() {
 func (m Model) emptyStateHint() string {
 	dim := m.renderer.styles.ActionHints
 	key := m.renderer.styles.HelpKey
-	if m.mode == modeExplain {
+	if m.sessionMode == modeExplain {
 		return dim.Render("  What command should I explain? Paste it below.")
 	}
 	return dim.Render("  Ready. Ask anything, or type ") +
 		key.Render("/") +
 		dim.Render(" for commands.")
+}
+
+func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	m.width = msg.Width
+	m.height = msg.Height
+	vpW, vpH := m.viewportDims()
+	if !m.ready {
+		m.vp = viewport.New(viewport.WithWidth(vpW), viewport.WithHeight(vpH))
+		m.ready = true
+	} else {
+		m.vp.SetWidth(vpW)
+		m.vp.SetHeight(vpH)
+	}
+	m.input.SetWidth(vpW - 4)
+	// glamour fixes the wrap width when the renderer is built, so a resize needs
+	// a new one or the thread keeps wrapping to the old terminal.
+	m.renderer = newRenderer(m.hasDarkBg, theme.Get(m.themeName), m.renderWidth())
+	m.refreshViewport()
+	return m, nil
+}
+
+// renderWidth is the column budget for rendered markdown: the viewport, less
+// the gutter the thread indents entries by. Zero before the first
+// WindowSizeMsg, which glamour reads as "do not wrap yet".
+func (m Model) renderWidth() int {
+	vpW, _ := m.viewportDims()
+	if vpW <= threadGutter {
+		return 0
+	}
+	return vpW - threadGutter
 }

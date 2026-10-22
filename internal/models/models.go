@@ -10,9 +10,10 @@ import (
 
 // ModelData holds metadata for a single model.
 type ModelData struct {
-	ID               string  `yaml:"id"`
-	Name             string  `yaml:"name"`
-	Context          int     `yaml:"context"`      // tokens
+	ID      string `yaml:"id"`
+	Name    string `yaml:"name"`
+	Context int    `yaml:"context"` // tokens
+	// InputPrice, OutputPrice and SupportsTools are catalog data not yet read.
 	InputPrice       float64 `yaml:"input_price"`  // per 1M tokens
 	OutputPrice      float64 `yaml:"output_price"` // per 1M tokens
 	SupportsTools    bool    `yaml:"supports_tools"`

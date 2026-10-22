@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/matteo-psnt/termwise/internal/cliname"
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 // Validate checks a FileConfig for structural correctness without making any
@@ -30,7 +31,7 @@ func Validate(cfg FileConfig) []string {
 	if !isKnownProvider(cfg.SelectedProvider) {
 		errs = append(errs, fmt.Sprintf(
 			"unknown provider %q\n  Supported: %s",
-			cfg.SelectedProvider, strings.Join(ProviderNames(), ", "),
+			cfg.SelectedProvider, strings.Join(provider.Names(), ", "),
 		))
 	}
 
@@ -47,9 +48,9 @@ func Validate(cfg FileConfig) []string {
 	return errs
 }
 
-// ValidateForRuntime joins validation errors into a single error suitable for
+// validateForRuntime joins validation errors into a single error suitable for
 // display at startup. Returns nil when valid.
-func ValidateForRuntime(cfg FileConfig) error {
+func validateForRuntime(cfg FileConfig) error {
 	errs := Validate(cfg)
 	if len(errs) == 0 {
 		return nil
@@ -62,16 +63,12 @@ func validateProviderConfig(name string, pc ProviderConfig) []string {
 
 	if pc.Model == "" {
 		errs = append(errs, fmt.Sprintf(
-			"missing model in [providers.%s]\n  Run: %s config model set <model>",
+			"missing model in [providers.%s]\n  Run `%s config model set <model>`",
 			name, cliname.Name(),
 		))
 	}
 
-	method := pc.Auth
-	if method == "" {
-		method = "env"
-	}
-	switch method {
+	switch method := pc.AuthMethod(); method {
 	case "env", "cmd", "keychain":
 		// valid
 	default:

@@ -31,8 +31,8 @@ func NeedsApproval(command string) bool {
 // ApprovalReason explains, in one phrase, why a command needs confirmation,
 // naming the part that triggered it. Returns "" when no approval is needed.
 //
-// NeedsApproval already computes this; discarding it left the approval prompt
-// unable to say anything beyond "run command?".
+// NeedsApproval is derived from this; exposing the reason lets the approval
+// prompt say more than "run command?".
 func ApprovalReason(command string) string {
 	return engine().approvalReason(command)
 }
@@ -45,23 +45,11 @@ func newRuleEngine(rules []Rule) *ruleEngine {
 	}
 }
 
+// needsApproval is defined by approvalReason so the decision and the reason
+// shown in the approval prompt cannot drift apart. Every rejecting path in
+// approvalReason returns a non-empty reason; "" means every segment matched.
 func (e *ruleEngine) needsApproval(command string) bool {
-	command = strings.TrimSpace(command)
-	if command == "" {
-		return true
-	}
-
-	segments, err := e.parseCommand(command)
-	if err != nil {
-		return true
-	}
-
-	for _, seg := range segments {
-		if !e.matchesBuiltin(seg) {
-			return true
-		}
-	}
-	return false
+	return e.approvalReason(command) != ""
 }
 
 func (e *ruleEngine) approvalReason(command string) string {

@@ -8,6 +8,14 @@ func (m *Model) cancelHistoryNav() {
 	m.histDraft = ""
 }
 
+// rememberPrompt adds text to the persistent prompt history. Best-effort: a
+// failed write must not get in the way of sending the message.
+func (m Model) rememberPrompt(text string) {
+	if m.promptHistory != nil {
+		_ = m.promptHistory.Push(text)
+	}
+}
+
 // historyBack moves one step older in prompt history.
 func (m Model) historyBack() Model {
 	if m.promptHistory == nil {

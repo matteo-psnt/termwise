@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 // ---------------------------------------------------------------------------
@@ -508,7 +510,7 @@ func assertEqual(t *testing.T, label, want, got string) {
 }
 
 func TestEnvOnlyNotice(t *testing.T) {
-	for _, p := range ProviderInfos() {
+	for _, p := range provider.Catalog() {
 		if p.DefaultEnvVar != "" {
 			t.Setenv(p.DefaultEnvVar, "")
 		}
@@ -599,5 +601,32 @@ func TestEnvOverrideRejectsUnknownProvider(t *testing.T) {
 	path := writeConfig(t, `selected_provider = "anthropic"`)
 	if _, _, err := LoadAndResolve(path); err == nil || !strings.Contains(err.Error(), EnvProvider) {
 		t.Errorf("err = %v, want it to name %s", err, EnvProvider)
+	}
+}
+
+func TestAuthMethodDefaultsToEnv(t *testing.T) {
+	for auth, want := range map[string]string{"": "env", "env": "env", "cmd": "cmd", "keychain": "keychain"} {
+		if got := (ProviderConfig{Auth: auth}).AuthMethod(); got != want {
+			t.Errorf("AuthMethod() with Auth=%q = %q, want %q", auth, got, want)
+		}
+	}
+}
+
+func TestShortenHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	tests := map[string]string{
+		home:                            "~",
+		home + "/":                      "~",
+		filepath.Join(home, ".zshrc"):   "~/.zshrc",
+		filepath.Join(home, "..dotdot"): "~/..dotdot", // a name starting with "..", still under $HOME
+		home + "x/.zshrc":               home + "x/.zshrc",
+		filepath.Dir(home):              filepath.Dir(home),
+		"relative/path":                 "relative/path",
+	}
+	for in, want := range tests {
+		if got := ShortenHome(in); got != want {
+			t.Errorf("ShortenHome(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

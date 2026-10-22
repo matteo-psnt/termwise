@@ -11,13 +11,8 @@ import (
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
-// toParams builds ChatCompletionNewParams for Complete calls (no reasoning effort).
-func toParams(model, system string, messages []openai.ChatCompletionMessageParamUnion, tools []openai.ChatCompletionToolParam) openai.ChatCompletionNewParams {
-	return toParamsWithEffort(model, system, messages, tools, "")
-}
-
-// toParamsWithEffort builds ChatCompletionNewParams and sets reasoning_effort when provided.
-func toParamsWithEffort(model, system string, messages []openai.ChatCompletionMessageParamUnion, tools []openai.ChatCompletionToolParam, effort string) openai.ChatCompletionNewParams {
+// toParams builds ChatCompletionNewParams and sets reasoning_effort when provided.
+func toParams(model, system string, messages []openai.ChatCompletionMessageParamUnion, tools []openai.ChatCompletionToolParam, effort string) openai.ChatCompletionNewParams {
 	p := openai.ChatCompletionNewParams{
 		Model:    model,
 		Messages: messages,
@@ -113,22 +108,7 @@ func toToolParams(tools []provider.ToolDef) []openai.ChatCompletionToolParam {
 	return out
 }
 
-// fromResponse extracts content and usage from a non-streaming chat completion.
-// Used for Complete (single-shot) calls.
-func fromResponse(msg *openai.ChatCompletion) *provider.CompleteResponse {
-	var content string
-	if len(msg.Choices) > 0 {
-		content = msg.Choices[0].Message.Content
-	}
-	return &provider.CompleteResponse{
-		Content:      content,
-		InputTokens:  int(msg.Usage.PromptTokens),
-		OutputTokens: int(msg.Usage.CompletionTokens),
-	}
-}
-
 // fromChatResponse extracts content, tool calls, stop reason, and usage.
-// Used for Chat (agent) calls.
 func fromChatResponse(msg *openai.ChatCompletion) (*provider.ChatResponse, error) {
 	resp := &provider.ChatResponse{
 		InputTokens:  int(msg.Usage.PromptTokens),
@@ -141,7 +121,7 @@ func fromChatResponse(msg *openai.ChatCompletion) (*provider.ChatResponse, error
 	resp.StopReason = choice.FinishReason
 	resp.Content = choice.Message.Content
 	for _, tc := range choice.Message.ToolCalls {
-		input, err := parseToolInput(tc.Function.Arguments)
+		input, err := provider.ParseToolInput([]byte(tc.Function.Arguments))
 		if err != nil {
 			return nil, fmt.Errorf("parse tool input for %q: %w", tc.Function.Name, err)
 		}
@@ -152,17 +132,6 @@ func fromChatResponse(msg *openai.ChatCompletion) (*provider.ChatResponse, error
 		})
 	}
 	return resp, nil
-}
-
-func parseToolInput(args string) (map[string]any, error) {
-	if args == "" {
-		return map[string]any{}, nil
-	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(args), &m); err != nil {
-		return nil, err
-	}
-	return m, nil
 }
 
 // filterModels applies per-provider filtering to remove noisy/irrelevant models.

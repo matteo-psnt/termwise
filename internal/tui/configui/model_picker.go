@@ -10,12 +10,14 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/matteo-psnt/termwise/internal/config"
+	"github.com/matteo-psnt/termwise/internal/models"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
 
 type modelPickerModel struct {
 	styles   configStyles
 	spin     spinner.Model
+	height   int // screen height, to size the scrolling list
 	provider string
 	pc       config.ProviderConfig
 	current  string // pre-select this model ID after load
@@ -29,12 +31,13 @@ type modelPickerModel struct {
 	cancelled bool
 }
 
-func newModelPicker(provider string, pc config.ProviderConfig, current string, styles configStyles) modelPickerModel {
+func newModelPicker(provider string, pc config.ProviderConfig, current string, height int, styles configStyles) modelPickerModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	return modelPickerModel{
 		styles:   styles,
 		spin:     sp,
+		height:   height,
 		provider: provider,
 		pc:       pc,
 		current:  current,
@@ -60,28 +63,18 @@ func (m modelPickerModel) Update(msg tea.Msg) (modelPickerModel, tea.Cmd) {
 			return m, nil
 		}
 		m.models = msg.models
-		m.cursor = 0
-		for i, mod := range m.models {
-			if mod.ID == m.current {
-				m.cursor = i
-				break
-			}
-		}
+		m.cursor = modelIndex(m.models, m.current)
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
+		if c, ok := moveListCursor(msg.String(), m.cursor, len(m.models)); ok {
+			m.cursor = c
+			return m, nil
+		}
 		switch msg.String() {
 		case "esc", "b":
 			m.cancelled = true
 			m.done = true
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-		case "down", "j":
-			if m.cursor < len(m.models)-1 {
-				m.cursor++
-			}
 		case "enter", " ":
 			if !m.loading && m.err == "" && len(m.models) > 0 {
 				m.selected = m.models[m.cursor].ID
@@ -105,13 +98,7 @@ func (m modelPickerModel) View() string {
 		b.WriteString(m.styles.Dim.Render("esc back"))
 		return b.String()
 	}
-	for i, mod := range m.models {
-		if i == m.cursor {
-			b.WriteString(m.styles.Selected.Render("▶ "+mod.ID) + "\n")
-		} else {
-			b.WriteString("  " + mod.ID + "\n")
-		}
-	}
+	b.WriteString(renderModelList(m.styles, m.models, m.cursor, m.height, ""))
 	b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back"))
 	return b.String()
 }
@@ -122,10 +109,61 @@ func (m modelPickerModel) fetchCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		models, err := config.ListProviderModels(ctx, provider, pc)
+		list, err := config.ListProviderModels(ctx, provider, pc)
 		if err != nil {
-			return editorModelsMsg{providerName: provider, err: fmt.Errorf("listing models: %w", err)}
+			return editorModelsMsg{err: fmt.Errorf("listing models: %w", err)}
 		}
-		return editorModelsMsg{providerName: provider, models: models}
+		return editorModelsMsg{models: list}
 	}
+}
+
+// renderModelList renders the rows of a model list that fit on a screen
+// height rows tall, scrolled to keep cursor visible, with markers for what is
+// cut off. The model whose ID is recommended gets a badge.
+func renderModelList(styles configStyles, list []provider.Model, cursor, height int, recommended string) string {
+	var b strings.Builder
+	start, end := listWindow(len(list), cursor, modelRows(height))
+	if start > 0 {
+		b.WriteString(styles.Dim.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
+	}
+	for i := start; i < end; i++ {
+		id := list[i].ID
+		badge := ""
+		if id == recommended {
+			badge = styles.Dim.Render("  (recommended)")
+		}
+		b.WriteString(renderListRow(styles, i == cursor, id, badge) + "\n")
+	}
+	if end < len(list) {
+		b.WriteString(styles.Dim.Render(fmt.Sprintf("  ↓ %d more", len(list)-end)) + "\n")
+	}
+	return b.String()
+}
+
+// defaultModelIndex returns the position of the provider's recommended model
+// in list, or 0 when the provider did not return it.
+func defaultModelIndex(providerName string, list []provider.Model) int {
+	return modelIndex(list, models.DefaultModel(providerName))
+}
+
+// modelIndex returns the position of the model with the given ID in list, or
+// 0 when it isn't there.
+func modelIndex(list []provider.Model, id string) int {
+	for i, mod := range list {
+		if mod.ID == id {
+			return i
+		}
+	}
+	return 0
+}
+
+// modelRows is how many model rows fit in a box on a screen height rows tall.
+// The rest of the screen is title, prompt, scroll markers, help line and the
+// box's own border; the wizard and the editor's picker lay these out alike.
+func modelRows(height int) int {
+	const chrome = 14
+	if height <= 0 {
+		return 15
+	}
+	return max(height-chrome, 5)
 }

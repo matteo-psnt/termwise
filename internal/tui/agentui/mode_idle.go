@@ -13,15 +13,15 @@ import (
 // always-on slash dropdown by leading with "/".
 type idleMode struct{}
 
-// idleKeys are the discrete command keys for idle. They carry no label: the
-// idle help overlay is hand-written (it lists informational rows like "/" that
-// aren't bindings), so these never render. Tab and plain typing are not in the
-// table because they need the raw msg; they're handled as residual cases.
 // maxInputRows caps how tall the prompt input grows before it scrolls
 // internally. Multi-line input is entered with Shift+Enter, Alt+Enter, or a
 // trailing backslash before Enter.
 const maxInputRows = 10
 
+// idleKeys are the discrete command keys for idle. They carry no label: the
+// idle help overlay is hand-written (it lists informational rows like "/" that
+// aren't bindings), so these never render. Tab and plain typing are not in the
+// table because they need the raw msg; they're handled as residual cases.
 var idleKeys = append(keymap{
 	{keys: []string{"enter"}, run: Model.submitCurrentInput},
 	{keys: []string{"shift+enter", "alt+enter"}, run: Model.insertInputNewline},
@@ -61,8 +61,8 @@ func (m Model) idleDown() (tea.Model, tea.Cmd) {
 }
 
 // inputCursorAtEnd reports whether the cursor sits at the very end of the input
-// text (last line, end of that line). Used by the slash dropdown to decide
-// whether Right accepts a completion or just moves the cursor.
+// text (last line, end of that line). Used by the completion dropdowns to
+// decide whether Right accepts a completion or just moves the cursor.
 func (m Model) inputCursorAtEnd() bool {
 	onLastLine := m.input.Line() == strings.Count(m.input.Value(), "\n")
 	li := m.input.LineInfo()
@@ -116,6 +116,10 @@ func (idleMode) handleKey(m Model, msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m.updateInputAndResetCompletions(msg)
 }
 
+// escDoubleTapWindow is how soon a second Esc must follow the first to clear
+// the input.
+const escDoubleTapWindow = 500 * time.Millisecond
+
 // idleEsc implements the two-tap Esc gesture: the first Esc arms a 500ms timer
 // (shown in the status line), a second Esc within the window stashes the draft
 // to history and clears the input.
@@ -123,25 +127,21 @@ func (m Model) idleEsc() (tea.Model, tea.Cmd) {
 	if m.input.Value() == "" {
 		return m, nil
 	}
-	if !m.lastEscAt.IsZero() && time.Since(m.lastEscAt) < 500*time.Millisecond {
+	if !m.lastEscAt.IsZero() && time.Since(m.lastEscAt) < escDoubleTapWindow {
 		text := m.input.Value()
 		m.input.SetValue("")
 		m.input.CursorEnd()
 		m.lastEscAt = time.Time{}
-		if m.promptHistory != nil {
-			_ = m.promptHistory.Push(text)
-		}
+		m.rememberPrompt(text)
 		return m, nil
 	}
 	m.lastEscAt = time.Now()
-	return m, tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
+	return m, tea.Tick(escDoubleTapWindow, func(time.Time) tea.Msg {
 		return escTimeoutMsg{}
 	})
 }
 
 func (idleMode) renderInputRow(m Model, _ int) string {
-	input := m.input
-	input.Placeholder = ""
 	prompt := m.renderer.styles.InputPrompt.Render(" › ")
 
 	// Inline ghost suggestion is hidden while the dropdown is visible — the
@@ -160,7 +160,7 @@ func (idleMode) renderInputRow(m Model, _ int) string {
 	// pushed past the edge and wrap. The prompt prefixes the first line;
 	// continuation lines align under the text.
 	indent := strings.Repeat(" ", lipgloss.Width(prompt))
-	lines := strings.Split(input.View(), "\n")
+	lines := strings.Split(m.input.View(), "\n")
 	for i, ln := range lines {
 		ln = strings.TrimRight(ln, " ")
 		if i == 0 {
@@ -186,52 +186,4 @@ func (idleMode) helpBindings(_ Model) []binding {
 		{"/", "slash commands (/help)"},
 		{"@", "complete a file path"},
 	}
-}
-
-// renderSlashDropdown renders the slash-command match list below the input
-// row. The selected row uses the accent color; the other rows are faint to
-// keep the dropdown unobtrusive. Scrolls a windowed view when matches exceed
-// slashDropdownMaxRows.
-const slashDropdownMaxRows = 5
-
-func (m Model) renderSlashDropdown(matches []slashMatch, cursor int) string {
-	start := 0
-	end := len(matches)
-	if end > slashDropdownMaxRows {
-		if cursor >= slashDropdownMaxRows {
-			start = cursor - slashDropdownMaxRows + 1
-		}
-		end = start + slashDropdownMaxRows
-		if end > len(matches) {
-			end = len(matches)
-			start = end - slashDropdownMaxRows
-		}
-	}
-	visible := matches[start:end]
-
-	labelW := 0
-	for _, mt := range visible {
-		if w := lipgloss.Width(mt.Label); w > labelW {
-			labelW = w
-		}
-	}
-
-	var b strings.Builder
-	for i, mt := range visible {
-		var labelOut string
-		if start+i == cursor {
-			labelOut = m.renderer.styles.InputPrompt.Render(mt.Label)
-		} else {
-			labelOut = m.renderer.styles.ActionHints.Render(mt.Label)
-		}
-		b.WriteString(labelOut)
-		if mt.Description != "" {
-			pad := max(labelW-lipgloss.Width(mt.Label)+2, 1)
-			b.WriteString(strings.Repeat(" ", pad) + m.renderer.styles.ActionHints.Render(mt.Description))
-		}
-		if i < len(visible)-1 {
-			b.WriteString("\n")
-		}
-	}
-	return b.String()
 }

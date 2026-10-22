@@ -2,7 +2,6 @@ package configui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -35,10 +34,7 @@ type authEditorModel struct {
 	method       string
 
 	// value entry
-	input    textinput.Model
-	label    string
-	hint     string
-	fallback string
+	input    authInput
 	inputErr string
 
 	// result
@@ -51,13 +47,7 @@ func newAuthEditor(provider string, pc config.ProviderConfig, isActive bool, con
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
-	ti := textinput.New()
-	ti.CharLimit = 256
-
-	cur := pc.Auth
-	if cur == "" {
-		cur = "env"
-	}
+	cur := pc.AuthMethod()
 	methodCursor := 0
 	for i, am := range authMethods {
 		if am.id == cur {
@@ -69,7 +59,7 @@ func newAuthEditor(provider string, pc config.ProviderConfig, isActive bool, con
 	m := authEditorModel{
 		styles:       styles,
 		spin:         sp,
-		input:        ti,
+		input:        newAuthInput(),
 		provider:     provider,
 		existing:     pc,
 		isActive:     isActive,
@@ -107,7 +97,7 @@ func (m authEditorModel) Update(msg tea.Msg) (authEditorModel, tea.Cmd) {
 		if m.step != authStepVerify {
 			return m, nil
 		}
-		if !msg.ok {
+		if msg.err != nil {
 			m.inputErr = msg.err.Error()
 			m.input.Focus()
 			m.step = authStepEnterValue
@@ -128,31 +118,24 @@ func (m authEditorModel) Update(msg tea.Msg) (authEditorModel, tea.Cmd) {
 
 	if m.step == authStepEnterValue {
 		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
+		m.input.Model, cmd = m.input.Update(msg)
 		return m, cmd
 	}
 	return m, nil
 }
 
 func (m authEditorModel) handlePickMethod(msg tea.KeyPressMsg) (authEditorModel, tea.Cmd) {
+	if c, ok := moveListCursor(msg.String(), m.methodCursor, len(authMethods)); ok {
+		m.methodCursor = c
+		return m, nil
+	}
 	switch msg.String() {
 	case "esc", "b":
 		m.cancelled = true
 		m.done = true
-	case "up", "k":
-		if m.methodCursor > 0 {
-			m.methodCursor--
-		}
-	case "down", "j":
-		if m.methodCursor < len(authMethods)-1 {
-			m.methodCursor++
-		}
 	case "enter", " ":
 		selected := authMethods[m.methodCursor].id
-		existingAuth := m.existing.Auth
-		if existingAuth == "" {
-			existingAuth = "env"
-		}
+		existingAuth := m.existing.AuthMethod()
 		// Already on this method and provider is connected — nothing to do.
 		if selected == existingAuth && m.isActive && m.connOK {
 			m.cancelled = true
@@ -191,8 +174,7 @@ func (m authEditorModel) handleEnterValue(msg tea.KeyPressMsg) (authEditorModel,
 			m.step = authStepPickMethod
 		}
 	case "enter":
-		val := strings.TrimSpace(m.input.Value())
-		if val == "" && m.fallback == "" {
+		if m.input.missing() {
 			m.inputErr = "value cannot be empty"
 			return m, nil
 		}
@@ -202,72 +184,50 @@ func (m authEditorModel) handleEnterValue(msg tea.KeyPressMsg) (authEditorModel,
 		return m, tea.Batch(m.spin.Tick, m.verifyCmd())
 	default:
 		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
+		m.input.Model, cmd = m.input.Update(msg)
 		return m, cmd
 	}
 	return m, nil
 }
 
-// setupInput populates the textinput from buildAuthInputConfig and restores
-// any existing configured value.
+// setupInput sets the input up for m.method, restoring any existing
+// configured value. A stored API key is never read back.
 func (m *authEditorModel) setupInput() {
-	cfg := buildAuthInputConfig(m.provider, m.method)
-	m.label = cfg.Label
-	m.hint = cfg.Hint
-	m.fallback = cfg.Fallback
-	m.input.Placeholder = cfg.Placeholder
-	m.input.EchoMode = cfg.EchoMode
-
+	var initial string
 	switch {
 	case providerpkg.HasNoAuth(m.provider):
-		m.input.SetValue(m.existing.BaseURL)
+		initial = m.existing.BaseURL
 	case m.method == "env":
-		m.input.SetValue(m.existing.EnvVar)
+		initial = m.existing.EnvVar
 	case m.method == "cmd":
-		m.input.SetValue(m.existing.APIKeyCmd)
-	default:
-		m.input.SetValue("")
+		initial = m.existing.APIKeyCmd
 	}
+	m.input.setup(m.provider, m.method, initial)
 	m.inputErr = ""
-	m.input.Focus()
 }
 
 // buildResult constructs the ProviderConfig from the current input state.
 func (m authEditorModel) buildResult() config.ProviderConfig {
-	if m.method == "keychain" {
-		return config.ProviderConfig{
-			Auth:          "keychain",
-			KeychainEntry: config.DefaultKeychainEntry(m.provider),
-		}
-	}
-	return buildProviderConfigFromAuthInput(m.provider, m.method, m.input.Value(), m.fallback)
+	return buildProviderConfigFromAuthInput(m.provider, m.method, m.input.Value(), m.input.fallback)
 }
 
 func (m authEditorModel) verifyCmd() tea.Cmd {
 	provider := m.provider
 	method := m.method
 	inputVal := m.input.Value()
-	fallback := m.fallback
+	fallback := m.input.fallback
 
 	return func() tea.Msg {
-		var pc config.ProviderConfig
-		if method == "keychain" {
-			if err := config.StoreKeychain(provider, inputVal); err != nil {
-				return editorAuthMsg{providerName: provider, ok: false, err: fmt.Errorf("keychain write: %w", err)}
-			}
-			pc = config.ProviderConfig{
-				Auth:          "keychain",
-				KeychainEntry: config.DefaultKeychainEntry(provider),
-			}
-		} else {
-			pc = buildProviderConfigFromAuthInput(provider, method, inputVal, fallback)
+		pc, err := prepareProviderConfig(provider, method, inputVal, fallback)
+		if err != nil {
+			return editorAuthMsg{err: err}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := config.CheckProviderConnectivity(ctx, provider, pc); err != nil {
-			return editorAuthMsg{providerName: provider, ok: false, err: err}
+			return editorAuthMsg{err: err}
 		}
-		return editorAuthMsg{providerName: provider, ok: true}
+		return editorAuthMsg{}
 	}
 }
 
@@ -286,27 +246,14 @@ func (m authEditorModel) View() string {
 func (m authEditorModel) viewPickMethod() string {
 	var b strings.Builder
 	b.WriteString("Auth method for " + m.styles.Title.Render(m.provider) + ":\n\n")
-	cur := m.existing.Auth
-	if cur == "" {
-		cur = "env"
-	}
+	cur := m.existing.AuthMethod()
 	b.WriteString(renderAuthMethodRows(m.provider, m.methodCursor, cur, false, m.styles))
 	b.WriteString("\n" + m.styles.Dim.Render("↑/↓ move   enter select   esc back"))
 	return b.String()
 }
 
 func (m authEditorModel) viewEnterValue() string {
-	var b strings.Builder
-	b.WriteString(m.label + ":\n\n")
-	b.WriteString(m.input.View() + "\n")
-	if m.hint != "" {
-		b.WriteString("\n" + m.styles.Hint.Render(m.hint))
-	}
-	if m.inputErr != "" {
-		b.WriteString("\n\n" + m.styles.Error.Render("Error: "+m.inputErr))
-	}
-	b.WriteString("\n\n" + m.styles.Dim.Render("enter verify & save   esc back"))
-	return b.String()
+	return m.input.view(m.styles, m.inputErr, "enter verify & save   esc back")
 }
 
 func (m authEditorModel) viewVerify() string {

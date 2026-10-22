@@ -94,11 +94,7 @@ func renderAuthMethodRows(providerName string, cursor int, currentMethod string,
 		if showDetected && a.id == "env" && envVarDetected(providerName) {
 			badges += "  " + styles.Success.Render("●")
 		}
-		if i == cursor {
-			b.WriteString(styles.Selected.Render("▶ "+a.label) + badges + "\n")
-		} else {
-			b.WriteString(styles.Normal.Render("  "+a.label) + badges + "\n")
-		}
+		b.WriteString(renderListRow(styles, i == cursor, a.label, badges) + "\n")
 	}
 	return b.String()
 }

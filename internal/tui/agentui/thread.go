@@ -69,6 +69,10 @@ type ThreadEntry interface {
 	render(r Renderer) string
 }
 
+func (m *Model) appendThreadEntries(entries ...ThreadEntry) {
+	m.thread = append(m.thread, entries...)
+}
+
 // threadGutter is the width every thread entry is indented by — the "◆ " or
 // "› " symbol and the hanging indent that lines continuation up under it. Wrap
 // width has to account for it or wrapped lines overrun the pane by exactly this
@@ -79,7 +83,7 @@ const threadGutter = 2
 type UserEntry struct{ Content string }
 
 func (e UserEntry) render(r Renderer) string {
-	return r.styles.UserSymbol.Render("› ") + hangingIndent(e.Content, 2)
+	return r.styles.UserSymbol.Render("› ") + hangingIndent(e.Content, threadGutter)
 }
 
 // AssistantEntry is text output from the model (direct or via the respond tool).
@@ -87,7 +91,7 @@ type AssistantEntry struct{ Content string }
 
 func (e AssistantEntry) render(r Renderer) string {
 	text := strings.TrimLeft(renderMarkdown(e.Content, r.glamour), "\n")
-	return r.styles.TWSymbol.Render("◆ ") + hangingIndent(text, 2)
+	return r.styles.TWSymbol.Render("◆ ") + hangingIndent(text, threadGutter)
 }
 
 // Tool call/result visual conventions:
@@ -102,7 +106,6 @@ func (e AssistantEntry) render(r Renderer) string {
 // the result corner glyph sits at column 2 and continuation lines align under
 // the corner's content (column 5) so the result nests visibly beneath.
 const (
-	toolCallPrefix       = ""
 	toolResultPrefix     = "  "
 	toolResultContPrefix = "     "
 	maxDisplayLines      = 5
@@ -121,7 +124,7 @@ func (e ToolCallEntry) render(r Renderer) string {
 	if e.Detail != "" {
 		body = name + r.styles.ToolCall.Render("("+e.Detail+")")
 	}
-	return toolCallPrefix + icon + body
+	return icon + body
 }
 
 // ToolResultEntry shows the output of a tool call.
@@ -172,7 +175,7 @@ func (e CommandEntry) render(r Renderer) string {
 type ErrorEntry struct{ Content string }
 
 func (e ErrorEntry) render(r Renderer) string {
-	return r.styles.Error.Render("Error: " + hangingIndent(e.Content, 2))
+	return r.styles.Error.Render("Error: " + hangingIndent(e.Content, threadGutter))
 }
 
 // SystemEntry is an informational message from termwise itself
@@ -180,7 +183,7 @@ func (e ErrorEntry) render(r Renderer) string {
 type SystemEntry struct{ Content string }
 
 func (e SystemEntry) render(r Renderer) string {
-	return r.styles.ActionHints.Render(hangingIndent(e.Content, 2))
+	return r.styles.ActionHints.Render(hangingIndent(e.Content, threadGutter))
 }
 
 // hangingIndent prefixes every line after the first with `width` spaces, so

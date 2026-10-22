@@ -1,7 +1,12 @@
+// Package theme defines the named color palettes shared by the TUIs. It holds
+// only hex strings, never lipgloss styles, so config and other non-UI code can
+// validate and list themes without pulling in a rendering dependency.
 package theme
 
 import "strings"
 
+// DefaultName is the palette used when no theme is configured or the
+// configured one is unknown.
 const DefaultName = "default"
 
 // Color is a light/dark hex pair. The concrete color is chosen at render time
@@ -10,6 +15,15 @@ const DefaultName = "default"
 type Color struct {
 	Light string
 	Dark  string
+}
+
+// Pick returns the Dark value on a dark background and the Light value
+// otherwise.
+func (c Color) Pick(dark bool) string {
+	if dark {
+		return c.Dark
+	}
+	return c.Light
 }
 
 // Palette defines the shared color roles used by the TUIs.
@@ -71,6 +85,8 @@ var palettes = []Palette{
 	},
 }
 
+// Normalize lowercases and trims a theme name, so config values match however
+// they were typed. An empty name means DefaultName.
 func Normalize(name string) string {
 	name = strings.TrimSpace(strings.ToLower(name))
 	if name == "" {
@@ -79,6 +95,9 @@ func Normalize(name string) string {
 	return name
 }
 
+// IsValid reports whether name, once normalized, names a known palette. Get
+// never fails, so callers that must reject a bad name (config validation)
+// check here first.
 func IsValid(name string) bool {
 	name = Normalize(name)
 	for _, p := range palettes {
@@ -89,6 +108,7 @@ func IsValid(name string) bool {
 	return false
 }
 
+// Names returns the palette names in display order.
 func Names() []string {
 	names := make([]string, 0, len(palettes))
 	for _, p := range palettes {
@@ -97,10 +117,15 @@ func Names() []string {
 	return names
 }
 
+// Label returns the display label for name, or the default palette's label if
+// name is unknown.
 func Label(name string) string {
 	return Get(name).Label
 }
 
+// Get returns the palette for name. An unknown name falls back to the default
+// palette rather than failing: a stale or mistyped theme in the config file
+// should not stop the UI from starting.
 func Get(name string) Palette {
 	name = Normalize(name)
 	for _, p := range palettes {
@@ -111,6 +136,8 @@ func Get(name string) Palette {
 	return palettes[0]
 }
 
+// All returns every palette in display order. The slice is a copy, so callers
+// cannot modify the built-in palettes.
 func All() []Palette {
 	out := make([]Palette, len(palettes))
 	copy(out, palettes)

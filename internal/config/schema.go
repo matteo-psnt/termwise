@@ -27,6 +27,15 @@ type ProviderConfig struct {
 	Effort string `toml:"effort,omitempty"`
 }
 
+// AuthMethod returns how the API key is resolved — "env", "cmd" or
+// "keychain" — with the empty default spelled out as "env".
+func (pc ProviderConfig) AuthMethod() string {
+	if pc.Auth == "" {
+		return "env"
+	}
+	return pc.Auth
+}
+
 // SettingsConfig holds all user-facing preferences in a single flat block.
 // Boolean settings use *bool so nil (never written) is distinguishable from
 // an explicit false, allowing each setting to declare its own default.

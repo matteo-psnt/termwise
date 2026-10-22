@@ -138,7 +138,7 @@ func atModel(t *testing.T, value, cwd string, suggestion string) Model {
 	t.Cleanup(suggestionCancel)
 
 	return Model{
-		shell: shell{
+		sharedState: sharedState{
 			input:            ta,
 			cwd:              cwd,
 			suggestion:       suggestion,

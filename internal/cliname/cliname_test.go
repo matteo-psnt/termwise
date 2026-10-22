@@ -19,13 +19,14 @@ func TestName(t *testing.T) {
 	}
 }
 
-// The shell templates set the variable this package reads. If either side is
-// renamed without the other, every message quietly reverts to "termwise" for
-// users who do have the integration — which nothing else would catch.
+// The shell templates interpolate EnvVar, so they follow a rename, but shells
+// that are already open keep exporting the old name until the user starts a
+// new one. Until then every message quietly reverts to "termwise" for users
+// who do have the integration, so a rename should be deliberate.
 func TestShellTemplatesSetTheEnvVar(t *testing.T) {
 	// Kept as a literal so the test fails on a rename rather than following it.
 	const literal = "TERMWISE_INVOKED_AS"
 	if EnvVar != literal {
-		t.Fatalf("EnvVar = %q; the shell templates in cmd/termwise/initcmd.go set %q", EnvVar, literal)
+		t.Fatalf("EnvVar = %q; shells already running the integration set %q", EnvVar, literal)
 	}
 }

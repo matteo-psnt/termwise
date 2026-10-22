@@ -44,11 +44,6 @@ func (c hintingClient) ListModels(ctx context.Context) ([]provider.Model, error)
 	return ms, explainError(c.rc, err)
 }
 
-func (c hintingClient) Complete(ctx context.Context, req provider.CompleteRequest) (*provider.CompleteResponse, error) {
-	resp, err := c.AgentClient.Complete(ctx, req)
-	return resp, explainError(c.rc, err)
-}
-
 func (c hintingClient) Chat(ctx context.Context, req provider.ChatRequest) (*provider.ChatResponse, error) {
 	resp, err := c.AgentClient.Chat(ctx, req)
 	return resp, explainError(c.rc, err)
@@ -131,11 +126,4 @@ func unwrapNet(err error) error {
 		return dnsErr
 	}
 	return err
-}
-
-func displayName(name string) string {
-	if info, ok := provider.Lookup(name); ok {
-		return info.DisplayName
-	}
-	return name
 }

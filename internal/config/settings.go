@@ -31,7 +31,6 @@ type SettingDef struct {
 	Key         string // TOML key name (e.g. "auto_resume"), used in show output
 	Label       string // human-readable label (e.g. "Auto resume")
 	Description string // one-line explanation surfaced as inline help in the TUI
-	Group       string // optional group label — reserved for future sectioning
 	Kind        SettingKind
 	Options     []string // valid values for KindEnum; auto-used in Validate
 
@@ -114,9 +113,12 @@ func themeSetting() SettingDef {
 	}
 }
 
+// DefaultKeybinding is the shell hotkey that opens the agent when none is
+// configured, in the notation the keybinding setting stores.
+const DefaultKeybinding = "^T"
+
 // keybindingSetting builds the keybinding SettingDef.
 func keybindingSetting() SettingDef {
-	const defaultKB = "^T"
 	get := func(cfg FileConfig) string { return cfg.Settings.Keybinding }
 	return SettingDef{
 		Key:         "keybinding",
@@ -128,7 +130,7 @@ func keybindingSetting() SettingDef {
 			if v := get(cfg); v != "" {
 				return v
 			}
-			return defaultKB
+			return DefaultKeybinding
 		},
 		Set:    func(cfg *FileConfig, v string) { cfg.Settings.Keybinding = v },
 		GetAny: func(cfg FileConfig) any { return get(cfg) },

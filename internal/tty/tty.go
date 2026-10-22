@@ -1,3 +1,6 @@
+// Package tty holds the small terminal helpers shared by the CLI and the TUIs:
+// detecting a terminal, reading piped stdin, prompting for a secret without
+// echo, and asking the terminal where the cursor is.
 package tty
 
 import (
@@ -5,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/term"
@@ -13,6 +17,45 @@ import (
 // IsTerminal reports whether f is connected to a terminal.
 func IsTerminal(f *os.File) bool {
 	return term.IsTerminal(int(f.Fd()))
+}
+
+// ReadPiped reads all of f when it is not a terminal, with trailing newlines
+// trimmed, and reports true. A terminal is never read, so an interactive
+// stdin does not block waiting for EOF; it yields ("", false, nil).
+func ReadPiped(f *os.File) (string, bool, error) {
+	if IsTerminal(f) {
+		return "", false, nil
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return "", true, err
+	}
+	return strings.TrimRight(string(data), "\n"), true, nil
+}
+
+// ReadSecret reads one secret, such as an API key, from stdin. A piped stdin
+// is read whole, so scripts can supply it; on a terminal, prompt is written to
+// stderr (keeping stdout clean) and the input is read without echo. Surrounding
+// whitespace is trimmed, and an empty result is an error.
+func ReadSecret(prompt string) (string, error) {
+	var raw []byte
+	var err error
+	if IsTerminal(os.Stdin) {
+		fmt.Fprint(os.Stderr, prompt)
+		raw, err = term.ReadPassword(int(os.Stdin.Fd()))
+		// ReadPassword swallows the Enter, so end the prompt line ourselves.
+		fmt.Fprintln(os.Stderr)
+	} else {
+		raw, err = io.ReadAll(os.Stdin)
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading key: %w", err)
+	}
+	key := strings.TrimSpace(string(raw))
+	if key == "" {
+		return "", errors.New("no key given")
+	}
+	return key, nil
 }
 
 // QueryCursorRow returns the cursor's current 0-indexed row by sending DSR
@@ -37,10 +80,11 @@ func QueryCursorRow(in *os.File, out io.Writer) (int, error) {
 	_ = in.SetReadDeadline(deadline)
 	defer func() { _ = in.SetReadDeadline(time.Time{}) }()
 
-	// Reply: ESC[<row>;<col>R. Read byte-by-byte until 'R'.
-	var buf [32]byte
+	// Reply: ESC[<row>;<col>R. Read byte-by-byte until 'R', giving up after
+	// maxReply bytes, far more than any real reply needs.
+	const maxReply = 32
 	var got []byte
-	for len(got) < len(buf) {
+	for len(got) < maxReply {
 		var b [1]byte
 		n, err := in.Read(b[:])
 		if err != nil {

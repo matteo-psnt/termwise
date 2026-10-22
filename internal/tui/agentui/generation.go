@@ -6,7 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/agent/tools"
 	"github.com/matteo-psnt/termwise/internal/provider"
 )
@@ -17,10 +16,6 @@ import (
 type generationMsg struct {
 	generation uint64
 	msg        tea.Msg
-}
-
-func newGenerationContext() (context.Context, context.CancelFunc) {
-	return context.WithCancel(context.Background())
 }
 
 func newSuggestionContext() (context.Context, context.CancelFunc) {
@@ -83,13 +78,13 @@ func activityVerb(tool string) string {
 
 func (m *Model) resetGenerationContext() {
 	m.cancel()
-	m.ctx, m.cancel = newGenerationContext()
+	m.ctx, m.cancel = context.WithCancel(context.Background())
 }
 
 func (m *Model) startChat() tea.Cmd {
 	return tea.Batch(
 		m.spin.Tick,
-		m.wrapActiveGeneration(ChatCmd(m.ctx, m.provider, m.chatRequest())),
+		m.wrapActiveGeneration(chatCmd(m.ctx, m.provider, m.chatRequest())),
 	)
 }
 
@@ -117,17 +112,17 @@ func (m Model) handleGenerationMsg(msg generationMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch inner := msg.msg.(type) {
-	case agent.ResponseEvent:
+	case responseEvent:
 		return m.handleResponseEvent(inner)
-	case agent.ToolExecutedEvent:
+	case toolExecutedEvent:
 		return m.handleToolExecutedEvent(inner)
-	case agent.NeedsApprovalEvent:
+	case needsApprovalEvent:
 		return m.handleNeedsApprovalEvent(inner)
-	case agent.AskEvent:
+	case askEvent:
 		return m.handleAskEvent(inner)
-	case agent.RespondEvent:
+	case respondEvent:
 		return m.handleRespondEvent(inner)
-	case agent.AllToolsDoneEvent:
+	case allToolsDoneEvent:
 		return m.handleAllToolsDoneEvent(inner)
 	case judgmentMsg:
 		return m.handleJudgmentMsg(inner)

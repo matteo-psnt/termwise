@@ -21,9 +21,7 @@ it is given no tool to propose a command of its own.`,
 	Example: fmt.Sprintf("  %[1]s explain 'awk -F: \"{print \\$1}\" /etc/passwd'\n"+
 		"  %[1]s explain\n"+
 		"  fc -ln -1 | %[1]s explain", cliname.Name()),
-	Args: cobra.ArbitraryArgs,
-	// Explain always opens the TUI, so warnings go inline rather than to the
-	// stderr the alt-screen is about to wipe.
+	Args:          cobra.ArbitraryArgs,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -37,6 +35,9 @@ it is given no tool to propose a command of its own.`,
 			sessionID += "-explain"
 		}
 
+		// Explain always opens the TUI, so unlike ask it does not emit config
+		// warnings: they go inline rather than to the stderr the alt-screen is
+		// about to wipe.
 		rt, err := resolveTUIRuntimeOrSetup()
 		if err != nil {
 			return err

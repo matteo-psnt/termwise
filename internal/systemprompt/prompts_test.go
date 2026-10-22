@@ -47,11 +47,28 @@ func TestAgentHeadlessPromptAddsNonInteractiveRule(t *testing.T) {
 	}
 }
 
-func TestAskToolDescriptionCarriesWhenToUseGuidance(t *testing.T) {
-	// The "when to use ask" policy moved from the system prompt into the
-	// tool description, which the model sees per turn via the API.
-	if !strings.Contains(agenttools.AskDef.Description, "multiple valid paths") {
-		t.Fatalf("expected ask tool description to carry when-to-use guidance, got:\n%s", agenttools.AskDef.Description)
+// The explain prompt swaps commandRules and verifyRules for their explain
+// counterparts. If the agent rules leaked in, the model would be told to
+// propose commands through a tool the explain tool set does not have.
+func TestExplainPromptCarriesExplainRulesNotCommandRules(t *testing.T) {
+	p := Explain(agenttools.ExplainDefs, testEnv)
+	for _, want := range []string{
+		"explain a command the user already has",
+		"Verify before you explain:",
+		"Never guess what a flag does.",
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("explain prompt missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{
+		"use the command tool to propose it",
+		"Verify before you propose:",
+		"Before proposing an install",
+	} {
+		if strings.Contains(p, unwanted) {
+			t.Errorf("explain prompt should not carry agent rule %q", unwanted)
+		}
 	}
 }
 

@@ -28,7 +28,7 @@ func (m editorModel) renderInner() string {
 	case m.keybinding != nil:
 		return header + m.keybinding.View()
 	case m.themePicker != nil:
-		return header + m.themePicker.View()
+		return header + m.themePicker.View(m.styles, m.hasDarkBg)
 	case m.enumPicker != nil:
 		return header + m.enumPicker.View()
 	case m.addWizard != nil:
@@ -106,7 +106,7 @@ func (m editorModel) renderNormal() string {
 // "set active" hint disappears on the already-active provider.
 func (m editorModel) effectiveHint(row editorRow) string {
 	if row.kind == rowProvHeader && row.provider == m.cfg.SelectedProvider {
-		return "↑/↓ navigate   esc revert   q quit"
+		return navTail
 	}
 	return row.hint
 }
@@ -142,7 +142,8 @@ func (m editorModel) rowPrefix(focused bool) string {
 }
 
 // renderRow renders a labeled value row. label should already be padded/formatted
-// for display (e.g. "     Model   " for sub-rows, fmt.Sprintf("%-13s", ...) for settings).
+// for display (e.g. "     Model   " for sub-rows, or padded to settingLabelWidth
+// for settings).
 func (m editorModel) renderRow(b *strings.Builder, focused bool, label, value string) {
 	prefix := m.rowPrefix(focused)
 	if focused {

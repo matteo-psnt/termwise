@@ -6,7 +6,6 @@ import (
 
 	"charm.land/bubbles/v2/viewport"
 
-	"github.com/matteo-psnt/termwise/internal/agent"
 	"github.com/matteo-psnt/termwise/internal/provider"
 	"github.com/matteo-psnt/termwise/internal/theme"
 )
@@ -85,10 +84,10 @@ func TestGatedToolCallIsAnnouncedOnlyOnce(t *testing.T) {
 	m.renderer = testRenderer()
 	m.vp = viewport.New()
 
-	gotModel, _ := m.handleNeedsApprovalEvent(agent.NeedsApprovalEvent{ToolCall: tc, Command: "find src -name '*.js'"})
+	gotModel, _ := m.handleNeedsApprovalEvent(needsApprovalEvent{ToolCall: tc, Command: "find src -name '*.js'"})
 	m = gotModel.(Model)
 	m.llmJudge = false
-	gotModel, _ = m.handleToolExecutedEvent(agent.ToolExecutedEvent{
+	gotModel, _ = m.handleToolExecutedEvent(toolExecutedEvent{
 		ToolCall:     tc,
 		Result:       provider.ToolResult{ToolCallID: "1", Content: "src/server.js"},
 		AutoAccepted: false,
@@ -112,7 +111,7 @@ func TestAutoAcceptedToolCallIsAnnounced(t *testing.T) {
 	m.renderer = testRenderer()
 	m.vp = viewport.New()
 
-	gotModel, _ := m.handleToolExecutedEvent(agent.ToolExecutedEvent{
+	gotModel, _ := m.handleToolExecutedEvent(toolExecutedEvent{
 		ToolCall:     provider.ToolCall{ID: "1", Name: "read", Input: map[string]any{"path": "go.mod"}},
 		Result:       provider.ToolResult{ToolCallID: "1", Content: "module x"},
 		AutoAccepted: true,

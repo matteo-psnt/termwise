@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 )
 
 // ----------------------------------------------------------------------------
@@ -12,24 +14,6 @@ import (
 type Model struct {
 	ID          string // API identifier, e.g. "claude-haiku-4-5-20251001"
 	DisplayName string // human-readable, e.g. "Claude Haiku 4.5"
-}
-
-// ----------------------------------------------------------------------------
-// Single-shot types
-// ----------------------------------------------------------------------------
-
-// CompleteRequest is the input to Client.Complete.
-type CompleteRequest struct {
-	Model  string // model ID
-	System string // system prompt
-	Prompt string // user prompt (query + stdin already combined by caller)
-}
-
-// CompleteResponse is the output of Provider.Complete.
-type CompleteResponse struct {
-	Content      string // raw model response text
-	InputTokens  int
-	OutputTokens int
 }
 
 // ----------------------------------------------------------------------------
@@ -47,7 +31,7 @@ type Message struct {
 // ToolCall is a single tool invocation requested by the model.
 type ToolCall struct {
 	ID    string         // provider-assigned call ID
-	Name  string         // tool name: "bash", "read", "ask", "respond"
+	Name  string         // tool name, e.g. "bash", "read", "grep", "glob", "ask", "command"
 	Input map[string]any // parsed JSON input
 }
 
@@ -87,9 +71,12 @@ type ChatRequest struct {
 
 // ChatResponse is the output of AgentClient.Chat.
 type ChatResponse struct {
-	Content      string // bare text if model responded without tool calls
-	ToolCalls    []ToolCall
-	StopReason   string // "end_turn" or "tool_use"
+	Content   string // bare text if model responded without tool calls
+	ToolCalls []ToolCall
+	// StopReason is the provider's raw stop/finish reason, passed through
+	// unnormalised: Anthropic reports e.g. "end_turn" or "tool_use", OpenAI-
+	// compatible APIs e.g. "stop" or "tool_calls".
+	StopReason   string
 	InputTokens  int
 	OutputTokens int
 }
@@ -98,23 +85,15 @@ type ChatResponse struct {
 // Interfaces
 // ----------------------------------------------------------------------------
 
-// Client is the minimal interface for single-shot mode.
-type Client interface {
-	// Name returns the provider identifier (e.g. "anthropic").
-	Name() string
-
+// AgentClient is what every provider implements: the TUI, the headless path
+// and one-shot uses such as input suggestions all go through Chat. A one-shot
+// prompt is a ChatRequest with a single user message and no tools.
+type AgentClient interface {
 	// ListModels returns the models available from this provider.
 	ListModels(ctx context.Context) ([]Model, error)
 
-	// Complete sends a single prompt and returns the response.
-	Complete(ctx context.Context, req CompleteRequest) (*CompleteResponse, error)
-}
-
-// AgentClient extends Client with multi-turn conversation and tool use.
-// Used for agent mode (TUI). Both the Anthropic and OpenAI-compatible clients
-// implement this interface.
-type AgentClient interface {
-	Client
+	// Chat sends a conversation, with any tool definitions, and returns the
+	// model's next turn.
 	Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error)
 }
 
@@ -126,29 +105,23 @@ type Config struct {
 	BaseURL string // optional override; empty means use provider default
 }
 
-// ErrorKind categorises provider errors for the CLI/TUI layer.
-type ErrorKind int
+// ----------------------------------------------------------------------------
+// Helpers for client packages
+// ----------------------------------------------------------------------------
 
-const (
-	ErrAuth ErrorKind = iota
-	ErrRateLimit
-	ErrTimeout
-	ErrModelNotFound
-	ErrInputTooLarge
-	ErrProvider // catch-all
-)
+// DefaultRequestTimeout bounds each HTTP request a client makes.
+const DefaultRequestTimeout = 30 * time.Second
 
-// Error carries a user-facing reason and an underlying technical error.
-type Error struct {
-	Kind   ErrorKind
-	Reason string // shown to the user
-	Err    error  // underlying detail for debugging
-}
-
-func (e *Error) Error() string { return e.Reason }
-func (e *Error) Unwrap() error { return e.Err }
-
-// NewError is a convenience constructor used by client packages.
-func NewError(kind ErrorKind, reason string, err error) *Error {
-	return &Error{Kind: kind, Reason: reason, Err: err}
+// ParseToolInput unmarshals a tool call's raw JSON arguments into a map.
+// Empty input yields an empty map, since models may omit arguments for a
+// tool that takes none.
+func ParseToolInput(raw []byte) (map[string]any, error) {
+	if len(raw) == 0 {
+		return map[string]any{}, nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }

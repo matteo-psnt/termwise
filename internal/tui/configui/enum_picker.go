@@ -40,18 +40,14 @@ func (m enumPickerModel) Update(msg tea.Msg) (enumPickerModel, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if c, ok := moveListCursor(key.String(), m.cursor, len(m.options)); ok {
+		m.cursor = c
+		return m, nil
+	}
 	switch key.String() {
 	case "esc", "b":
 		m.cancelled = true
 		m.done = true
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case "down", "j":
-		if m.cursor < len(m.options)-1 {
-			m.cursor++
-		}
 	case "enter", " ":
 		m.result = m.options[m.cursor]
 		m.done = true
@@ -63,11 +59,7 @@ func (m enumPickerModel) View() string {
 	var b strings.Builder
 	b.WriteString(m.label + ":\n\n")
 	for i, opt := range m.options {
-		if i == m.cursor {
-			b.WriteString(m.styles.Selected.Render("▶ "+opt) + "\n")
-		} else {
-			b.WriteString("  " + opt + "\n")
-		}
+		b.WriteString(renderListRow(m.styles, i == m.cursor, opt, "") + "\n")
 	}
 	b.WriteString("\n" + m.styles.Dim.Render("↑/↓ navigate   enter select   esc cancel"))
 	return b.String()
