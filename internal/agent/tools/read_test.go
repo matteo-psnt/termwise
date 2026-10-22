@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -75,11 +76,58 @@ func TestReadCapsLongLines(t *testing.T) {
 func TestReadTruncationNamesNextOffset(t *testing.T) {
 	p := writeTemp(t, "a\nb\nc\nd\n")
 	out, _ := read(context.Background(), map[string]any{"path": p, "offset": float64(1), "limit": float64(2)})
-	if want := "b\nc\n[truncated — showing lines 2–3 of 4. Use offset=3 to read more.]"; out != want {
+	if want := "b\nc\n[truncated — showing lines 2–3; the file has more. Use offset=3 to read more.]"; out != want {
 		t.Fatalf("got %q, want %q", out, want)
 	}
 	next, _ := read(context.Background(), map[string]any{"path": p, "offset": float64(3)})
 	if next != "d" {
 		t.Fatalf("continuing at the named offset gave %q, want %q", next, "d")
+	}
+}
+
+// A huge log must cost only the lines asked for. The file is sparse, so it is
+// cheap to create (text first, so it is not taken for binary), but reading it
+// whole would allocate gigabytes.
+func TestReadStreamsHugeFile(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "huge.log")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(strings.Repeat("log line\n", 1000)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(4 << 30); err != nil {
+		t.Skip("cannot create a sparse file:", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	out, isErr := read(context.Background(), map[string]any{"path": p, "offset": float64(10), "limit": float64(5)})
+	runtime.ReadMemStats(&after)
+
+	want := strings.Repeat("log line\n", 5) + "[truncated — showing lines 11–15; the file has more. Use offset=15 to read more.]"
+	if isErr || out != want {
+		t.Fatalf("got (%q, %v), want %q", out, isErr, want)
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 8<<20 {
+		t.Fatalf("read allocated %d bytes for 5 lines", alloc)
+	}
+}
+
+func TestReadOffsetPastEndCountsLines(t *testing.T) {
+	out, _ := read(context.Background(), map[string]any{"path": writeTemp(t, "a\n\nb"), "offset": float64(5)})
+	if want := "[File has 3 lines; offset 5 is out of range]"; out != want {
+		t.Fatalf("got %q, want %q", out, want)
+	}
+}
+
+func TestReadBinaryFile(t *testing.T) {
+	out, _ := read(context.Background(), map[string]any{"path": writeTemp(t, "ab\x00cd\n")})
+	if !strings.HasPrefix(out, "[Binary file:") {
+		t.Fatalf("got %q", out)
 	}
 }
