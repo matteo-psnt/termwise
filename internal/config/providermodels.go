@@ -40,18 +40,11 @@ func CheckProviderConnectivity(ctx context.Context, name string, pc ProviderConf
 }
 
 func newProviderClientWithAuth(name string, pc ProviderConfig, auth ResolvedAuth) (provider.AgentClient, error) {
-	client, err := provider.NewClient(name, provider.Config{
-		APIKey:  auth.APIKey,
-		Model:   pc.Model,
-		BaseURL: auth.BaseURL,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return withErrorHints(client, ResolvedConfig{
+	return NewClientFromResolved(ResolvedConfig{
 		ProviderName: name,
 		Model:        pc.Model,
+		APIKey:       auth.APIKey,
 		BaseURL:      auth.BaseURL,
 		KeySource:    auth.Source,
-	}), nil
+	})
 }
