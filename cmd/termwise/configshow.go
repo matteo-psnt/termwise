@@ -232,10 +232,7 @@ func authSummary(providerName string, pc config.ProviderConfig) string {
 		if v == "" {
 			return "cmd (not set)"
 		}
-		if len(v) > 40 {
-			v = v[:37] + "..."
-		}
-		return "cmd (" + v + ")"
+		return "cmd (" + truncateRunes(v, 40) + ")"
 	case "keychain":
 		v := pc.KeychainEntry
 		if v == "" {
@@ -245,4 +242,15 @@ func authSummary(providerName string, pc config.ProviderConfig) string {
 	default:
 		return method
 	}
+}
+
+// truncateRunes shortens s to at most n runes, ending in "..." when cut. It
+// counts runes, not bytes, so a command with non-ASCII text is never cut
+// mid-character into invalid UTF-8.
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-3]) + "..."
 }

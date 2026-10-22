@@ -2,7 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
+	"unicode/utf8"
+
+	"github.com/matteo-psnt/termwise/internal/config"
 )
 
 // With no file the runtime runs from an API key in the environment, so
@@ -30,5 +34,17 @@ func TestShowJSONDescribesEnvOnlyConfig(t *testing.T) {
 	}
 	if auth := got.Providers["anthropic"].Auth; auth.Source != "ANTHROPIC_API_KEY" {
 		t.Errorf("auth source = %q, want ANTHROPIC_API_KEY", auth.Source)
+	}
+}
+
+func TestAuthSummaryTruncatesOnRuneBoundary(t *testing.T) {
+	// Two-byte runes throughout, so any odd byte offset splits one.
+	cmd := "pass show " + strings.Repeat("ключ", 10)
+	got := authSummary("openai", config.ProviderConfig{Auth: "cmd", APIKeyCmd: cmd})
+	if !utf8.ValidString(got) {
+		t.Errorf("authSummary = %q, not valid UTF-8", got)
+	}
+	if !strings.HasSuffix(got, "...)") {
+		t.Errorf("authSummary = %q, want it truncated", got)
 	}
 }
