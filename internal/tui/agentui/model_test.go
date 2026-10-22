@@ -539,3 +539,68 @@ func TestTrimContextClearsProviderStateOnlyWhenItTrims(t *testing.T) {
 		t.Error("ProviderState cleared although nothing was trimmed")
 	}
 }
+
+// The command tool ends the turn, and today the agent loop drops the calls
+// after it, so the next submit answers them with notRunResult. When the agent
+// package starts answering those calls itself, its results must be kept as
+// they are: one result per call, nothing duplicated or overwritten.
+func TestCommandToolResultsStayOnePerCall(t *testing.T) {
+	calls := []provider.ToolCall{
+		{ID: "cmd", Name: "command", Input: map[string]any{"content": "ls"}},
+		{ID: "read", Name: "read", Input: map[string]any{"path": "x"}},
+	}
+	for name, tc := range map[string]struct {
+		collected []provider.ToolResult
+		readWant  string
+	}{
+		"agent drops later calls": {
+			collected: []provider.ToolResult{{ToolCallID: "cmd", Content: "ok"}},
+			readWant:  notRunResult,
+		},
+		"agent answers later calls": {
+			collected: []provider.ToolResult{{ToolCallID: "cmd", Content: "ok"}, {ToolCallID: "read", Content: "file body"}},
+			readWant:  "file body",
+		},
+		"agent answers them first": {
+			collected: []provider.ToolResult{{ToolCallID: "read", Content: "file body"}, {ToolCallID: "cmd", Content: "ok"}},
+			readWant:  "file body",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			m := Model{
+				sharedState: sharedState{
+					ctx:              ctx,
+					cancel:           cancel,
+					suggestionCtx:    ctx,
+					suggestionCancel: func() {},
+					contextWindow:    32_000,
+					vp:               viewport.New(viewport.WithWidth(80), viewport.WithHeight(10)),
+					messages: []provider.Message{
+						{Role: "user", Content: "list files"},
+						{Role: "assistant", ToolCalls: calls},
+					},
+				},
+				state: stateThinking,
+			}
+			next, _ := m.handleRespondEvent(respondEvent{Content: "ls", Collected: tc.collected})
+			next, _ = next.(Model).submitMessage("thanks")
+			msgs := next.(Model).messages
+
+			if len(msgs) != 4 {
+				t.Fatalf("got %d messages, want prompt, calls, results, new prompt: %#v", len(msgs), msgs)
+			}
+			got := map[string][]string{}
+			for _, tr := range msgs[2].ToolResults {
+				got[tr.ToolCallID] = append(got[tr.ToolCallID], tr.Content)
+			}
+			if len(msgs[2].ToolResults) != 2 || len(got["cmd"]) != 1 || len(got["read"]) != 1 {
+				t.Fatalf("results = %#v, want exactly one for cmd and one for read", msgs[2].ToolResults)
+			}
+			if got["read"][0] != tc.readWant {
+				t.Errorf("read result = %q, want %q", got["read"][0], tc.readWant)
+			}
+		})
+	}
+}
