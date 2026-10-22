@@ -19,3 +19,12 @@ func TestWithAPIPath(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAIEffortCapsAtHigh(t *testing.T) {
+	for in, want := range map[string]string{"low": "low", "medium": "medium", "high": "high", "xhigh": "high", "max": "high"} {
+		p := toParams("m", "", nil, nil, in)
+		if got := string(p.ReasoningEffort); got != want {
+			t.Errorf("effort %q sent as %q, want %q", in, got, want)
+		}
+	}
+}

@@ -24,7 +24,7 @@ func toParams(model, system string, messages []openai.ChatCompletionMessageParam
 		p.Tools = tools
 	}
 	if effort != "" {
-		p.ReasoningEffort = shared.ReasoningEffort(effort)
+		p.ReasoningEffort = shared.ReasoningEffort(openAIEffort(effort))
 	}
 	return p
 }
@@ -159,4 +159,16 @@ func filterModels(providerName string, models []provider.Model) []provider.Model
 		}
 	}
 	return out
+}
+
+// openAIEffort maps termwise's effort scale onto reasoning_effort. termwise
+// shares one scale across providers, and Anthropic's goes above high (xhigh,
+// max); OpenAI-compatible APIs document low, medium and high, so the extra
+// levels are sent as high rather than risk a rejected request.
+func openAIEffort(effort string) string {
+	switch effort {
+	case "xhigh", "max":
+		return "high"
+	}
+	return effort
 }
