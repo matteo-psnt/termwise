@@ -104,3 +104,43 @@ func TestBashCommandHasNoControllingTerminal(t *testing.T) {
 		t.Errorf("command could open /dev/tty: %s", out)
 	}
 }
+
+func runBashResult(ctx context.Context, t *testing.T, command string) (bashResult, string, bool) {
+	t.Helper()
+	out, isErr := bash(ctx, map[string]any{"command": command})
+	var res bashResult
+	_ = json.Unmarshal([]byte(out), &res)
+	return res, out, isErr
+}
+
+// A command that succeeds but leaves a background child holding its output
+// is a success with the output it produced, not an error.
+func TestBashKeepsOutputWhenABackgroundChildOutlivesIt(t *testing.T) {
+	res, out, isErr := runBashResult(context.Background(), t, `echo hi; sleep 3 &`)
+	if isErr || res.ExitCode != 0 || strings.TrimSpace(res.Stdout) != "hi" {
+		t.Fatalf("got isErr=%v %s, want stdout hi and exit 0", isErr, out)
+	}
+}
+
+// Endless output is stopped at the cap instead of running until cancelled.
+func TestBashStopsACommandPastTheOutputCap(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	start := time.Now()
+	res, out, _ := runBashResult(ctx, t, `yes`)
+	if ctx.Err() != nil {
+		t.Fatal("yes ran until the test deadline instead of being stopped at the cap")
+	}
+	if len(res.Stdout) > maxBashOutputBytes+100 || !strings.Contains(res.Stderr, "64KB") {
+		t.Errorf("unexpected result after %v: %.200s", time.Since(start), out)
+	}
+}
+
+func TestBashReportsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { time.Sleep(200 * time.Millisecond); cancel() }()
+	_, out, isErr := runBashResult(ctx, t, `sleep 5`)
+	if !isErr || !strings.Contains(out, "cancelled") {
+		t.Errorf("cancelled command returned isErr=%v %q", isErr, out)
+	}
+}
