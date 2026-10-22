@@ -111,12 +111,25 @@ func (e *ruleEngine) matchesBuiltin(cmd parsedCommand) bool {
 	return false
 }
 
+// loadBuiltinRules parses the embedded rules. They are compiled in, so a
+// parse failure is a defect in the file, not something a user can cause or
+// fix. Returning no rules would fail closed but silently (every command would
+// suddenly need approval with no hint why), so panic and let the first test
+// run catch it, as internal/models does for its embedded catalog.
 func loadBuiltinRules() []Rule {
-	var f allowlistFile
-	if err := yaml.Unmarshal(builtinAllowlistYAML, &f); err != nil {
-		return nil
+	rules, err := parseRules(builtinAllowlistYAML)
+	if err != nil {
+		panic("embedded allowlist.yaml is malformed: " + err.Error())
 	}
-	return f.Rules
+	return rules
+}
+
+func parseRules(data []byte) ([]Rule, error) {
+	var f allowlistFile
+	if err := yaml.Unmarshal(data, &f); err != nil {
+		return nil, err
+	}
+	return f.Rules, nil
 }
 
 func (e *ruleEngine) ruleMetadata(command string) Rule {
