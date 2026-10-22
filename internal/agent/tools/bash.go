@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -73,13 +72,8 @@ func bash(ctx context.Context, input map[string]any) (string, bool) {
 		return "error: 'command' is required", true
 	}
 
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
-
 	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, shell, "-c", command)
+	cmd := exec.CommandContext(ctx, commandShell(), "-c", command)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -124,4 +118,17 @@ func truncateBashOutput(s string) string {
 		return s
 	}
 	return s[:maxBashOutputBytes] + "\n[output truncated — 64KB limit]"
+}
+
+// commandShell is the shell the bash tool runs commands in. It has to be the
+// language the allowlist parses (bash), not the user's $SHELL: the approval
+// decision is made on a bash reading of the text, and fish, nu or zsh can
+// read the same text differently, so a command judged read-only could do
+// something else when it runs. /bin/sh is the fallback on the rare system
+// with no bash; the parser's bash dialect is a superset of what it accepts.
+func commandShell() string {
+	if path, err := exec.LookPath("bash"); err == nil {
+		return path
+	}
+	return "/bin/sh"
 }

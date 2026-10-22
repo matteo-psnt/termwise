@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 )
@@ -48,5 +50,25 @@ func TestBashHonorsContextCancellation(t *testing.T) {
 	_, _ = bash(ctx, map[string]any{"command": "sleep 5"})
 	if time.Since(start) > time.Second {
 		t.Fatal("expected canceled bash command to return quickly")
+	}
+}
+
+// The allowlist judges commands as bash, so they must run in bash whatever
+// the user's login shell is.
+func TestBashRunsInBashNotUserShell(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not installed")
+	}
+	t.Setenv("SHELL", "/bin/false")
+	out, isErr := bash(context.Background(), map[string]any{"command": `echo "$BASH_VERSION"`})
+	if isErr {
+		t.Fatalf("bash tool failed: %s", out)
+	}
+	var res bashResult
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unexpected output %q: %v", out, err)
+	}
+	if strings.TrimSpace(res.Stdout) == "" {
+		t.Errorf("command did not run in bash: %+v", res)
 	}
 }
