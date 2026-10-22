@@ -79,6 +79,20 @@ func TestThinkingBlocksRoundTrip(t *testing.T) {
 	if rd := p.Content[1].OfRedactedThinking; rd == nil || rd.Data != "opaque-data" {
 		t.Fatalf("redacted thinking block not passed back unchanged: %+v", p.Content[1])
 	}
+	// The API verifies the signature against the block, so the wire form of
+	// each block must be exactly what was received.
+	for i, want := range []string{
+		`{"signature":"sig-abc","thinking":"let me look","type":"thinking"}`,
+		`{"data":"opaque-data","type":"redacted_thinking"}`,
+	} {
+		got, err := json.Marshal(p.Content[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != want {
+			t.Fatalf("block %d on the wire = %s, want %s", i, got, want)
+		}
+	}
 }
 
 func TestSessionWithoutProviderStateLoads(t *testing.T) {
