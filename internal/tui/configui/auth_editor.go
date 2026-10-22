@@ -26,8 +26,7 @@ type authEditorModel struct {
 	spin     spinner.Model
 	provider string
 	existing config.ProviderConfig
-	isActive bool // whether this is the active provider
-	connOK   bool // whether the provider is already verified
+	keychain *keychainJournal // the editor's; records a key written here
 
 	step         authStep
 	methodCursor int
@@ -43,7 +42,7 @@ type authEditorModel struct {
 	cancelled bool
 }
 
-func newAuthEditor(provider string, pc config.ProviderConfig, isActive bool, connOK bool, styles configStyles) authEditorModel {
+func newAuthEditor(provider string, pc config.ProviderConfig, keychain *keychainJournal, styles configStyles) authEditorModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
@@ -62,8 +61,7 @@ func newAuthEditor(provider string, pc config.ProviderConfig, isActive bool, con
 		input:        newAuthInput(),
 		provider:     provider,
 		existing:     pc,
-		isActive:     isActive,
-		connOK:       connOK,
+		keychain:     keychain,
 		methodCursor: methodCursor,
 	}
 
@@ -135,23 +133,13 @@ func (m authEditorModel) handlePickMethod(msg tea.KeyPressMsg) (authEditorModel,
 		m.done = true
 	case "enter", " ":
 		selected := authMethods[m.methodCursor].id
-		existingAuth := m.existing.AuthMethod()
-		// Already on this method and provider is connected — nothing to do.
-		if selected == existingAuth && m.isActive && m.connOK {
-			m.cancelled = true
-			m.done = true
-			return m, nil
-		}
 		m.method = selected
 		m.setupInput()
-		// Env var already detected — skip entry, go straight to verify.
-		if selected == "env" && envVarDetected(m.provider) {
-			m.input.Blur()
-			m.step = authStepVerify
-			return m, tea.Batch(m.spin.Tick, m.verifyCmd())
-		}
-		// Same non-keychain method: skip entry, re-verify immediately.
-		if selected == existingAuth && selected != "keychain" {
+		// Switching to env with the default var already set: nothing to
+		// type, so verify straight away. The current method always opens
+		// its value instead, prefilled (a key is never read back), since
+		// that is how its env var, command or key gets changed.
+		if selected != m.existing.AuthMethod() && selected == "env" && envVarDetected(m.provider) {
 			m.input.Blur()
 			m.step = authStepVerify
 			return m, tea.Batch(m.spin.Tick, m.verifyCmd())
@@ -223,11 +211,12 @@ func (m authEditorModel) verifyCmd() tea.Cmd {
 	provider := m.provider
 	inputVal := m.input.Value()
 	pc := m.buildResult()
+	journal := m.keychain
 
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_, err := listModelsFor(ctx, provider, pc, inputVal)
+		_, err := listModelsFor(ctx, provider, pc, inputVal, journal)
 		return editorAuthMsg{err: err}
 	}
 }

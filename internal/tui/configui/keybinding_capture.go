@@ -13,6 +13,7 @@ type keybindingModel struct {
 	current    string // displayed before capture
 	captured   string
 	confirming bool
+	refused    string // why the last key pressed can't be used; shown until the next key
 
 	result    string
 	done      bool
@@ -30,31 +31,34 @@ func (m keybindingModel) Update(msg tea.Msg) (keybindingModel, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if m.confirming {
-		switch key.String() {
-		case "esc":
-			m.cancelled = true
-			m.done = true
-		case "enter":
-			m.result = m.captured
-			m.done = true
-		default:
-			if binding, ok := keybinding.KeyMsgToZsh(key.Key()); ok {
-				m.captured = binding
-			}
-		}
-		return m, nil
-	}
+	m.refused = ""
 	switch key.String() {
 	case "esc":
 		m.cancelled = true
 		m.done = true
-	default:
-		if binding, ok := keybinding.KeyMsgToZsh(key.Key()); ok {
-			m.captured = binding
-			m.confirming = true
+		return m, nil
+	case "enter":
+		if m.confirming {
+			m.result = m.captured
+			m.done = true
+			return m, nil
 		}
 	}
+	binding, ok := keybinding.KeyMsgToZsh(key.Key())
+	if !ok {
+		return m, nil
+	}
+	// A reserved key would take over basic shell editing in every terminal
+	// once installed, so it is refused here rather than saved. Back in
+	// capture mode, enter can't confirm the key captured before it.
+	if reason, reserved := keybinding.Reserved(binding); reserved {
+		m.refused = keybinding.Label(binding) + " can't be used: " + reason
+		m.captured = ""
+		m.confirming = false
+		return m, nil
+	}
+	m.captured = binding
+	m.confirming = true
 	return m, nil
 }
 
@@ -68,6 +72,9 @@ func (m keybindingModel) View() string {
 	} else {
 		b.WriteString("Current: " + m.styles.Normal.Render(keybinding.Label(m.current)) + "\n\n")
 		b.WriteString("Press a key combination...\n")
+		if m.refused != "" {
+			b.WriteString("\n" + m.styles.Error.Render(m.refused) + "\n")
+		}
 		b.WriteString("\n" + m.styles.Dim.Render("esc cancel"))
 	}
 	return b.String()

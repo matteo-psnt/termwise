@@ -49,8 +49,9 @@ func buildProviderConfigFromAuthInput(providerName, method, inputVal, fallback s
 // listModelsFor lists the models available with pc, failing if there are
 // none. For keychain auth, apiKey is the key just typed in: it is tried
 // directly rather than read back from the keychain, and stored only once the
-// provider accepts it, so a mistyped key never replaces one that works.
-func listModelsFor(ctx context.Context, providerName string, pc config.ProviderConfig, apiKey string) ([]provider.Model, error) {
+// provider accepts it, so a mistyped key never replaces one that works. The
+// write goes through journal so an editor session can undo it.
+func listModelsFor(ctx context.Context, providerName string, pc config.ProviderConfig, apiKey string, journal *keychainJournal) ([]provider.Model, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if pc.AuthMethod() == "keychain" && apiKey == "" {
 		return nil, errors.New("API key cannot be empty")
@@ -69,7 +70,7 @@ func listModelsFor(ctx context.Context, providerName string, pc config.ProviderC
 		return nil, fmt.Errorf("no models returned by %s", providerName)
 	}
 	if pc.AuthMethod() == "keychain" {
-		if err := config.StoreKeychain(providerName, apiKey); err != nil {
+		if err := journal.store(providerName, apiKey); err != nil {
 			return nil, fmt.Errorf("keychain write: %w", err)
 		}
 	}

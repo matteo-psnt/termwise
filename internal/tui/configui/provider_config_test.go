@@ -83,14 +83,14 @@ func TestKeychainKeyStoredOnlyOnceVerified(t *testing.T) {
 	srv := fakeOpenAI(t, "sk-good")
 	pc := config.ProviderConfig{Auth: "keychain", KeychainEntry: config.DefaultKeychainEntry("openai"), BaseURL: srv.URL}
 
-	if _, err := listModelsFor(context.Background(), "openai", pc, "sk-bad"); err == nil {
+	if _, err := listModelsFor(context.Background(), "openai", pc, "sk-bad", nil); err == nil {
 		t.Fatal("bad key verified")
 	}
 	if got := stored(); got != "sk-old" {
 		t.Fatalf("keychain = %q after a rejected key, want the old key kept", got)
 	}
 
-	list, err := listModelsFor(context.Background(), "openai", pc, "sk-good")
+	list, err := listModelsFor(context.Background(), "openai", pc, "sk-good", nil)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("good key: %v, %v", list, err)
 	}
@@ -103,7 +103,7 @@ func TestAuthEditorBadKeyKeepsKeychain(t *testing.T) {
 	stored := mockKeychain(t, "sk-old")
 	srv := fakeOpenAI(t, "sk-good")
 	pc := config.ProviderConfig{Auth: "keychain", KeychainEntry: config.DefaultKeychainEntry("openai"), BaseURL: srv.URL}
-	m := newAuthEditor("openai", pc, false, false, newStylesForTheme(true, ""))
+	m := newAuthEditor("openai", pc, nil, newStylesForTheme(true, ""))
 
 	m = pressAuth(m, keyEnter) // keychain, the current method
 	m.input.SetValue("sk-bad")
@@ -125,13 +125,13 @@ func TestKeychainKeyTrimmedAndNeverBlank(t *testing.T) {
 	srv := fakeOpenAI(t, "sk-good")
 	pc := config.ProviderConfig{Auth: "keychain", KeychainEntry: config.DefaultKeychainEntry("openai"), BaseURL: srv.URL}
 
-	if _, err := listModelsFor(context.Background(), "openai", pc, "  \n"); err == nil {
+	if _, err := listModelsFor(context.Background(), "openai", pc, "  \n", nil); err == nil {
 		t.Error("blank key accepted")
 	}
 	if got := stored(); got != "sk-old" {
 		t.Fatalf("keychain = %q after a blank key, want the old key kept", got)
 	}
-	if _, err := listModelsFor(context.Background(), "openai", pc, " sk-good\n"); err != nil {
+	if _, err := listModelsFor(context.Background(), "openai", pc, " sk-good\n", nil); err != nil {
 		t.Fatalf("pasted key with whitespace: %v", err)
 	}
 	if got := stored(); got != "sk-good" {
