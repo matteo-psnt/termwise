@@ -24,10 +24,10 @@ type ResolvedConfig struct {
 	KeySource string
 }
 
-// Resolve derives a ResolvedConfig from a FileConfig.
+// resolveConfig derives a ResolvedConfig from a FileConfig.
 // It resolves auth credentials for the selected provider but makes no network
 // calls. Returns an error if the selected provider is missing or auth fails.
-func Resolve(cfg FileConfig) (ResolvedConfig, error) {
+func resolveConfig(cfg FileConfig) (ResolvedConfig, error) {
 	name := cfg.SelectedProvider
 	if name == "" {
 		return ResolvedConfig{}, fmt.Errorf("no provider selected — run `%s config` to set up", cliname.Name())
@@ -76,10 +76,10 @@ func LoadAndResolve(path string) (FileConfig, ResolvedConfig, error) {
 	if err := applyEnvOverrides(&cfg); err != nil {
 		return FileConfig{}, ResolvedConfig{}, err
 	}
-	if err := ValidateForRuntime(cfg); err != nil {
+	if err := validateForRuntime(cfg); err != nil {
 		return FileConfig{}, ResolvedConfig{}, err
 	}
-	rc, err := Resolve(cfg)
+	rc, err := resolveConfig(cfg)
 	return cfg, rc, err
 }
 

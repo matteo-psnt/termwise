@@ -31,7 +31,6 @@ type SettingDef struct {
 	Key         string // TOML key name (e.g. "auto_resume"), used in show output
 	Label       string // human-readable label (e.g. "Auto resume")
 	Description string // one-line explanation surfaced as inline help in the TUI
-	Group       string // optional group label — reserved for future sectioning
 	Kind        SettingKind
 	Options     []string // valid values for KindEnum; auto-used in Validate
 

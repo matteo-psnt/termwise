@@ -47,9 +47,9 @@ func Validate(cfg FileConfig) []string {
 	return errs
 }
 
-// ValidateForRuntime joins validation errors into a single error suitable for
+// validateForRuntime joins validation errors into a single error suitable for
 // display at startup. Returns nil when valid.
-func ValidateForRuntime(cfg FileConfig) error {
+func validateForRuntime(cfg FileConfig) error {
 	errs := Validate(cfg)
 	if len(errs) == 0 {
 		return nil
